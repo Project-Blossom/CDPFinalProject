@@ -1,0 +1,12 @@
+{
+	"RemapUnityFiles": 
+	{
+		"Module.SimpleMeshPlacer.cpp.obj": [
+			"SimpleMeshPlacer.init.gen.cpp.obj",
+			"SimpleMeshPlacerActor.gen.cpp.obj",
+			"PerModuleInline.gen.cpp.obj",
+			"SimpleMeshPlacer.cpp.obj",
+			"SimpleMeshPlacerActor.cpp.obj"
+		]
+	}
+}
