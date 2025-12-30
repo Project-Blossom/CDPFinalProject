@@ -1,10 +1,9 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "ProceduralMeshComponent.h"   // 🔥 반드시 필요
+#include "ProceduralMeshComponent.h"
 #include "VoxelChunk.h"
 
-// 메쉬 출력 버퍼
 struct FVoxelMeshData
 {
     TArray<FVector> Vertices;
