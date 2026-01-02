@@ -1,30 +1,25 @@
-#include "VoxelDensityGenerator.h"
+ï»¿#include "VoxelDensityGenerator.h"
 
-FVector2D FVoxelDensityGenerator::SeedOffset2D() const
+static FORCEINLINE float Noise3D(float x, float y, float z)
 {
-    FRandomStream R(Seed);
-    return FVector2D(R.FRandRange(-100000.f, 100000.f), R.FRandRange(-100000.f, 100000.f));
-}
-
-FVector FVoxelDensityGenerator::SeedOffset3D() const
-{
-    FRandomStream R(Seed * 9176 + 11);
-    return FVector(R.FRandRange(-100000.f, 100000.f),
-        R.FRandRange(-100000.f, 100000.f),
-        R.FRandRange(-100000.f, 100000.f));
+    return FMath::PerlinNoise3D(FVector(x, y, z)); // -1 ~ 1
 }
 
 float FVoxelDensityGenerator::GetDensity(int32 X, int32 Y, int32 Z) const
 {
-    const FVector2D Off2D = SeedOffset2D();
-    const FVector   Off3D = SeedOffset3D();
+    const float wx = X * 100.0f;
+    const float wy = Y * 100.0f;
+    const float wz = Z * 100.0f;
 
-    // 2D Height (»ê¸ÆÀÇ Å« Èå¸§)
-    const float H = FMath::PerlinNoise2D((FVector2D((float)X, (float)Y) + Off2D) * HeightScale) * HeightAmp;
+    float base = (wz - 3000.0f);  // ë†’ì•„ì§ˆìˆ˜ë¡ +
 
-    // 3D Cave (µ¿±¼/¿À¹öÇà)
-    const float C = FMath::PerlinNoise3D((FVector((float)X, (float)Y, (float)Z) + Off3D) * CaveScale) * CaveStrength;
+    // ë…¸ì´ì¦ˆ
+    float n1 = FMath::PerlinNoise3D(FVector(wx, wy, wz) * 0.002f);
+    float n2 = FMath::PerlinNoise3D(FVector(wx, wy, wz) * 0.01f);
 
-    // Density: ³ôÀÌ - z + µ¿±¼ + ¹Ù´Ú º¸Á¤
-    return (H + BaseFloor) - (float)Z + C;
+    // í•©ì¹˜ê¸°
+    float density = base + (n1 * 400.f) + (n2 * 120.f);
+
+    // ğŸ”¥ í•µì‹¬ ìˆ˜ì • (ë¶€í˜¸ ë°˜ì „)
+    return -density;
 }

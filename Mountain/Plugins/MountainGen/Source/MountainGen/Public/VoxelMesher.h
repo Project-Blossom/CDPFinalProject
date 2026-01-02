@@ -26,9 +26,5 @@ struct FVoxelMeshData
 
 struct FVoxelMesher
 {
-    static void BuildSurface(const FVoxelChunk& Chunk, float VoxelSize, FVoxelMeshData& Out);
-
-    static void BuildHeightfieldSurface(const FVoxelChunk& Chunk, float VoxelSize, FVoxelMeshData& Out);
-
     static void BuildMarchingCubes(const FVoxelChunk& Chunk, float VoxelSize, float IsoLevel, FVoxelMeshData& Out);
 };

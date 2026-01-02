@@ -3,6 +3,7 @@
 #include "ProceduralMeshComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Materials/MaterialInterface.h"
+#include "KismetProceduralMeshLibrary.h"
 
 #include "VoxelChunk.h"
 #include "VoxelDensityGenerator.h"
@@ -37,52 +38,74 @@ void AMountainGenVoxelActor::SetSeed(int32 NewSeed)
     BuildChunkAndMesh();
 }
 
-void AMountainGenVoxelActor::BuildChunkAndMesh()
-{
-    if (!ProcMesh) return;
-
-    ProcMesh->ClearAllMeshSections();
-
-    FVoxelChunk Chunk(ChunkX, ChunkY, ChunkZ);
-
-    FVoxelDensityGenerator Gen(Seed);
-    Gen.HeightScale = HeightScale;
-    Gen.HeightAmp = HeightAmp;
-    Gen.CaveScale = CaveScale;
-    Gen.CaveStrength = CaveStrength;
-    Gen.BaseFloor = BaseFloor;
-
-    for (int32 z = 0; z < ChunkZ; ++z)
-        for (int32 y = 0; y < ChunkY; ++y)
-            for (int32 x = 0; x < ChunkX; ++x)
-            {
-                const float D = Gen.GetDensity(x, y, z);
-                Chunk.Set(x, y, z, D);
-            }
-
-    FVoxelMeshData Mesh;
-    FVoxelMesher::BuildMarchingCubes(Chunk, VoxelSize, 0.0f, Mesh);
-
-    // ✅ UE가 노멀/탄젠트를 만들도록 빈 배열 전달
-    TArray<FVector> EmptyNormals;
-    TArray<FProcMeshTangent> EmptyTangents;
-
-    ProcMesh->CreateMeshSection_LinearColor(
-        0,
-        Mesh.Vertices,
-        Mesh.Triangles,
-        EmptyNormals,          // ✅ 비움
-        Mesh.UVs,
-        Mesh.Colors,
-        EmptyTangents,         // ✅ 비움
-        true                   // collision
-    );
-
-    // 충돌
-    ProcMesh->bUseComplexAsSimpleCollision = true;
-
-    if (VoxelMaterial)
+    void AMountainGenVoxelActor::BuildChunkAndMesh()
     {
-        ProcMesh->SetMaterial(0, VoxelMaterial);
+        if (!ProcMesh) return;
+
+        ProcMesh->ClearAllMeshSections();
+
+        FVoxelChunk Chunk(ChunkX, ChunkY, ChunkZ);
+
+        FVoxelDensityGenerator Gen(Seed);
+
+        Gen.WorldFreq = WorldFreq;
+        Gen.DetailFreq = DetailFreq;
+        Gen.CaveFreq = CaveFreq;
+        Gen.GroundSlope = GroundSlope;
+        Gen.BaseBias = BaseBias;
+        Gen.OverhangAmp = OverhangAmp;
+        Gen.CaveAmp = CaveAmp;
+
+        // -------------------------
+        // 1) Density 필드 생성
+        // -------------------------
+        for (int32 z = 0; z < ChunkZ; ++z)
+            for (int32 y = 0; y < ChunkY; ++y)
+                for (int32 x = 0; x < ChunkX; ++x)
+                    Chunk.Set(x, y, z, Gen.GetDensity(x, y, z));
+
+        // -------------------------
+        // 2) Marching Cubes
+        // -------------------------
+        FVoxelMeshData Mesh;
+        FVoxelMesher::BuildMarchingCubes(Chunk, VoxelSize, 0.0f, Mesh);
+
+        if (Mesh.UVs.Num() != Mesh.Vertices.Num())
+        {
+            Mesh.UVs.SetNum(Mesh.Vertices.Num());
+            for (int32 i = 0; i < Mesh.Vertices.Num(); ++i)
+            {
+                const FVector& P = Mesh.Vertices[i];
+                Mesh.UVs[i] = FVector2D(P.X * 0.001f, P.Y * 0.001f);
+            }
+        }
+
+        // -------------------------
+        // 3) 노멀/탄젠트 계산
+        // -------------------------
+        TArray<FVector> CalcNormals;
+        TArray<FProcMeshTangent> CalcTangents;
+        UKismetProceduralMeshLibrary::CalculateTangentsForMesh(
+            Mesh.Vertices,
+            Mesh.Triangles,
+            Mesh.UVs,
+            CalcNormals,
+            CalcTangents
+        );
+
+        ProcMesh->CreateMeshSection_LinearColor(
+            0,
+            Mesh.Vertices,
+            Mesh.Triangles,
+            CalcNormals,
+            Mesh.UVs,
+            Mesh.Colors,
+            CalcTangents,
+            true
+        );
+
+        ProcMesh->bUseComplexAsSimpleCollision = true;
+
+        if (VoxelMaterial)
+            ProcMesh->SetMaterial(0, VoxelMaterial);
     }
-}

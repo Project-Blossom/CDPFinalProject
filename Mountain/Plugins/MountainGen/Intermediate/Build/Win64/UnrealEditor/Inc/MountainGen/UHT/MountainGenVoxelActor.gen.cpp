@@ -149,11 +149,11 @@ struct Z_Construct_UClass_AMountainGenVoxelActor_Statics
 		{ "ClampMax", "256" },
 		{ "ClampMin", "4" },
 #if !UE_BUILD_SHIPPING
-		{ "Comment", "// ===== Chunk Size (\xeb\xb3\xb5\xec\x85\x80 \xea\xb0\x9c\xec\x88\x98) =====\n" },
+		{ "Comment", "// =========================\n// Chunk Size (\xeb\xb3\xb5\xec\x85\x80 \xea\xb0\x9c\xec\x88\x98)\n// =========================\n" },
 #endif
 		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
 #if !UE_BUILD_SHIPPING
-		{ "ToolTip", "===== Chunk Size (\xeb\xb3\xb5\xec\x85\x80 \xea\xb0\x9c\xec\x88\x98) =====" },
+		{ "ToolTip", "Chunk Size (\xeb\xb3\xb5\xec\x85\x80 \xea\xb0\x9c\xec\x88\x98)" },
 #endif
 	};
 	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_ChunkY_MetaData[] = {
@@ -180,40 +180,109 @@ struct Z_Construct_UClass_AMountainGenVoxelActor_Statics
 #endif
 	};
 	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_Seed_MetaData[] = {
-		{ "Category", "MountainGen|Noise" },
+		{ "Category", "MountainGen|Density" },
 #if !UE_BUILD_SHIPPING
-		{ "Comment", "// ===== Noise Params =====\n" },
+		{ "Comment", "// =========================\n// Seed\n// =========================\n" },
 #endif
 		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
 #if !UE_BUILD_SHIPPING
-		{ "ToolTip", "===== Noise Params =====" },
+		{ "ToolTip", "Seed" },
 #endif
 	};
-	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_HeightScale_MetaData[] = {
-		{ "Category", "MountainGen|Noise" },
-		{ "ClampMin", "0.0001" },
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_WorldFreq_MetaData[] = {
+		{ "Category", "MountainGen|Density" },
+		{ "ClampMin", "0.000001" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// =========================\n// 3D Density Params \n// =========================\n// \xed\x81\xb0 \xed\x98\x95\xed\x83\x9c(\xec\x82\xb0 \xeb\x8d\xa9\xec\x96\xb4\xeb\xa6\xac) \xec\xa3\xbc\xed\x8c\x8c\xec\x88\x98 (\xec\x9e\x91\xec\x9d\x84\xec\x88\x98\xeb\xa1\x9d \xed\x81\xb0 \xeb\x8d\xa9\xec\x96\xb4\xeb\xa6\xac)\n" },
+#endif
 		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "3D Density Params\n\n\xed\x81\xb0 \xed\x98\x95\xed\x83\x9c(\xec\x82\xb0 \xeb\x8d\xa9\xec\x96\xb4\xeb\xa6\xac) \xec\xa3\xbc\xed\x8c\x8c\xec\x88\x98 (\xec\x9e\x91\xec\x9d\x84\xec\x88\x98\xeb\xa1\x9d \xed\x81\xb0 \xeb\x8d\xa9\xec\x96\xb4\xeb\xa6\xac)" },
+#endif
 	};
-	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_HeightAmp_MetaData[] = {
-		{ "Category", "MountainGen|Noise" },
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_DetailFreq_MetaData[] = {
+		{ "Category", "MountainGen|Density" },
+		{ "ClampMin", "0.000001" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// \xeb\x94\x94\xed\x85\x8c\xec\x9d\xbc/\xec\x98\xa4\xeb\xb2\x84\xed\x96\x89 \xec\xa3\xbc\xed\x8c\x8c\xec\x88\x98\n" },
+#endif
 		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "\xeb\x94\x94\xed\x85\x8c\xec\x9d\xbc/\xec\x98\xa4\xeb\xb2\x84\xed\x96\x89 \xec\xa3\xbc\xed\x8c\x8c\xec\x88\x98" },
+#endif
 	};
-	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_CaveScale_MetaData[] = {
-		{ "Category", "MountainGen|Noise" },
-		{ "ClampMin", "0.0001" },
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_CaveFreq_MetaData[] = {
+		{ "Category", "MountainGen|Density" },
+		{ "ClampMin", "0.000001" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// \xeb\x8f\x99\xea\xb5\xb4 \xec\xa3\xbc\xed\x8c\x8c\xec\x88\x98\n" },
+#endif
 		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "\xeb\x8f\x99\xea\xb5\xb4 \xec\xa3\xbc\xed\x8c\x8c\xec\x88\x98" },
+#endif
 	};
-	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_CaveStrength_MetaData[] = {
-		{ "Category", "MountainGen|Noise" },
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_GroundSlope_MetaData[] = {
+		{ "Category", "MountainGen|Density" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// \xec\x95\x84\xeb\x9e\x98\xec\xaa\xbd\xec\x9d\xb4 solid(-), \xec\x9c\x84\xec\xaa\xbd\xec\x9d\xb4 air(+)\xea\xb0\x80 \xeb\x90\x98\xea\xb2\x8c \xeb\xa7\x8c\xeb\x93\x9c\xeb\x8a\x94 \xe2\x80\x9c\xeb\xb0\x94\xeb\x8b\xa5 \xea\xb2\xbd\xed\x96\xa5\xe2\x80\x9d\n// \xea\xb0\x92\xec\x9d\xb4 \xeb\x84\x88\xeb\xac\xb4 \xed\x81\xac\xeb\xa9\xb4 \xec\x9c\x84\xea\xb0\x80 \xeb\x8b\xa4 \xea\xb3\xb5\xea\xb8\xb0(+), \xeb\x84\x88\xeb\xac\xb4 \xec\x9e\x91\xec\x9c\xbc\xeb\xa9\xb4 \xec\xa0\x84\xeb\xb6\x80 \xeb\xb0\x94\xec\x9c\x84(-)\xea\xb0\x80 \xeb\x90\x98\xea\xb8\xb0 \xec\x89\xac\xec\x9b\x80\n" },
+#endif
 		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "\xec\x95\x84\xeb\x9e\x98\xec\xaa\xbd\xec\x9d\xb4 solid(-), \xec\x9c\x84\xec\xaa\xbd\xec\x9d\xb4 air(+)\xea\xb0\x80 \xeb\x90\x98\xea\xb2\x8c \xeb\xa7\x8c\xeb\x93\x9c\xeb\x8a\x94 \xe2\x80\x9c\xeb\xb0\x94\xeb\x8b\xa5 \xea\xb2\xbd\xed\x96\xa5\xe2\x80\x9d\n\xea\xb0\x92\xec\x9d\xb4 \xeb\x84\x88\xeb\xac\xb4 \xed\x81\xac\xeb\xa9\xb4 \xec\x9c\x84\xea\xb0\x80 \xeb\x8b\xa4 \xea\xb3\xb5\xea\xb8\xb0(+), \xeb\x84\x88\xeb\xac\xb4 \xec\x9e\x91\xec\x9c\xbc\xeb\xa9\xb4 \xec\xa0\x84\xeb\xb6\x80 \xeb\xb0\x94\xec\x9c\x84(-)\xea\xb0\x80 \xeb\x90\x98\xea\xb8\xb0 \xec\x89\xac\xec\x9b\x80" },
+#endif
 	};
-	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_BaseFloor_MetaData[] = {
-		{ "Category", "MountainGen|Noise" },
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_BaseBias_MetaData[] = {
+		{ "Category", "MountainGen|Density" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// \xec\xa0\x84\xec\xb2\xb4 \xeb\xb0\x80\xeb\x8f\x84 \xeb\xb0\x94\xec\x9d\xb4\xec\x96\xb4\xec\x8a\xa4(\xec\x82\xb0\xec\x9d\xb4 \xeb\x84\x88\xeb\xac\xb4 \xea\xb3\xb5\xea\xb8\xb0/\xeb\xb0\x94\xec\x9c\x84\xeb\xa1\x9c \xec\xb9\x98\xec\x9a\xb0\xec\xb9\x98\xeb\xa9\xb4 \xec\x9d\xb4\xea\xb1\xb8\xeb\xa1\x9c \xec\x9d\xb4\xeb\x8f\x99)\n" },
+#endif
 		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "\xec\xa0\x84\xec\xb2\xb4 \xeb\xb0\x80\xeb\x8f\x84 \xeb\xb0\x94\xec\x9d\xb4\xec\x96\xb4\xec\x8a\xa4(\xec\x82\xb0\xec\x9d\xb4 \xeb\x84\x88\xeb\xac\xb4 \xea\xb3\xb5\xea\xb8\xb0/\xeb\xb0\x94\xec\x9c\x84\xeb\xa1\x9c \xec\xb9\x98\xec\x9a\xb0\xec\xb9\x98\xeb\xa9\xb4 \xec\x9d\xb4\xea\xb1\xb8\xeb\xa1\x9c \xec\x9d\xb4\xeb\x8f\x99)" },
+#endif
+	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_OverhangAmp_MetaData[] = {
+		{ "Category", "MountainGen|Density" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// \xec\x98\xa4\xeb\xb2\x84\xed\x96\x89/\xea\xb1\xb0\xec\xb9\xa0\xea\xb8\xb0 \xea\xb0\x95\xeb\x8f\x84\n" },
+#endif
+		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "\xec\x98\xa4\xeb\xb2\x84\xed\x96\x89/\xea\xb1\xb0\xec\xb9\xa0\xea\xb8\xb0 \xea\xb0\x95\xeb\x8f\x84" },
+#endif
+	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_CaveAmp_MetaData[] = {
+		{ "Category", "MountainGen|Density" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// \xeb\x8f\x99\xea\xb5\xb4 \xec\xb9\xb4\xeb\xb9\x99 \xea\xb0\x95\xeb\x8f\x84(\xea\xb3\xb5\xea\xb8\xb0\xec\xaa\xbd\xec\x9c\xbc\xeb\xa1\x9c \xeb\xaf\xb8\xeb\x8a\x94 \xed\x9e\x98)\n" },
+#endif
+		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "\xeb\x8f\x99\xea\xb5\xb4 \xec\xb9\xb4\xeb\xb9\x99 \xea\xb0\x95\xeb\x8f\x84(\xea\xb3\xb5\xea\xb8\xb0\xec\xaa\xbd\xec\x9c\xbc\xeb\xa1\x9c \xeb\xaf\xb8\xeb\x8a\x94 \xed\x9e\x98)" },
+#endif
+	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_CaveThreshold_MetaData[] = {
+		{ "Category", "MountainGen|Density" },
+		{ "ClampMax", "1.0" },
+		{ "ClampMin", "0.0" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// \xeb\x8f\x99\xea\xb5\xb4 \xec\x83\x9d\xec\x84\xb1 \xec\x9e\x84\xea\xb3\x84\xec\xb9\x98(0~1) : \xeb\x86\x92\xec\x9d\x84\xec\x88\x98\xeb\xa1\x9d \xeb\x8f\x99\xea\xb5\xb4\xec\x9d\xb4 \xeb\x93\x9c\xeb\xac\xbc\xec\x96\xb4\xec\xa7\x90\n" },
+#endif
+		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "\xeb\x8f\x99\xea\xb5\xb4 \xec\x83\x9d\xec\x84\xb1 \xec\x9e\x84\xea\xb3\x84\xec\xb9\x98(0~1) : \xeb\x86\x92\xec\x9d\x84\xec\x88\x98\xeb\xa1\x9d \xeb\x8f\x99\xea\xb5\xb4\xec\x9d\xb4 \xeb\x93\x9c\xeb\xac\xbc\xec\x96\xb4\xec\xa7\x90" },
+#endif
 	};
 	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_VoxelMaterial_MetaData[] = {
 		{ "Category", "MountainGen|Material" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// =========================\n// Material\n// =========================\n" },
+#endif
 		{ "ModuleRelativePath", "Public/MountainGenVoxelActor.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "Material" },
+#endif
 	};
 #endif // WITH_METADATA
 	static const UECodeGen_Private::FObjectPropertyParams NewProp_ProcMesh;
@@ -222,11 +291,14 @@ struct Z_Construct_UClass_AMountainGenVoxelActor_Statics
 	static const UECodeGen_Private::FIntPropertyParams NewProp_ChunkZ;
 	static const UECodeGen_Private::FFloatPropertyParams NewProp_VoxelSize;
 	static const UECodeGen_Private::FIntPropertyParams NewProp_Seed;
-	static const UECodeGen_Private::FFloatPropertyParams NewProp_HeightScale;
-	static const UECodeGen_Private::FFloatPropertyParams NewProp_HeightAmp;
-	static const UECodeGen_Private::FFloatPropertyParams NewProp_CaveScale;
-	static const UECodeGen_Private::FFloatPropertyParams NewProp_CaveStrength;
-	static const UECodeGen_Private::FFloatPropertyParams NewProp_BaseFloor;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_WorldFreq;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_DetailFreq;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_CaveFreq;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_GroundSlope;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_BaseBias;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_OverhangAmp;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_CaveAmp;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_CaveThreshold;
 	static const UECodeGen_Private::FObjectPropertyParams NewProp_VoxelMaterial;
 	static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 	static UObject* (*const DependentSingletons[])();
@@ -246,11 +318,14 @@ const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AMountainGenVoxel
 const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_ChunkZ = { "ChunkZ", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, ChunkZ), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_ChunkZ_MetaData), NewProp_ChunkZ_MetaData) };
 const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_VoxelSize = { "VoxelSize", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, VoxelSize), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_VoxelSize_MetaData), NewProp_VoxelSize_MetaData) };
 const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_Seed = { "Seed", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, Seed), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_Seed_MetaData), NewProp_Seed_MetaData) };
-const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_HeightScale = { "HeightScale", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, HeightScale), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_HeightScale_MetaData), NewProp_HeightScale_MetaData) };
-const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_HeightAmp = { "HeightAmp", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, HeightAmp), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_HeightAmp_MetaData), NewProp_HeightAmp_MetaData) };
-const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveScale = { "CaveScale", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, CaveScale), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_CaveScale_MetaData), NewProp_CaveScale_MetaData) };
-const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveStrength = { "CaveStrength", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, CaveStrength), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_CaveStrength_MetaData), NewProp_CaveStrength_MetaData) };
-const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_BaseFloor = { "BaseFloor", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, BaseFloor), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_BaseFloor_MetaData), NewProp_BaseFloor_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_WorldFreq = { "WorldFreq", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, WorldFreq), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_WorldFreq_MetaData), NewProp_WorldFreq_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_DetailFreq = { "DetailFreq", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, DetailFreq), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_DetailFreq_MetaData), NewProp_DetailFreq_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveFreq = { "CaveFreq", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, CaveFreq), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_CaveFreq_MetaData), NewProp_CaveFreq_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_GroundSlope = { "GroundSlope", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, GroundSlope), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_GroundSlope_MetaData), NewProp_GroundSlope_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_BaseBias = { "BaseBias", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, BaseBias), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_BaseBias_MetaData), NewProp_BaseBias_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_OverhangAmp = { "OverhangAmp", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, OverhangAmp), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_OverhangAmp_MetaData), NewProp_OverhangAmp_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveAmp = { "CaveAmp", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, CaveAmp), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_CaveAmp_MetaData), NewProp_CaveAmp_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveThreshold = { "CaveThreshold", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, CaveThreshold), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_CaveThreshold_MetaData), NewProp_CaveThreshold_MetaData) };
 const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_VoxelMaterial = { "VoxelMaterial", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenVoxelActor, VoxelMaterial), Z_Construct_UClass_UMaterialInterface_NoRegister, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_VoxelMaterial_MetaData), NewProp_VoxelMaterial_MetaData) };
 const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AMountainGenVoxelActor_Statics::PropPointers[] = {
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_ProcMesh,
@@ -259,11 +334,14 @@ const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AMountain
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_ChunkZ,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_VoxelSize,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_Seed,
-	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_HeightScale,
-	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_HeightAmp,
-	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveScale,
-	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveStrength,
-	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_BaseFloor,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_WorldFreq,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_DetailFreq,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveFreq,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_GroundSlope,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_BaseBias,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_OverhangAmp,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveAmp,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_CaveThreshold,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenVoxelActor_Statics::NewProp_VoxelMaterial,
 };
 static_assert(UE_ARRAY_COUNT(Z_Construct_UClass_AMountainGenVoxelActor_Statics::PropPointers) < 2048);
@@ -303,10 +381,10 @@ AMountainGenVoxelActor::~AMountainGenVoxelActor() {}
 struct Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_b1234_Plugins_MountainGen_Source_MountainGen_Public_MountainGenVoxelActor_h__Script_MountainGen_Statics
 {
 	static constexpr FClassRegisterCompiledInInfo ClassInfo[] = {
-		{ Z_Construct_UClass_AMountainGenVoxelActor, AMountainGenVoxelActor::StaticClass, TEXT("AMountainGenVoxelActor"), &Z_Registration_Info_UClass_AMountainGenVoxelActor, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMountainGenVoxelActor), 1173434095U) },
+		{ Z_Construct_UClass_AMountainGenVoxelActor, AMountainGenVoxelActor::StaticClass, TEXT("AMountainGenVoxelActor"), &Z_Registration_Info_UClass_AMountainGenVoxelActor, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMountainGenVoxelActor), 3458091737U) },
 	};
 };
-static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_b1234_Plugins_MountainGen_Source_MountainGen_Public_MountainGenVoxelActor_h__Script_MountainGen_3516332098(TEXT("/Script/MountainGen"),
+static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_b1234_Plugins_MountainGen_Source_MountainGen_Public_MountainGenVoxelActor_h__Script_MountainGen_2513255965(TEXT("/Script/MountainGen"),
 	Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_b1234_Plugins_MountainGen_Source_MountainGen_Public_MountainGenVoxelActor_h__Script_MountainGen_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_b1234_Plugins_MountainGen_Source_MountainGen_Public_MountainGenVoxelActor_h__Script_MountainGen_Statics::ClassInfo),
 	nullptr, 0,
 	nullptr, 0);

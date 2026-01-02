@@ -1,29 +1,28 @@
 #pragma once
 #include "CoreMinimal.h"
 
-// Density(x,y,z) = Height(x,y) - z + Cave(x,y,z)
-// Density > 0 => Solid
 struct FVoxelDensityGenerator
 {
-    int32 Seed = 1337;
+    int32 Seed = 1557;
 
-    // 산의 큰 윤곽(2D)
-    float HeightScale = 0.02f;     // 작을수록 덩어리 큼
-    float HeightAmp = 20.0f;     // 최대 높이(복셀 단위 느낌)
+    // 노이즈 주파수(격자 좌표 기준)
+    float WorldFreq = 0.02f;
+    float DetailFreq = 0.06f;
+    float CaveFreq = 0.08f;
 
-    // 동굴/오버행(3D)
-    float CaveScale = 0.06f;
-    float CaveStrength = 2.0f;
+    // 강도(Amplitude)
+    float HeightAmp = 3000.0f;
+    float OverhangAmp = 0.6f;
+    float CaveAmp = 1.0f;
 
-    // 추가로 전체 고도 올리고 싶을 때
-    float BaseFloor = 10.0f;       // 전체를 더 solid로 만들고 싶으면 올려라
+    // 동굴 생성 기준(임계값)
+    float CaveThreshold = 0.2f;
 
-    FVoxelDensityGenerator() = default;
+    // “위로 갈수록 공기”가 되게 만드는 경사/바이어스
+    float GroundSlope = 0.05f;
+    float BaseBias = 10.0f;
+
     explicit FVoxelDensityGenerator(int32 InSeed) : Seed(InSeed) {}
 
     float GetDensity(int32 X, int32 Y, int32 Z) const;
-
-private:
-    FVector2D SeedOffset2D() const;
-    FVector   SeedOffset3D() const;
 };
