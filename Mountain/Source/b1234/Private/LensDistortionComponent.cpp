@@ -1,27 +1,93 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "LensDistortionComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "GameFramework/Actor.h"
 
-// Sets default values
-ALensDistortionComponent::ALensDistortionComponent()
+ULensDistortionComponent::ULensDistortionComponent()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
-
+    PrimaryComponentTick.bCanEverTick = false;
 }
 
-// Called when the game starts or when spawned
-void ALensDistortionComponent::BeginPlay()
+void ULensDistortionComponent::BeginPlay()
 {
-	Super::BeginPlay();
-	
+    Super::BeginPlay();
+    Apply();
 }
 
-// Called every frame
-void ALensDistortionComponent::Tick(float DeltaTime)
+void ULensDistortionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	Super::Tick(DeltaTime);
-
+    Remove();
+    Super::EndPlay(EndPlayReason);
 }
 
+UCameraComponent* ULensDistortionComponent::FindCamera() const
+{
+    if (!GetOwner()) return nullptr;
+    return GetOwner()->FindComponentByClass<UCameraComponent>();
+}
+
+void ULensDistortionComponent::Apply()
+{
+    if (!PostProcessMaterial) return;
+
+    CachedCamera = FindCamera();
+    if (!CachedCamera) return;
+
+    MID = UMaterialInstanceDynamic::Create(PostProcessMaterial, this);
+    if (!MID) return;
+
+    // 카메라 PostProcessSettings에 Blendable로 추가
+    FWeightedBlendable WB;
+    WB.Weight = Weight;
+    WB.Object = MID;
+
+    auto& Arr = CachedCamera->PostProcessSettings.WeightedBlendables.Array;
+    BlendableIndex = Arr.Add(WB);
+
+    UpdateParams();
+}
+
+void ULensDistortionComponent::Remove()
+{
+    if (!CachedCamera) return;
+
+    auto& Arr = CachedCamera->PostProcessSettings.WeightedBlendables.Array;
+    if (Arr.IsValidIndex(BlendableIndex) && Arr[BlendableIndex].Object == MID)
+    {
+        Arr.RemoveAt(BlendableIndex);
+    }
+
+    BlendableIndex = INDEX_NONE;
+    MID = nullptr;
+    CachedCamera = nullptr;
+}
+
+void ULensDistortionComponent::UpdateParams()
+{
+    if (!MID) return;
+
+    MID->SetScalarParameterValue(TEXT("K1"), K1);
+    MID->SetScalarParameterValue(TEXT("K2"), K2);
+
+    if (CachedCamera)
+    {
+        auto& Arr = CachedCamera->PostProcessSettings.WeightedBlendables.Array;
+        if (Arr.IsValidIndex(BlendableIndex) && Arr[BlendableIndex].Object == MID)
+        {
+            Arr[BlendableIndex].Weight = Weight;
+        }
+    }
+}
+
+void ULensDistortionComponent::SetStrength(float InK1, float InK2)
+{
+    K1 = InK1;
+    K2 = InK2;
+    UpdateParams();
+}
+
+void ULensDistortionComponent::SetWeight(float InWeight)
+{
+    Weight = FMath::Clamp(InWeight, 0.0f, 1.0f);
+    UpdateParams();
+}
