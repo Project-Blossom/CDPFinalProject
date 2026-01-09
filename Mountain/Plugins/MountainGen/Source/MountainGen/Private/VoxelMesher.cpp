@@ -87,7 +87,6 @@ void FVoxelMesher::BuildMarchingCubes(const FVoxelChunk& Chunk, float VoxelSize,
                     Pos[i] = FVector(cx, cy, cz) * VoxelSize;
                 }
 
-                // “inside = Val < Iso” (이걸 기준으로 고정)
                 int32 CubeIndex = 0;
                 for (int32 i = 0; i < 8; ++i)
                     if (Val[i] < IsoLevel)
@@ -109,8 +108,6 @@ void FVoxelMesher::BuildMarchingCubes(const FVoxelChunk& Chunk, float VoxelSize,
                     const FVector Na = GradientSafe(Chunk, x + Corner[a][0], y + Corner[a][1], z + Corner[a][2]);
                     const FVector Nb = GradientSafe(Chunk, x + Corner[b][0], y + Corner[b][1], z + Corner[b][2]);
 
-                    // grad(f) 가 표준 법선인데, 네 Density 설계에 따라 뒤집힐 수 있음
-                    // 일단 기본은 grad 그대로 두고, 아래에서 삼각형마다 자동으로 방향 맞춘다.
                     NormList[e] = FMath::Lerp(Na, Nb, t).GetSafeNormal();
                 }
 

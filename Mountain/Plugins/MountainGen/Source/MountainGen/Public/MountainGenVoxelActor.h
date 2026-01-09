@@ -50,40 +50,40 @@ protected:
     int32 Seed = 1557;
 
     // =========================
-    // 3D Density Params 
-    // =========================
-    // 큰 형태(산 덩어리) 주파수 (작을수록 큰 덩어리)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.000001"))
-    float WorldFreq = 0.002f;
+ // 3D Density Params (Scale Cm)
+ // =========================
 
-    // 디테일/오버행 주파수
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.000001"))
-    float DetailFreq = 0.01f;
+ // 큰 형태(산 덩어리/절벽 패치) 크기(cm) - 값이 클수록 더 큰 덩어리
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "100.0"))
+    float WorldScaleCm = 20000.0f; // 200m
 
-    // 동굴 주파수
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.000001"))
-    float CaveFreq = 0.02f;
+    // 중간 디테일 크기(cm)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "100.0"))
+    float DetailScaleCm = 3000.0f; // 30m
 
-    // 아래쪽이 solid(-), 위쪽이 air(+)가 되게 만드는 “바닥 경향”
-    // 값이 너무 크면 위가 다 공기(+), 너무 작으면 전부 바위(-)가 되기 쉬움
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density")
-    float GroundSlope = 0.01f;
+    // 동굴 덩어리 크기(cm)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "100.0"))
+    float CaveScaleCm = 1800.0f; // 18m
 
-    // 전체 밀도 바이어스(산이 너무 공기/바위로 치우치면 이걸로 이동)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density")
-    float BaseBias = 0.0f;
+    // (선택) 높이 스케일을 Actor에서 조절하고 싶으면 노출
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.0"))
+    float HeightAmp = 3000.0f;
 
-    // 오버행/거칠기 강도
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density")
-    float OverhangAmp = 0.5f;
+    // 오버행 강도
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.0"))
+    float OverhangAmp = 0.6f;
 
-    // 동굴 카빙 강도(공기쪽으로 미는 힘)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density")
+    // 동굴 강도
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.0"))
     float CaveAmp = 1.0f;
 
-    // 동굴 생성 임계치(0~1) : 높을수록 동굴이 드물어짐
+    // 동굴 임계값(0~1) : 높을수록 동굴이 드물어짐
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float CaveThreshold = 0.6f;
+    float CaveThreshold = 0.55f;
+
+    // 전체 밀도 바이어스
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density")
+    float BaseBias = 10.0f;
 
     // =========================
     // Material

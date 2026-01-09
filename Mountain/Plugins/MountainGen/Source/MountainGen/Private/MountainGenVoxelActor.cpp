@@ -48,13 +48,14 @@ void AMountainGenVoxelActor::SetSeed(int32 NewSeed)
 
         FVoxelDensityGenerator Gen(Seed);
 
-        Gen.WorldFreq = WorldFreq;
-        Gen.DetailFreq = DetailFreq;
-        Gen.CaveFreq = CaveFreq;
-        Gen.GroundSlope = GroundSlope;
+        Gen.WorldScaleCm = WorldScaleCm;
+        Gen.DetailScaleCm = DetailScaleCm;
+        Gen.CaveScaleCm = CaveScaleCm;
         Gen.BaseBias = BaseBias;
         Gen.OverhangAmp = OverhangAmp;
         Gen.CaveAmp = CaveAmp;
+        Gen.CaveThreshold = CaveThreshold;
+        Gen.VoxelSizeCm = VoxelSize;
 
         // -------------------------
         // 1) Density 필드 생성

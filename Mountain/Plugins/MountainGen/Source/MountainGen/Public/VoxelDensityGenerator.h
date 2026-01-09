@@ -1,28 +1,40 @@
-#pragma once
+ï»¿#pragma once
 #include "CoreMinimal.h"
 
 struct FVoxelDensityGenerator
 {
     int32 Seed = 1557;
 
-    // ³ëÀÌÁî ÁÖÆÄ¼ö(°İÀÚ ÁÂÇ¥ ±âÁØ)
-    float WorldFreq = 0.02f;
-    float DetailFreq = 0.06f;
-    float CaveFreq = 0.08f;
+    float VoxelSizeCm = 100.0f;
 
-    // °­µµ(Amplitude)
+    // =========================
+    // Scale Params (cm ë‹¨ìœ„ "í¬ê¸°")
+    // ê°’ì´ í´ìˆ˜ë¡ ë” í° ë©ì–´ë¦¬/ë¶€ë“œëŸ¬ì›€
+    // =========================
+    float WorldScaleCm = 20000.0f; // 200m: í° ì§€í˜• ë©ì–´ë¦¬(ì ˆë²½/ì‚°ë§¥)
+    float DetailScaleCm = 3000.0f;  // 30m : ì¤‘ê°„ ë””í…Œì¼
+    float CaveScaleCm = 1800.0f;  // 18m : ë™êµ´ ë©ì–´ë¦¬
+
+    // =========================
+    // Amplitude Params
+    // =========================
     float HeightAmp = 3000.0f;
     float OverhangAmp = 0.6f;
     float CaveAmp = 1.0f;
 
-    // µ¿±¼ »ı¼º ±âÁØ(ÀÓ°è°ª)
-    float CaveThreshold = 0.2f;
-
-    // ¡°À§·Î °¥¼ö·Ï °ø±â¡±°¡ µÇ°Ô ¸¸µå´Â °æ»ç/¹ÙÀÌ¾î½º
-    float GroundSlope = 0.05f;
-    float BaseBias = 10.0f;
+    // =========================
+    // Cave Params
+    // =========================
+    float CaveThreshold = 0.55f; // ë†’ì„ìˆ˜ë¡ ë™êµ´ì´ ë“œë¬¼ì–´ì§
+    float BaseBias = 10.0f; // ì „ì²´ ë°€ë„ ì´ë™
 
     explicit FVoxelDensityGenerator(int32 InSeed) : Seed(InSeed) {}
+
+    FORCEINLINE float SeedOffsetCm() const
+    {
+        // Seedê°€ ë°”ë€Œë©´ ë…¸ì´ì¦ˆ ì…ë ¥ ì¢Œí‘œê°€ í¬ê²Œ ì´ë™ -> í™•ì‹¤íˆ ë‹¤ë¥¸ ì§€í˜•
+        return (float)Seed * 100000.0f; // 1000m ë‹¨ìœ„ ì í”„
+    }
 
     float GetDensity(int32 X, int32 Y, int32 Z) const;
 };
