@@ -1,0 +1,14 @@
+/NOLOGO
+/errorReport:prompt
+/MACHINE:x64
+/SUBSYSTEM:WINDOWS
+/DEF
+/NAME:"UnrealEditor-SimpleMeshPlacer.dll"
+/IGNORE:4221
+/NODEFAULTLIB
+"C:/Users/User/Documents/Unreal Projects/b1234/Intermediate/Build/Win64/x64/b1234Editor/Development/UnrealEd/SharedPCH.UnrealEd.Project.ValApi.ValExpApi.Cpp20.h.obj"
+"C:/Users/User/Documents/Unreal Projects/b1234/Plugins/SimpleMeshPlacer/Intermediate/Build/Win64/x64/UnrealEditor/Development/SimpleMeshPlacer/Module.SimpleMeshPlacer.cpp.obj"
+"C:/Users/User/Documents/Unreal Projects/b1234/Plugins/SimpleMeshPlacer/Intermediate/Build/Win64/x64/UnrealEditor/Development/SimpleMeshPlacer/SimpleMeshPlacer.cpp.obj"
+"C:/Users/User/Documents/Unreal Projects/b1234/Plugins/SimpleMeshPlacer/Intermediate/Build/Win64/x64/UnrealEditor/Development/SimpleMeshPlacer/SimpleMeshPlacerActor.cpp.obj"
+"C:/Users/User/Documents/Unreal Projects/b1234/Plugins/SimpleMeshPlacer/Intermediate/Build/Win64/x64/UnrealEditor/Development/SimpleMeshPlacer/Default.rc2.res"
+/OUT:"C:/Users/User/Documents/Unreal Projects/b1234/Plugins/SimpleMeshPlacer/Intermediate/Build/Win64/x64/UnrealEditor/Development/SimpleMeshPlacer/UnrealEditor-SimpleMeshPlacer.lib"
