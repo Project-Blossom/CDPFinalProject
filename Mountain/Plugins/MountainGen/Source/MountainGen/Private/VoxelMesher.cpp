@@ -64,7 +64,15 @@ void FVoxelMesher::BuildMarchingCubes(const FVoxelChunk& Chunk, float VoxelSize,
             const int32 Idx = Out.Vertices.Num();
             Out.Vertices.Add(P);
             Out.Normals.Add(N);
-            Out.UVs.Add(FVector2D(P.X * 0.001f, P.Y * 0.001f));
+
+            const FVector aN = N.GetAbs();
+            FVector2D UV;
+            if (aN.Z >= aN.X && aN.Z >= aN.Y)      UV = FVector2D(P.X, P.Y); // 바닥/천장
+            else if (aN.X >= aN.Y)                 UV = FVector2D(P.Y, P.Z); // X가 주인 절벽
+            else                                   UV = FVector2D(P.X, P.Z); // Y가 주인 절벽
+
+            Out.UVs.Add(UV * 0.001f);
+
             Out.Colors.Add(FLinearColor::White);
             Out.Tangents.Add(MakeTangentFromNormal(N));
             return Idx;

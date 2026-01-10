@@ -1,7 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 
-// 3D Density Grid (Density > 0 : Solid, <= 0 : Empty)
+// 3D // Density < 0 : Solid, >= 0 : Air 
 struct FVoxelChunk
 {
     int32 SizeX = 0;

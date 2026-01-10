@@ -28,7 +28,7 @@ protected:
     UProceduralMeshComponent* ProcMesh;
 
     // =========================
-    // Chunk Size (복셀 개수)
+    // Chunk
     // =========================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Chunk", meta = (ClampMin = "4", ClampMax = "256"))
     int32 ChunkX = 64;
@@ -36,58 +36,95 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Chunk", meta = (ClampMin = "4", ClampMax = "256"))
     int32 ChunkY = 64;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Chunk", meta = (ClampMin = "4", ClampMax = "256"))
-    int32 ChunkZ = 64;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Chunk", meta = (ClampMin = "8", ClampMax = "512"))
+    int32 ChunkZ = 256;
 
-    // 복셀 크기(cm)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Chunk", meta = (ClampMin = "1.0"))
     float VoxelSize = 100.f;
 
-    // =========================
+    // Meshing
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Meshing")
+    float IsoLevel = 0.0f;
+
     // Seed
-    // =========================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density")
     int32 Seed = 1557;
 
     // =========================
- // 3D Density Params (Scale Cm)
- // =========================
-
- // 큰 형태(산 덩어리/절벽 패치) 크기(cm) - 값이 클수록 더 큰 덩어리
+    // Density Params (Generator)
+    // =========================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "100.0"))
-    float WorldScaleCm = 20000.0f; // 200m
+    float WorldScaleCm = 24000.0f;
 
-    // 중간 디테일 크기(cm)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "100.0"))
-    float DetailScaleCm = 3000.0f; // 30m
+    float DetailScaleCm = 6000.0f;
 
-    // 동굴 덩어리 크기(cm)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "100.0"))
-    float CaveScaleCm = 1800.0f; // 18m
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Height")
+    float BaseHeightCm = 0.0f;
 
-    // (선택) 높이 스케일을 Actor에서 조절하고 싶으면 노출
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.0"))
-    float HeightAmp = 3000.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Height", meta = (ClampMin = "1.0"))
+    float HeightAmpCm = 30000.0f;
 
-    // 오버행 강도
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.0"))
-    float OverhangAmp = 0.6f;
+    // 끝으로 갈수록 높게 (Peak 느낌)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Height")
+    float RampHeightCm = 20000.0f;
 
-    // 동굴 강도
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.0"))
-    float CaveAmp = 1.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Height", meta = (ClampMin = "1.0"))
+    float RampLengthCm = 6400.0f;
 
-    // 동굴 임계값(0~1) : 높을수록 동굴이 드물어짐
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Volume", meta = (ClampMin = "0.0"))
+    float VolumeStrength = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Volume", meta = (ClampMin = "1.0"))
+    float OverhangFadeCm = 3000.0f;
+
+    // Warp
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Warp", meta = (ClampMin = "100.0"))
+    float WarpPatchCm = 12000.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Warp", meta = (ClampMin = "0.0"))
+    float WarpAmpCm = 800.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Warp", meta = (ClampMin = "0.0"))
+    float WarpStrength = 1.0f;
+
+    // Caves
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Caves", meta = (ClampMin = "100.0"))
+    float CaveScaleCm = 2200.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Caves", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
     float CaveThreshold = 0.55f;
 
-    // 전체 밀도 바이어스
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density")
-    float BaseBias = 10.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Caves", meta = (ClampMin = "0.0"))
+    float CaveStrength = 1200.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Density|Caves", meta = (ClampMin = "0.01"))
+    float CaveBand = 0.25f;
 
     // =========================
-    // Material
+    // Postprocess (Mask)
     // =========================
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Post")
+    bool bRemoveIslands = true;
+
+    // 바닥 z=0~GroundBandZ-1 을 "땅"으로 보고 연결된 solid만 유지
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Post", meta = (ClampMin = "1", ClampMax = "16"))
+    int32 GroundBandZ = 2;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Post")
+    bool bUseClosing = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Post", meta = (ClampMin = "0", ClampMax = "8"))
+    int32 ClosingDilateIters = 1;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Post", meta = (ClampMin = "0", ClampMax = "8"))
+    int32 ClosingErodeIters = 1;
+
+    // ★ 계단 방지 핵심: 마스크 결과를 density에 "살짝"만 반영
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Post", meta = (ClampMin = "0.0"))
+    float SoftPushCm = 200.0f;
+
+    // Material
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material")
     UMaterialInterface* VoxelMaterial = nullptr;
 
