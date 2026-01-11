@@ -5,35 +5,49 @@ struct FVoxelDensityGenerator
 {
     int32 Seed = 1557;
 
+    // Voxel -> World (cm)
     float VoxelSizeCm = 100.0f;
 
     // =========================
-    // Scale Params (cm 단위 "크기")
-    // 값이 클수록 더 큰 덩어리/부드러움
+    // Surface (지형) 프랙탈 스케일
     // =========================
-    float WorldScaleCm = 20000.0f; // 200m: 큰 지형 덩어리(절벽/산맥)
-    float DetailScaleCm = 3000.0f;  // 30m : 중간 디테일
-    float CaveScaleCm = 1800.0f;  // 18m : 동굴 덩어리
+    float WorldScaleCm = 24000.0f; // 큰 지형 덩어리
+    float DetailScaleCm = 6000.0f;  // 중간 디테일
+
+    // 지형 기준 높이 / 기복 (cm)
+    float BaseHeightCm = 0.0f;
+    float HeightAmpCm = 30000.0f; // 300m
+
+    // "끝 지점이 더 높아지게" 램프(경사) 추가
+    // Chunk의 +X 방향으로 높아짐
+    float RampHeightCm = 20000.0f; // 200m 추가 상승
+    float RampLengthCm = 6400.0f;  // 이 길이(cm) 동안 RampHeightCm까지 상승
 
     // =========================
-    // Amplitude Params
+    // 3D 볼륨(오버행) - 단, "지표 근처"에서만 영향 주게(섬 방지)
     // =========================
-    float HeightAmp = 3000.0f;
-    float OverhangAmp = 0.6f;
-    float CaveAmp = 1.0f;
+    float VolumeStrength = 0.35f;     // 0~1 (너무 크면 섬 생김)
+    float OverhangFadeCm = 3000.0f;   // 지표 위로 이 높이 이상이면 3D 볼륨 영향 거의 0
+
+    // Domain warp
+    float WarpPatchCm = 12000.0f;
+    float WarpAmpCm = 800.0f;
+    float WarpStrength = 1.0f;
 
     // =========================
-    // Cave Params
+    // Caves
     // =========================
-    float CaveThreshold = 0.55f; // 높을수록 동굴이 드물어짐
-    float BaseBias = 10.0f; // 전체 밀도 이동
+    float CaveScaleCm = 2200.0f;
+    float CaveThreshold = 0.55f;  // 높을수록 동굴 적게
+    float CaveStrength = 1200.0f; // "density 단위가 cm"라서 이건 cm급으로 줘야 체감됨
+    float CaveBand = 0.25f;
 
     explicit FVoxelDensityGenerator(int32 InSeed) : Seed(InSeed) {}
 
     FORCEINLINE float SeedOffsetCm() const
     {
-        // Seed가 바뀌면 노이즈 입력 좌표가 크게 이동 -> 확실히 다른 지형
-        return (float)Seed * 100000.0f; // 1000m 단위 점프
+        // Seed
+        return (float)Seed * 100000.0f;
     }
 
     float GetDensity(int32 X, int32 Y, int32 Z) const;

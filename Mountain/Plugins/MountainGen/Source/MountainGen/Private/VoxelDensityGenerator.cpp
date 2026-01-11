@@ -16,78 +16,123 @@ static FORCEINLINE float SmoothStep(float edge0, float edge1, float x)
     return t * t * (3.0f - 2.0f * t);
 }
 
+// 2D fBm
+static FORCEINLINE float FBM2D(float x, float y, int32 Octaves, float Lacunarity, float Gain)
+{
+    float sum = 0.0f;
+    float amp = 1.0f;
+    float freq = 1.0f;
+
+    for (int32 i = 0; i < Octaves; ++i)
+    {
+        sum += Noise2D(x * freq, y * freq) * amp;
+        freq *= Lacunarity;
+        amp *= Gain;
+    }
+    return sum; // 대략 [-something, +something]
+}
+
+// 3D fBm
+static FORCEINLINE float FBM3D(float x, float y, float z, int32 Octaves, float Lacunarity, float Gain)
+{
+    float sum = 0.0f;
+    float amp = 1.0f;
+    float freq = 1.0f;
+
+    for (int32 i = 0; i < Octaves; ++i)
+    {
+        sum += Noise3D(x * freq, y * freq, z * freq) * amp;
+        freq *= Lacunarity;
+        amp *= Gain;
+    }
+    return sum;
+}
+
 float FVoxelDensityGenerator::GetDensity(int32 X, int32 Y, int32 Z) const
 {
-    // ✅ 여기 핵심: 100 고정이 아니라 VoxelSizeCm 사용
+    // 월드 좌표(cm)
     const float wx = X * VoxelSizeCm;
     const float wy = Y * VoxelSizeCm;
     const float wz = Z * VoxelSizeCm;
 
     const float S = SeedOffsetCm();
 
-    // Scale(cm) -> Freq
     const float WorldFreq = 1.0f / FMath::Max(1.0f, WorldScaleCm);
     const float DetailFreq = 1.0f / FMath::Max(1.0f, DetailScaleCm);
+    const float WarpFreq = 1.0f / FMath::Max(1.0f, WarpPatchCm);
     const float CaveFreq = 1.0f / FMath::Max(1.0f, CaveScaleCm);
 
-    // 베이스: 위로 갈수록 공기(+)
-    float base = (wz - HeightAmp);
+    // =========================
+    // (A) 2D 프랙탈로 지형 표면 높이 생성
+    // =========================
+    const float h0 = FBM2D((wx + S) * WorldFreq, (wy + S) * WorldFreq, 5, 2.0f, 0.5f);
+    const float h1 = FBM2D((wx - S) * DetailFreq, (wy + S) * DetailFreq, 4, 2.2f, 0.55f);
 
-    float n1 = Noise3D((wx + S) * WorldFreq, (wy + S) * WorldFreq, (wz + S) * WorldFreq);
-    float n2 = Noise3D((wx - S) * DetailFreq, (wy + S) * DetailFreq, (wz + S) * DetailFreq);
+    // 램프(끝이 더 높아지게): +X 방향으로 BaseHeight + RampHeight까지
+    const float RampT = FMath::Clamp(wx / FMath::Max(1.0f, RampLengthCm), 0.0f, 1.0f);
+    const float Ramp = RampT * RampHeightCm;
 
-    float density =
-        base
-        + (n1 * (HeightAmp * 0.13f))
-        + (n2 * (HeightAmp * 0.04f))
-        + BaseBias;
+    const float SurfaceHeight =
+        BaseHeightCm
+        + Ramp
+        + (h0 * HeightAmpCm * 0.55f)
+        + (h1 * HeightAmpCm * 0.18f);
 
     // =========================
-    // 절벽 마스크
+    // (B) 기본 density: 아래는 음수(solid), 위는 양수(air)
     // =========================
-    const float CliffPatchCm = FMath::Max(3000.0f, WorldScaleCm * 0.5f);
-    const float CliffFreq = 1.0f / CliffPatchCm;
-
-    float ridge = FMath::Abs(Noise2D((wx + S) * CliffFreq, (wy - S) * CliffFreq));
-    float cliffMask = SmoothStep(0.55f, 0.85f, ridge);
+    float density = (wz - SurfaceHeight);
 
     // =========================
-    // Domain Warp (오버행)
+    // (C) Domain Warp + 3D 볼륨(오버행 느낌)
+    //     단, 표면 근처에서만 적용(섬 제거 핵심)
     // =========================
-    const float OverhangDepthCm = 1000.0f; // 10m
-    const float WarpPatchCm = FMath::Max(6000.0f, WorldScaleCm * 0.5f);
-    const float WarpFreq = 1.0f / WarpPatchCm;
+    float wx2 = wx, wy2 = wy, wz2 = wz;
 
-    const float WarpAmpWorld = OverhangDepthCm * OverhangAmp * cliffMask;
+    if (WarpStrength > 0.0f && WarpAmpCm > 0.0f)
+    {
+        const float W = WarpAmpCm * WarpStrength;
 
-    float wx2 = wx + Noise3D((wx + S) * WarpFreq, (wy + S) * WarpFreq, (wz + S) * WarpFreq) * WarpAmpWorld;
-    float wy2 = wy + Noise3D((wx - S) * WarpFreq, (wy + S) * WarpFreq, (wz + S) * WarpFreq) * WarpAmpWorld;
-    float wz2 = wz + Noise3D((wx + S) * WarpFreq, (wy - S) * WarpFreq, (wz + S) * WarpFreq) * (WarpAmpWorld * 0.35f);
+        const float wnx = Noise3D((wx + S) * WarpFreq, (wy + S) * WarpFreq, 0.0f);
+        const float wny = Noise3D((wx - S) * WarpFreq, (wy + S) * WarpFreq, 0.0f);
+        const float wnz = Noise3D((wx + S) * WarpFreq, (wy - S) * WarpFreq, 0.0f);
+
+        wx2 = wx + wnx * W;
+        wy2 = wy + wny * W;
+        wz2 = wz + wnz * (W * 0.35f);
+    }
+
+    // 표면 위/아래 거리
+    const float Above = (wz - SurfaceHeight);
+
+    // 표면에서의 절댓거리(위든 아래든)
+    const float DistToSurface = FMath::Abs(Above);
+
+    // 표면에서 멀어질수록 3D 볼륨 영향 0으로 페이드
+    const float VolumeFade =
+        1.0f - SmoothStep(0.0f, FMath::Max(1.0f, OverhangFadeCm), DistToSurface);
+
+    if (VolumeStrength > 0.0f && VolumeFade > 0.001f)
+    {
+        const float v = FBM3D((wx2 + S) * WorldFreq, (wy2 + S) * WorldFreq, (wz2 + S) * WorldFreq,
+            3, 2.0f, 0.5f);
+
+        density -= v * (HeightAmpCm * 0.08f) * VolumeStrength * VolumeFade;
+    }
 
     // =========================
-    // 동굴 1: 양수만 carve
+    // (D) Caves (공기 생성: density를 +로 올림)
     // =========================
-    float cave = Noise3D((wx2 + S) * CaveFreq, (wy2 - S) * CaveFreq, (wz2 + S) * CaveFreq);
-    float caveMask = cave - CaveThreshold;
+    if (CaveStrength > 0.0f)
+    {
+        const float cave = Noise3D((wx2 + S) * CaveFreq, (wy2 - S) * CaveFreq, (wz2 + S) * CaveFreq);
+        const float mask = cave - CaveThreshold;
 
-    const float Band = 0.25f;
-    float carve = FMath::Clamp(caveMask / Band, 0.0f, 1.0f);
-    carve = carve * carve * (3.0f - 2.0f * carve);
+        float carve = FMath::Clamp(mask / FMath::Max(0.0001f, CaveBand), 0.0f, 1.0f);
+        carve = carve * carve * (3.0f - 2.0f * carve);
 
-    const float CaveStrength = HeightAmp * 0.22f * CaveAmp;
-    density -= carve * CaveStrength * (0.15f + 0.85f * cliffMask);
+        density += carve * CaveStrength * VolumeFade; // 표면 근처에 동굴 집중
+    }
 
-    // =========================
-    // 동굴 2: 양수만 carve
-    // =========================
-    float cave2 = Noise3D((wx2 + S) * (CaveFreq * 2.2f), (wy2 - S) * (CaveFreq * 2.2f), (wz2 + S) * (CaveFreq * 2.2f));
-    float cave2Mask = cave2 - (CaveThreshold + 0.12f);
-
-    const float Band2 = 0.20f;
-    float carve2 = FMath::Clamp(cave2Mask / Band2, 0.0f, 1.0f);
-    carve2 = carve2 * carve2 * (3.0f - 2.0f * carve2);
-
-    density -= carve2 * (HeightAmp * 0.10f) * cliffMask;
-
-    return -density;
+    return density;
 }
