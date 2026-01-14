@@ -1,14 +1,20 @@
-#include "MountainGen.h"
-#include "Modules/ModuleManager.h"
+// Copyright Epic Games, Inc. All Rights Reserved.
 
-IMPLEMENT_MODULE(FMountainGenModule, MountainGen)
+#include "MountainGen.h"
+
+#define LOCTEXT_NAMESPACE "FMountainGenModule"
 
 void FMountainGenModule::StartupModule()
 {
-    // 플러그인 로드 시점
+	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
 }
 
 void FMountainGenModule::ShutdownModule()
 {
-    // 플러그인 언로드 시점
+	// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
+	// we call this function before unloading the module.
 }
+
+#undef LOCTEXT_NAMESPACE
+	
+IMPLEMENT_MODULE(FMountainGenModule, MountainGen)
