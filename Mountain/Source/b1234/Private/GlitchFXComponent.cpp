@@ -1,34 +1,129 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+#include "GlitchEffectComponent.h"
 
+#include "Camera/CameraComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "GameFramework/Actor.h"
 
-#include "GlitchFXComponent.h"
-
-// Sets default values for this component's properties
-UGlitchFXComponent::UGlitchFXComponent()
+UGlitchEffectComponent::UGlitchEffectComponent()
 {
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
 	PrimaryComponentTick.bCanEverTick = true;
-
-	// ...
 }
 
-
-// Called when the game starts
-void UGlitchFXComponent::BeginPlay()
+void UGlitchEffectComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// ...
-	
+	EnsureCamera();
+	ApplyToCamera();
 }
 
+void UGlitchEffectComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	RemoveFromCamera();
+	Super::EndPlay(EndPlayReason);
+}
 
-// Called every frame
-void UGlitchFXComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+void UGlitchEffectComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// ...
+	UpdateParameters(DeltaTime);
 }
 
+void UGlitchEffectComponent::EnsureCamera()
+{
+	if (TargetCamera)
+	{
+		return;
+	}
+
+	// Owner에서 카메라 자동 탐색
+	if (AActor* Owner = GetOwner())
+	{
+		TargetCamera = Owner->FindComponentByClass<UCameraComponent>();
+	}
+}
+
+void UGlitchEffectComponent::ApplyToCamera()
+{
+	if (!TargetCamera || !PostProcessMaterial)
+	{
+		return;
+	}
+
+	// MID 생성
+	MID = UMaterialInstanceDynamic::Create(PostProcessMaterial, this);
+	if (!MID)
+	{
+		return;
+	}
+
+	// Camera의 PostProcessSettings에 Blendable로 추가
+	// (가장 간단한 방법: WeightedBlendables에 push)
+	FWeightedBlendable WB;
+	WB.Object = MID;
+	WB.Weight = 1.0f;
+
+	BlendableIndex = TargetCamera->PostProcessSettings.WeightedBlendables.Array.Add(WB);
+
+	// 초기값 반영
+	MID->SetScalarParameterValue(TEXT("GlitchIntensity"), 0.0f);
+	MID->SetScalarParameterValue(TEXT("RGBShift"), 0.0f);
+	MID->SetScalarParameterValue(TEXT("BlockShift"), 0.0f);
+}
+
+void UGlitchEffectComponent::RemoveFromCamera()
+{
+	if (!TargetCamera)
+	{
+		return;
+	}
+
+	if (BlendableIndex != INDEX_NONE)
+	{
+		auto& Arr = TargetCamera->PostProcessSettings.WeightedBlendables.Array;
+		if (Arr.IsValidIndex(BlendableIndex))
+		{
+			Arr.RemoveAt(BlendableIndex);
+		}
+		BlendableIndex = INDEX_NONE;
+	}
+
+	MID = nullptr;
+}
+
+void UGlitchEffectComponent::TriggerSpike(float PeakIntensity, float Duration)
+{
+	SpikePeak = FMath::Clamp(PeakIntensity, 0.0f, 1.0f);
+	SpikeDuration = FMath::Max(0.05f, Duration);
+	SpikeTimeLeft = SpikeDuration;
+}
+
+void UGlitchEffectComponent::UpdateParameters(float DeltaTime)
+{
+	if (!MID)
+	{
+		return;
+	}
+
+	// 스파이크가 진행 중이면 Intensity를 임시로 덮어씀(삼각 파형)
+	float FinalIntensity = FMath::Clamp(Intensity, 0.0f, 1.0f);
+
+	if (SpikeTimeLeft > 0.0f)
+	{
+		SpikeTimeLeft -= DeltaTime;
+		const float t = 1.0f - (SpikeTimeLeft / SpikeDuration); // 0->1
+		// 0~1~0 (삼각)
+		const float tri = (t <= 0.5f) ? (t / 0.5f) : ((1.0f - t) / 0.5f);
+		FinalIntensity = FMath::Max(FinalIntensity, tri * SpikePeak);
+	}
+
+	// 여기서 글리치 파라미터들을 강도에 비례해 세팅
+	// 값은 취향대로 조절 가능(일단 무난한 범위)
+	const float RGBShift = FinalIntensity * 0.004f;   // 0 ~ 0.004
+	const float BlockShift = FinalIntensity * 0.03f;  // 0 ~ 0.03
+
+	MID->SetScalarParameterValue(TEXT("GlitchIntensity"), FinalIntensity);
+	MID->SetScalarParameterValue(TEXT("RGBShift"), RGBShift);
+	MID->SetScalarParameterValue(TEXT("BlockShift"), BlockShift);
+}
