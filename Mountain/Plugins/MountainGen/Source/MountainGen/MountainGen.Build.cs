@@ -1,4 +1,4 @@
-﻿using UnrealBuildTool;
+using UnrealBuildTool;
 
 public class MountainGen : ModuleRules
 {
@@ -6,20 +6,17 @@ public class MountainGen : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        PublicDependencyModuleNames.AddRange(
-            new string[]
-            {
-                "Core",
-                "CoreUObject",
-                "Engine",
-                "ProceduralMeshComponent"
-            }
-        );
+        PublicDependencyModuleNames.AddRange(new string[]
+        {
+            "Core",
+            "CoreUObject",
+            "Engine",
+            "ProceduralMeshComponent"
+        });
 
-        PrivateDependencyModuleNames.AddRange(
-            new string[]
-            {
-            }
-        );
+        PrivateDependencyModuleNames.AddRange(new string[]
+        {
+            "Projects"
+        });
     }
 }
