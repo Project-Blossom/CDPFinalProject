@@ -1,5 +1,4 @@
 #include "GlitchEffectComponent.h"
-
 #include "Camera/CameraComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/Actor.h"
@@ -12,7 +11,6 @@ UGlitchEffectComponent::UGlitchEffectComponent()
 void UGlitchEffectComponent::BeginPlay()
 {
 	Super::BeginPlay();
-
 	EnsureCamera();
 	ApplyToCamera();
 }
@@ -26,18 +24,12 @@ void UGlitchEffectComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void UGlitchEffectComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
 	UpdateParameters(DeltaTime);
 }
 
 void UGlitchEffectComponent::EnsureCamera()
 {
-	if (TargetCamera)
-	{
-		return;
-	}
-
-	// Owner에서 카메라 자동 탐색
+	if (TargetCamera) return;
 	if (AActor* Owner = GetOwner())
 	{
 		TargetCamera = Owner->FindComponentByClass<UCameraComponent>();
@@ -46,38 +38,24 @@ void UGlitchEffectComponent::EnsureCamera()
 
 void UGlitchEffectComponent::ApplyToCamera()
 {
-	if (!TargetCamera || !PostProcessMaterial)
-	{
-		return;
-	}
+	if (!TargetCamera || !PostProcessMaterial) return;
 
-	// MID 생성
 	MID = UMaterialInstanceDynamic::Create(PostProcessMaterial, this);
-	if (!MID)
-	{
-		return;
-	}
+	if (!MID) return;
 
-	// Camera의 PostProcessSettings에 Blendable로 추가
-	// (가장 간단한 방법: WeightedBlendables에 push)
 	FWeightedBlendable WB;
 	WB.Object = MID;
 	WB.Weight = 1.0f;
 
 	BlendableIndex = TargetCamera->PostProcessSettings.WeightedBlendables.Array.Add(WB);
 
-	// 초기값 반영
-	MID->SetScalarParameterValue(TEXT("GlitchIntensity"), 0.0f);
-	MID->SetScalarParameterValue(TEXT("RGBShift"), 0.0f);
-	MID->SetScalarParameterValue(TEXT("BlockShift"), 0.0f);
+	// 초기 파라미터 밀어넣기
+	PushAllParamsToMID(/*FinalIntensity=*/FMath::Clamp(GlitchIntensity, 0.0f, 1.0f));
 }
 
 void UGlitchEffectComponent::RemoveFromCamera()
 {
-	if (!TargetCamera)
-	{
-		return;
-	}
+	if (!TargetCamera) return;
 
 	if (BlendableIndex != INDEX_NONE)
 	{
@@ -90,6 +68,50 @@ void UGlitchEffectComponent::RemoveFromCamera()
 	}
 
 	MID = nullptr;
+}
+
+void UGlitchEffectComponent::TriggerSpike(float PeakIntensity, float Duration)
+{
+	SpikePeak = FMath::Clamp(PeakIntensity, 0.0f, 1.0f);
+	SpikeDuration = FMath::Max(0.05f, Duration);
+	SpikeTimeLeft = SpikeDuration;
+}
+
+void UGlitchEffectComponent::UpdateParameters(float DeltaTime)
+{
+	if (!MID) return;
+
+	float FinalIntensity = FMath::Clamp(GlitchIntensity, 0.0f, 1.0f);
+
+	// 스파이크 삼각파(원하면 유지)
+	if (SpikeTimeLeft > 0.0f)
+	{
+		SpikeTimeLeft -= DeltaTime;
+		const float t = 1.0f - (SpikeTimeLeft / SpikeDuration); // 0->1
+		const float tri = (t <= 0.5f) ? (t / 0.5f) : ((1.0f - t) / 0.5f);
+		FinalIntensity = FMath::Max(FinalIntensity, tri * SpikePeak);
+	}
+
+	PushAllParamsToMID(FinalIntensity);
+}
+
+void UGlitchEffectComponent::PushAllParamsToMID(float FinalIntensity)
+{
+	if (!MID) return;
+
+	// Intensity
+	MID->SetScalarParameterValue(Param_GlitchIntensity, FinalIntensity);
+
+	// 네가 요청한 2개: ScanFreq / StripCount
+	MID->SetScalarParameterValue(Param_StripCount, StripCount);
+	MID->SetScalarParameterValue(Param_ScanFreq, ScanFreq);
+
+	// 나머지(있으면 같이)
+	MID->SetScalarParameterValue(Param_RGBShift, RGBShift);
+	MID->SetScalarParameterValue(Param_BlockShift, BlockShift);
+	MID->SetScalarParameterValue(Param_ScanIntensity, ScanIntensity);
+}
+MID = nullptr;
 }
 
 void UGlitchEffectComponent::TriggerSpike(float PeakIntensity, float Duration)
