@@ -18,6 +18,7 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 
 // ********** Begin Class AMountainGenWorldActor ***************************************************
 #define FID_Users_User_Documents_Unreal_Projects_Prototype_Plugins_MountainGen_Source_MountainGen_Public_MountainGenWorldActor_h_14_RPC_WRAPPERS_NO_PURE_DECLS \
+	DECLARE_FUNCTION(execRandomizeSeed); \
 	DECLARE_FUNCTION(execSetSeed); \
 	DECLARE_FUNCTION(execRegenerate);
 

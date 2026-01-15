@@ -4,6 +4,10 @@
 #include "Engine/CollisionProfile.h"
 #include "Materials/MaterialInterface.h"
 
+#include "Components/InputComponent.h"
+#include "InputCoreTypes.h"
+#include "GameFramework/PlayerController.h"
+
 #include "VoxelChunk.h"
 #include "VoxelDensityGenerator.h"
 #include "VoxelMesher.h"
@@ -16,15 +20,41 @@ AMountainGenWorldActor::AMountainGenWorldActor()
     ProcMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProcMesh"));
     SetRootComponent(ProcMesh);
 
+    ProcMesh->SetMobility(EComponentMobility::Movable);
+
     ProcMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
     ProcMesh->bUseComplexAsSimpleCollision = true;
+
     ProcMesh->bUseAsyncCooking = false;
+
+    AutoReceiveInput = EAutoReceiveInput::Player0;
 }
 
 void AMountainGenWorldActor::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
+}
+
+void AMountainGenWorldActor::BeginPlay()
+{
+    Super::BeginPlay();
+
     BuildChunkAndMesh();
+
+    if (bEnableRandomSeedKey)
+    {
+        APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+        if (PC)
+        {
+            EnableInput(PC);
+
+            if (InputComponent)
+            {
+                InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
+                InputComponent->BindKey(EKeys::NumPadOne, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
+            }
+        }
+    }
 }
 
 void AMountainGenWorldActor::Regenerate()
@@ -34,16 +64,24 @@ void AMountainGenWorldActor::Regenerate()
 
 void AMountainGenWorldActor::SetSeed(int32 NewSeed)
 {
+    if (Settings.Seed == NewSeed) return;
+
     Settings.Seed = NewSeed;
     BuildChunkAndMesh();
+}
+
+void AMountainGenWorldActor::RandomizeSeed()
+{
+    const int32 NewSeed = FMath::RandRange(0, INT32_MAX);
+    SetSeed(NewSeed);
 }
 
 void AMountainGenWorldActor::BuildChunkAndMesh()
 {
     if (!ProcMesh) return;
+
     ProcMesh->ClearAllMeshSections();
 
-    // Mesher는 샘플 (N+1)을 요구하므로 +1.
     const int32 SampleX = Settings.ChunkX + 1;
     const int32 SampleY = Settings.ChunkY + 1;
     const int32 SampleZ = Settings.ChunkZ + 1;
@@ -53,29 +91,34 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
     const float Voxel = Settings.VoxelSizeCm;
 
-    const FVector TerrainOrigin = GetActorLocation();
-    FVoxelDensityGenerator Gen(Settings, TerrainOrigin);
+    const float HalfX = (Settings.ChunkX * Voxel) * 0.5f;
+    const float HalfY = (Settings.ChunkY * Voxel) * 0.5f;
+    const float HalfZ = (Settings.ChunkZ * Voxel) * 0.5f;
+
+    const FVector ActorWorld = GetActorLocation();
+
+    const FVector SampleOriginWorld = ActorWorld + FVector(-HalfX, -HalfY, -HalfZ);
+
+    const FVector TerrainOriginWorld = ActorWorld;
+    FVoxelDensityGenerator Gen(Settings, TerrainOriginWorld);
 
     for (int32 z = 0; z < SampleZ; ++z)
         for (int32 y = 0; y < SampleY; ++y)
             for (int32 x = 0; x < SampleX; ++x)
             {
-                const FVector WorldPos = TerrainOrigin + FVector(x * Voxel, y * Voxel, z * Voxel);
+                const FVector WorldPos = SampleOriginWorld + FVector(x * Voxel, y * Voxel, z * Voxel);
                 Chunk.Set(x, y, z, Gen.SampleDensity(WorldPos));
             }
 
     FChunkMeshData MeshData;
 
-    // 액터 기준 로컬로 만들려면 ChunkOriginWorld는 0으로 두고,
-    // 샘플 좌표도 로컬이 되게 해야 하는데, 지금은 WorldPos로 샘플링했기 때문에
-    // "정점 생성"은 로컬로 고정하는 게 깔끔하다.
-    //
-    // => ChunkOriginWorld = FVector::ZeroVector 로 주면 정점은 (0..size) 로컬 범위에 생성됨.
+    const FVector ChunkOriginLocal(-HalfX, -HalfY, -HalfZ);
+
     FVoxelMesher::BuildMarchingCubes(
         Chunk,
         Settings.VoxelSizeCm,
         Settings.IsoLevel,
-        FVector::ZeroVector,
+        ChunkOriginLocal,
         MeshData
     );
 
@@ -103,3 +146,19 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     if (VoxelMaterial)
         ProcMesh->SetMaterial(0, VoxelMaterial);
 }
+
+#if WITH_EDITOR
+void AMountainGenWorldActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+    Super::PostEditChangeProperty(PropertyChangedEvent);
+
+    if (!PropertyChangedEvent.Property) return;
+
+    const FName PropName = PropertyChangedEvent.Property->GetFName();
+
+    if (PropName == GET_MEMBER_NAME_CHECKED(FMountainGenSettings, Seed))
+    {
+        BuildChunkAndMesh();
+    }
+}
+#endif

@@ -17,12 +17,16 @@ public:
     AMountainGenWorldActor();
 
     virtual void OnConstruction(const FTransform& Transform) override;
+    virtual void BeginPlay() override;
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen")
     void Regenerate();
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen")
     void SetSeed(int32 NewSeed);
+
+    UFUNCTION(BlueprintCallable, Category = "MountainGen")
+    void RandomizeSeed();
 
 public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen")
@@ -34,6 +38,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen")
     FMountainGenSettings Settings;
 
+    // 런타임에서 1번 키로 랜덤 시드 재생성을 할지
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Runtime")
+    bool bEnableRandomSeedKey = true;
+
 private:
     void BuildChunkAndMesh();
+
+#if WITH_EDITOR
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 };
