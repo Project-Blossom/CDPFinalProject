@@ -1,4 +1,4 @@
-#include "GlitchEffectComponent.h"
+#include "GlitchFXComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/Actor.h"
@@ -6,6 +6,8 @@
 UGlitchEffectComponent::UGlitchEffectComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	MID = nullptr;
+	BlendableIndex = INDEX_NONE;
 }
 
 void UGlitchEffectComponent::BeginPlay()
@@ -111,6 +113,7 @@ void UGlitchEffectComponent::PushAllParamsToMID(float FinalIntensity)
 	MID->SetScalarParameterValue(Param_BlockShift, BlockShift);
 	MID->SetScalarParameterValue(Param_ScanIntensity, ScanIntensity);
 }
+/*
 MID = nullptr;
 }
 
@@ -149,3 +152,4 @@ void UGlitchEffectComponent::UpdateParameters(float DeltaTime)
 	MID->SetScalarParameterValue(TEXT("RGBShift"), RGBShift);
 	MID->SetScalarParameterValue(TEXT("BlockShift"), BlockShift);
 }
+*/

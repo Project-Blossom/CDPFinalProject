@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "GlitchEffectComponent.generated.h"
+#include "GlitchFXComponent.generated.h"
 
 class UCameraComponent;
 class UMaterialInterface;
