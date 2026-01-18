@@ -18,8 +18,9 @@ public class b1234 : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
-		});
+			"Slate",
+            "ProceduralMeshComponent"
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
