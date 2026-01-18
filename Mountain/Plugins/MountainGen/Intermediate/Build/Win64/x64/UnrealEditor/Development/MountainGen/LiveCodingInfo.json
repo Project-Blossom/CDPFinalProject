@@ -3,15 +3,13 @@
 	{
 		"Module.MountainGen.cpp.obj": [
 			"MountainGen.init.gen.cpp.obj",
-			"MountainGenChunkComponent.gen.cpp.obj",
-			"MountainGenChunkTypes.gen.cpp.obj",
-			"MountainGenSettings.gen.cpp.obj",
-			"MountainGenWorldActor.gen.cpp.obj",
+			"MountainGenVoxelActor.gen.cpp.obj",
+			"MyActor.gen.cpp.obj",
 			"PerModuleInline.gen.cpp.obj",
 			"MarchingCubesTables.cpp.obj",
 			"MountainGen.cpp.obj",
-			"MountainGenChunkComponent.cpp.obj",
-			"MountainGenWorldActor.cpp.obj",
+			"MountainGenVoxelActor.cpp.obj",
+			"MyActor.cpp.obj",
 			"VoxelDensityGenerator.cpp.obj",
 			"VoxelMesher.cpp.obj"
 		]
