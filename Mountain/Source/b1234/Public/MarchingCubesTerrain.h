@@ -74,4 +74,43 @@ private:
 
     void DebugDrawDensitySlice() const;
 
+    // ===== Step3: Rock/Cliff Params =====
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Shape")
+    float BaseHeightRatio = 0.35f; // 전체 높이 중 바닥 기준 (0~1)
+
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Shape")
+    float CliffStrength = 0.9f; // 절벽 강도(0~1 정도)
+
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Shape")
+    float CliffFreq = 0.0025f; // 절벽/능선 스케일(작을수록 큰 지형)
+
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Shape")
+    float DetailFreq = 0.02f; // 표면 디테일 노이즈
+
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Shape")
+    float DetailAmp = 80.f; // 디테일 높이(센치)
+
+    // 3D 오버행(동굴/튀어나옴)용
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Shape")
+    float OverhangFreq = 0.015f;
+
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Shape")
+    float OverhangAmp = 120.f;
+
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Shape")
+    bool bEnableOverhang = true;
+
+    void BuildDensityField_CliffRock();
+    float HeightFunc_Cliff(const FVector& P) const;
+    float Noise2D(float X, float Y, float Freq) const;
+    float Noise3D(float X, float Y, float Z, float Freq) const;
+
+    void DebugDrawHeightPoints() const;
+
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Debug")
+    bool bDebugDrawHeight = true;
+
+    UPROPERTY(EditAnywhere, Category = "MarchingCubes|Debug")
+    int32 DebugHeightStep = 2; // 1이면 촘촘, 2~4 추천
+
 };
