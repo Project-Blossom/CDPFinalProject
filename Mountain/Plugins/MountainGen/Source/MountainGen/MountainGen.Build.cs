@@ -1,4 +1,4 @@
-﻿using UnrealBuildTool;
+using UnrealBuildTool;
 
 public class MountainGen : ModuleRules
 {
@@ -12,13 +12,8 @@ public class MountainGen : ModuleRules
                 "Core",
                 "CoreUObject",
                 "Engine",
-                "ProceduralMeshComponent"
-            }
-        );
-
-        PrivateDependencyModuleNames.AddRange(
-            new string[]
-            {
+                "ProceduralMeshComponent",
+                "InputCore"
             }
         );
     }

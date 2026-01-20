@@ -1,157 +1,262 @@
 ﻿#include "VoxelMesher.h"
+#include "VoxelChunk.h"
+#include "MountainGenMeshData.h"
 #include "MarchingCubesTables.h"
 
-// ---------- helpers ----------
-static FORCEINLINE float SampleSafe(const FVoxelChunk& C, int32 X, int32 Y, int32 Z)
+#include "ProceduralMeshComponent.h"
+
+    static FORCEINLINE int32 Idx3(int32 X, int32 Y, int32 Z, int32 SX, int32 SY)
 {
-    X = FMath::Clamp(X, 0, C.SizeX - 1);
-    Y = FMath::Clamp(Y, 0, C.SizeY - 1);
-    Z = FMath::Clamp(Z, 0, C.SizeZ - 1);
-    return C.Get(X, Y, Z);
+    return X + Y * SX + Z * SX * SY;
 }
 
-static FORCEINLINE FVector GradientSafe(const FVoxelChunk& C, int32 X, int32 Y, int32 Z)
-{
-    const float dx = SampleSafe(C, X + 1, Y, Z) - SampleSafe(C, X - 1, Y, Z);
-    const float dy = SampleSafe(C, X, Y + 1, Z) - SampleSafe(C, X, Y - 1, Z);
-    const float dz = SampleSafe(C, X, Y, Z + 1) - SampleSafe(C, X, Y, Z - 1);
-    return FVector(dx, dy, dz).GetSafeNormal();
-}
-
-static FORCEINLINE float SafeT(float Iso, float V1, float V2)
+static FORCEINLINE FVector LerpVertex(const FVector& P1, const FVector& P2, float V1, float V2, float Iso)
 {
     const float Den = (V2 - V1);
-    if (FMath::IsNearlyZero(Den)) return 0.0f;
-    return (Iso - V1) / Den;
+    if (FMath::IsNearlyZero(Den)) return P1;
+    const float T = (Iso - V1) / Den;
+    return P1 + T * (P2 - P1);
 }
 
-// 노멀맵 머티리얼 대응용: 노멀에서 탄젠트 하나 만들어줌
 static FORCEINLINE FProcMeshTangent MakeTangentFromNormal(const FVector& N)
 {
-    // N과 거의 평행하지 않은 축 하나 잡아서 직교기저 만든다
-    const FVector Up = (FMath::Abs(N.Z) < 0.99f) ? FVector::UpVector : FVector::RightVector;
-    const FVector T = FVector::CrossProduct(Up, N).GetSafeNormal();
+    const FVector Ref = (FMath::Abs(N.Z) < 0.999f) ? FVector::UpVector : FVector::ForwardVector;
+    FVector T = (Ref - (Ref | N) * N).GetSafeNormal();
+    if (!T.IsNormalized()) T = FVector::RightVector;
     return FProcMeshTangent(T, false);
 }
 
-// ---------- main ----------
-void FVoxelMesher::BuildMarchingCubes(const FVoxelChunk& Chunk, float VoxelSize, float IsoLevel, FVoxelMeshData& Out)
+void FVoxelMesher::BuildMarchingCubes(
+    const FVoxelChunk& Chunk,
+    float VoxelSizeCm,
+    float IsoLevel,
+    const FVector& ChunkOriginLocal,
+    FChunkMeshData& Out)
 {
-    Out.Reset();
+    Out.Vertices.Reset();
+    Out.Triangles.Reset();
+    Out.Normals.Reset();
+    Out.UV0.Reset();
+    Out.Tangents.Reset();
 
-    const int32 MaxX = Chunk.SizeX - 1;
-    const int32 MaxY = Chunk.SizeY - 1;
-    const int32 MaxZ = Chunk.SizeZ - 1;
+    const int32 SX = Chunk.SizeX;
+    const int32 SY = Chunk.SizeY;
+    const int32 SZ = Chunk.SizeZ;
 
-    static const int8 EdgeConn[12][2] =
-    {
-        {0,1},{1,2},{2,3},{3,0},
-        {4,5},{5,6},{6,7},{7,4},
-        {0,4},{1,5},{2,6},{3,7}
-    };
+    const int32 CX = SX - 1;
+    const int32 CY = SY - 1;
+    const int32 CZ = SZ - 1;
+    if (CX <= 0 || CY <= 0 || CZ <= 0) return;
 
-    static const int8 Corner[8][3] =
-    {
-        {0,0,0},{1,0,0},{1,1,0},{0,1,0},
-        {0,0,1},{1,0,1},{1,1,1},{0,1,1}
-    };
+    auto Sample = [&](int32 x, int32 y, int32 z) -> float
+        {
+            return Chunk.Density[Idx3(x, y, z, SX, SY)];
+        };
 
-    FVector VertList[12];
-    FVector NormList[12];
+    auto LocalP = [&](int32 x, int32 y, int32 z) -> FVector
+        {
+            return ChunkOriginLocal + FVector(x * VoxelSizeCm, y * VoxelSizeCm, z * VoxelSizeCm);
+        };
 
-    auto AddVertex = [&](const FVector& P, const FVector& N)
+    // ============================================================
+    // 에지 캐시
+    // ============================================================
+    const int32 XW = SX - 1;  // X 방향 에지 개수 (x축 격자 간격)
+    const int32 YW = SY - 1;
+    const int32 ZW = SZ - 1;
+
+    if (XW <= 0 || YW <= 0 || ZW <= 0) return;
+
+    // XEdge: x in [0..SX-2], y in [0..SY-1], z in [0..SZ-1]
+    const int32 NumXEdges = XW * SY * SZ;
+    // YEdge: x in [0..SX-1], y in [0..SY-2], z in [0..SZ-1]
+    const int32 NumYEdges = SX * YW * SZ;
+    // ZEdge: x in [0..SX-1], y in [0..SY-1], z in [0..SZ-2]
+    const int32 NumZEdges = SX * SY * ZW;
+
+    TArray<int32> XEdgeCache; XEdgeCache.Init(-1, NumXEdges);
+    TArray<int32> YEdgeCache; YEdgeCache.Init(-1, NumYEdges);
+    TArray<int32> ZEdgeCache; ZEdgeCache.Init(-1, NumZEdges);
+
+    // 인덱스 함수
+    auto XEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32
+        {
+            // x:[0..SX-2], y:[0..SY-1], z:[0..SZ-1]
+            return x + y * XW + z * XW * SY;
+        };
+
+    auto YEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32
+        {
+            // x:[0..SX-1], y:[0..SY-2], z:[0..SZ-1]
+            return x + y * SX + z * SX * YW;
+        };
+
+    auto ZEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32
+        {
+            // x:[0..SX-1], y:[0..SY-1], z:[0..SZ-2]
+            return x + y * SX + z * SX * SY;
+        };
+
+    auto AddSharedVertex = [&](const FVector& P) -> int32
         {
             const int32 Idx = Out.Vertices.Num();
             Out.Vertices.Add(P);
-            Out.Normals.Add(N);
 
-            const FVector aN = N.GetAbs();
-            FVector2D UV;
-            if (aN.Z >= aN.X && aN.Z >= aN.Y)      UV = FVector2D(P.X, P.Y); // 바닥/천장
-            else if (aN.X >= aN.Y)                 UV = FVector2D(P.Y, P.Z); // X가 주인 절벽
-            else                                   UV = FVector2D(P.X, P.Z); // Y가 주인 절벽
+            Out.Normals.Add(FVector::ZeroVector); // 면노멀 누적용
+            Out.UV0.Add(FVector2D(P.X * 0.001f, P.Y * 0.001f));
+            Out.Tangents.Add(FProcMeshTangent(FVector::ForwardVector, false));
 
-            Out.UVs.Add(UV * 0.001f);
-
-            Out.Colors.Add(FLinearColor::White);
-            Out.Tangents.Add(MakeTangentFromNormal(N));
             return Idx;
         };
 
-    for (int32 z = 0; z < MaxZ; ++z)
-        for (int32 y = 0; y < MaxY; ++y)
-            for (int32 x = 0; x < MaxX; ++x)
+    // 캐시+생성
+    auto MakeAndCache = [&](int32& CacheSlot,
+        int32 cA, int32 cB,
+        const float V[8], const FVector P[8]) -> int32
+        {
+            if (CacheSlot != -1) return CacheSlot;
+
+            const FVector PV = LerpVertex(P[cA], P[cB], V[cA], V[cB], IsoLevel);
+            CacheSlot = AddSharedVertex(PV);
+            return CacheSlot;
+        };
+
+    auto GetEdgeVertexIndex = [&](int32 x, int32 y, int32 z,
+        int32 e,
+        const float V[8],
+        const FVector P[8]) -> int32
+        {
+            switch (e)
             {
-                float Val[8];
-                FVector Pos[8];
+                // bottom (z)
+            case 0: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z)];     return MakeAndCache(slot, 0, 1, V, P); }
+            case 1: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z)];     return MakeAndCache(slot, 1, 2, V, P); }
+            case 2: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z)];     return MakeAndCache(slot, 2, 3, V, P); }
+            case 3: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z)];     return MakeAndCache(slot, 3, 0, V, P); }
 
-                for (int32 i = 0; i < 8; ++i)
-                {
-                    const int32 cx = x + Corner[i][0];
-                    const int32 cy = y + Corner[i][1];
-                    const int32 cz = z + Corner[i][2];
+                  // top (z+1)
+            case 4: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z + 1)]; return MakeAndCache(slot, 4, 5, V, P); }
+            case 5: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z + 1)]; return MakeAndCache(slot, 5, 6, V, P); }
+            case 6: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z + 1)]; return MakeAndCache(slot, 6, 7, V, P); }
+            case 7: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z + 1)]; return MakeAndCache(slot, 7, 4, V, P); }
 
-                    Val[i] = SampleSafe(Chunk, cx, cy, cz);
-                    Pos[i] = FVector(cx, cy, cz) * VoxelSize;
-                }
+                  // vertical
+            case 8: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y, z)];     return MakeAndCache(slot, 0, 4, V, P); }
+            case 9: { int32& slot = ZEdgeCache[ZEdgeIdx(x + 1, y, z)];     return MakeAndCache(slot, 1, 5, V, P); }
+            case 10: { int32& slot = ZEdgeCache[ZEdgeIdx(x + 1, y + 1, z)];     return MakeAndCache(slot, 2, 6, V, P); }
+            case 11: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y + 1, z)];     return MakeAndCache(slot, 3, 7, V, P); }
+
+            default:
+                return -1;
+            }
+        };
+
+
+    // ============================================================
+    // 메싱
+    // ============================================================
+    const bool bFlipWinding = true;
+    const bool bFlipNormals = true;
+
+    auto AddTri = [&](int32 A, int32 B, int32 C)
+        {
+            Out.Triangles.Add(A);
+            Out.Triangles.Add(B);
+            Out.Triangles.Add(C);
+
+            const FVector& PA = Out.Vertices[A];
+            const FVector& PB = Out.Vertices[B];
+            const FVector& PC = Out.Vertices[C];
+
+            FVector Face = FVector::CrossProduct(PB - PA, PC - PA);
+            if (Face.SizeSquared() < 1e-12f) return;
+
+            Out.Normals[A] += Face;
+            Out.Normals[B] += Face;
+            Out.Normals[C] += Face;
+        };
+
+    Out.Vertices.Reserve(NumXEdges + NumYEdges + NumZEdges);
+    Out.Normals.Reserve(NumXEdges + NumYEdges + NumZEdges);
+    Out.UV0.Reserve(NumXEdges + NumYEdges + NumZEdges);
+    Out.Tangents.Reserve(NumXEdges + NumYEdges + NumZEdges);
+    Out.Triangles.Reserve(CX * CY * CZ * 15);
+
+    for (int32 z = 0; z < CZ; ++z)
+        for (int32 y = 0; y < CY; ++y)
+            for (int32 x = 0; x < CX; ++x)
+            {
+                float V[8];
+                V[0] = Sample(x, y, z);
+                V[1] = Sample(x + 1, y, z);
+                V[2] = Sample(x + 1, y + 1, z);
+                V[3] = Sample(x, y + 1, z);
+                V[4] = Sample(x, y, z + 1);
+                V[5] = Sample(x + 1, y, z + 1);
+                V[6] = Sample(x + 1, y + 1, z + 1);
+                V[7] = Sample(x, y + 1, z + 1);
 
                 int32 CubeIndex = 0;
-                for (int32 i = 0; i < 8; ++i)
-                    if (Val[i] < IsoLevel)
-                        CubeIndex |= (1 << i);
+                if (V[0] < IsoLevel) CubeIndex |= 1;
+                if (V[1] < IsoLevel) CubeIndex |= 2;
+                if (V[2] < IsoLevel) CubeIndex |= 4;
+                if (V[3] < IsoLevel) CubeIndex |= 8;
+                if (V[4] < IsoLevel) CubeIndex |= 16;
+                if (V[5] < IsoLevel) CubeIndex |= 32;
+                if (V[6] < IsoLevel) CubeIndex |= 64;
+                if (V[7] < IsoLevel) CubeIndex |= 128;
 
-                const int32 EdgeMask = EdgeTable[CubeIndex];
-                if (EdgeMask == 0) continue;
+                const int32 Edges = EdgeTable[CubeIndex];
+                if (Edges == 0) continue;
 
-                for (int32 e = 0; e < 12; ++e)
+                FVector P[8];
+                P[0] = LocalP(x, y, z);
+                P[1] = LocalP(x + 1, y, z);
+                P[2] = LocalP(x + 1, y + 1, z);
+                P[3] = LocalP(x, y + 1, z);
+                P[4] = LocalP(x, y, z + 1);
+                P[5] = LocalP(x + 1, y, z + 1);
+                P[6] = LocalP(x + 1, y + 1, z + 1);
+                P[7] = LocalP(x, y + 1, z + 1);
+
+                for (int32 i = 0; TriTable[CubeIndex][i] != -1; i += 3)
                 {
-                    if (!(EdgeMask & (1 << e))) continue;
+                    const int32 eA = TriTable[CubeIndex][i];
+                    const int32 eB = TriTable[CubeIndex][i + 1];
+                    const int32 eC = TriTable[CubeIndex][i + 2];
 
-                    const int32 a = EdgeConn[e][0];
-                    const int32 b = EdgeConn[e][1];
+                    const int32 iA = GetEdgeVertexIndex(x, y, z, eA, V, P);
+                    const int32 iB = GetEdgeVertexIndex(x, y, z, eB, V, P);
+                    const int32 iC = GetEdgeVertexIndex(x, y, z, eC, V, P);
 
-                    const float t = SafeT(IsoLevel, Val[a], Val[b]);
-                    VertList[e] = FMath::Lerp(Pos[a], Pos[b], t);
+                    if (iA < 0 || iB < 0 || iC < 0) continue;
+                    if (iA == iB || iB == iC || iC == iA) continue;
 
-                    const FVector Na = GradientSafe(Chunk, x + Corner[a][0], y + Corner[a][1], z + Corner[a][2]);
-                    const FVector Nb = GradientSafe(Chunk, x + Corner[b][0], y + Corner[b][1], z + Corner[b][2]);
-
-                    NormList[e] = FMath::Lerp(Na, Nb, t).GetSafeNormal();
-                }
-
-                for (int32 t = 0; TriTable[CubeIndex][t] != -1; t += 3)
-                {
-                    const int32 e0 = TriTable[CubeIndex][t + 0];
-                    const int32 e1 = TriTable[CubeIndex][t + 1];
-                    const int32 e2 = TriTable[CubeIndex][t + 2];
-
-                    const FVector P0 = VertList[e0];
-                    const FVector P1 = VertList[e1];
-                    const FVector P2 = VertList[e2];
-
-                    FVector N0 = NormList[e0];
-                    FVector N1 = NormList[e1];
-                    FVector N2 = NormList[e2];
-
-                    // 삼각형 면 노멀과 정점 노멀이 반대면, winding을 뒤집어 자동 교정
-                    const FVector FaceN = FVector::CrossProduct(P1 - P0, P2 - P0).GetSafeNormal();
-                    const FVector AvgN = (N0 + N1 + N2).GetSafeNormal();
-
-                    bool bFlip = (FVector::DotProduct(FaceN, AvgN) < 0.0f);
-                    if (bFlip)
-                    {
-                        // swap 1<->2
-                        Swap(P1, P2);
-                        Swap(N1, N2);
-                    }
-
-                    const int32 i0 = AddVertex(P0, N0);
-                    const int32 i1 = AddVertex(P1, N1);
-                    const int32 i2 = AddVertex(P2, N2);
-
-                    Out.Triangles.Add(i0);
-                    Out.Triangles.Add(i1);
-                    Out.Triangles.Add(i2);
+                    AddTri(iA, iB, iC);
                 }
             }
+
+    // ============================================================
+    // 노멀/탄젠트 최종
+    // ============================================================
+    for (int32 i = 0; i < Out.Normals.Num(); ++i)
+    {
+        FVector N = Out.Normals[i];
+        if (N.ContainsNaN() || N.IsNearlyZero())
+        {
+            N = FVector::UpVector;
+        }
+        else
+        {
+            N.Normalize();
+        }
+
+        if (bFlipNormals)
+        {
+            N = -N;
+        }
+
+        Out.Normals[i] = N;
+        Out.Tangents[i] = MakeTangentFromNormal(N);
+    }
 }
