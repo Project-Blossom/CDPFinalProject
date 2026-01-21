@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "MarchingCubesTerrain.generated.h"
 
+
 class UProceduralMeshComponent;
 
 UCLASS()
@@ -113,4 +114,14 @@ private:
     UPROPERTY(EditAnywhere, Category = "MarchingCubes|Debug")
     int32 DebugHeightStep = 2; // 1¿Ã∏È √Œ√Œ, 2~4 √ﬂ√µ
 
+    bool TriangulateCell(int32 X, int32 Y, int32 Z,
+        TArray<FVector>& OutVerts,
+        TArray<int32>& OutTris) const;
+
+    FORCEINLINE float Sample(int32 X, int32 Y, int32 Z) const
+    {
+        return Density[Index(X, Y, Z)];
+    }
+
+    FVector VertexInterp(float Iso, const FVector& P1, const FVector& P2, float V1, float V2) const;
 };
