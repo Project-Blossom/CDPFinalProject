@@ -33,13 +33,13 @@ AMountainGenWorldActor::AMountainGenWorldActor()
 void AMountainGenWorldActor::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
+
+    BuildChunkAndMesh();
 }
 
 void AMountainGenWorldActor::BeginPlay()
 {
     Super::BeginPlay();
-
-    BuildChunkAndMesh();
 
     if (bEnableRandomSeedKey)
     {
@@ -67,7 +67,6 @@ void AMountainGenWorldActor::SetSeed(int32 NewSeed)
     if (Settings.Seed == NewSeed) return;
 
     Settings.Seed = NewSeed;
-    BuildChunkAndMesh();
 }
 
 void AMountainGenWorldActor::RandomizeSeed()
@@ -81,6 +80,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     if (!ProcMesh) return;
 
     ProcMesh->ClearAllMeshSections();
+    ProcMesh->ClearCollisionConvexMeshes();
 
     const int32 SampleX = Settings.ChunkX + 1;
     const int32 SampleY = Settings.ChunkY + 1;
@@ -96,8 +96,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     const float HalfZ = (Settings.ChunkZ * Voxel) * 0.5f;
 
     const FVector ActorWorld = GetActorLocation();
-
-    const FVector SampleOriginWorld = ActorWorld + FVector(-HalfX, -HalfY, -HalfZ);
+    const float BaseZ = Settings.BaseHeightCm;
+    const FVector SampleOriginWorld = ActorWorld + FVector(-HalfX, -HalfY, BaseZ);
 
     const FVector TerrainOriginWorld = ActorWorld;
     FVoxelDensityGenerator Gen(Settings, TerrainOriginWorld);
@@ -112,13 +112,13 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
     FChunkMeshData MeshData;
 
-    const FVector ChunkOriginLocal(-HalfX, -HalfY, -HalfZ);
+    const FVector ChunkOriginWorld = SampleOriginWorld;
 
     FVoxelMesher::BuildMarchingCubes(
         Chunk,
         Settings.VoxelSizeCm,
         Settings.IsoLevel,
-        ChunkOriginLocal,
+        ChunkOriginWorld,
         MeshData
     );
 
