@@ -2,6 +2,15 @@
 #include "CoreMinimal.h"
 #include "MountainGenSettings.generated.h"
 
+UENUM(BlueprintType)
+enum class EMountainGenDifficulty : uint8
+{
+    Easy     UMETA(DisplayName = "Easy"),
+    Normal   UMETA(DisplayName = "Normal"),
+    Hard     UMETA(DisplayName = "Hard"),
+    Extreme  UMETA(DisplayName = "Extreme"),
+};
+
 USTRUCT(BlueprintType)
 struct FMountainGenSettings
 {
@@ -29,6 +38,16 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Meshing")
     bool bCreateCollision = true;
 
+    // ===== Difficulty / AutoTune =====
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Difficulty")
+    EMountainGenDifficulty Difficulty = EMountainGenDifficulty::Easy;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Difficulty")
+    bool bAutoTune = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Difficulty", meta = (ClampMin = "1", ClampMax = "20"))
+    int32 AutoTuneMaxIters = 6;
+
     // ===== Terrain Params =====
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Noise")
     float WorldScaleCm = 24000.f;
@@ -36,11 +55,17 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Noise")
     float DetailScaleCm = 6000.f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Volume")
+    float OverhangScaleCm = 8000.f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Height")
     float BaseHeightCm = 0.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Height")
     float HeightAmpCm = 30000.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Height", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float SteepnessDetailFactor = 0.18f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Ramp")
     float RampLengthCm = 60000.f;
@@ -63,7 +88,7 @@ struct FMountainGenSettings
     float VolumeStrength = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Volume")
-    float OverhangFadeCm = 2500.f;
+    float OverhangFadeCm = 15000.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Volume")
     float OverhangBias = 0.55f;
@@ -90,7 +115,21 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cave")
     float CaveBand = 0.12f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cave", meta = (ClampMin = "0.0"))
+    float CaveDepthCm = 1500.0f; // 15m 기본
+
+    // 동굴이 표면 근처에서만 생기게 함
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cave", meta = (ClampMin = "0.0"))
+    float CaveNearSurfaceCm = 8000.0f; // 80m 기본
+
     // Misc
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Misc")
     float GravityStrength = 1.0f;
+
+    // ----- Safety switches -----
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Difficulty")
+    bool bOverhangBiasIncreaseWhenValueIncreases = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Difficulty")
+    bool bCaveHeightsAreAbsoluteWorldZ = false;
 };

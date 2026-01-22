@@ -1,4 +1,4 @@
-#include "VoxelDensityGenerator.h"
+Ôªø#include "VoxelDensityGenerator.h"
 
 static FORCEINLINE float Noise3D(float x, float y, float z)
 {
@@ -58,6 +58,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
     const float WorldFreq = 1.0f / FMath::Max(1.0f, S.WorldScaleCm);
     const float DetailFreq = 1.0f / FMath::Max(1.0f, S.DetailScaleCm);
     const float CaveFreq = 1.0f / FMath::Max(1.0f, S.CaveScaleCm);
+    const float OverFreq = 1.0f / FMath::Max(1.0f, S.OverhangScaleCm);
 
     const float GravityStrength = S.GravityStrength;
 
@@ -75,7 +76,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
     const float CaveBand = S.CaveBand;
 
     // ------------------------------------------------------------
-    // (1) 2D ±‚π› ≥Ù¿Ã ¡ˆ«¸
+    // (1) 2D Í∏∞Î∞ò ÎÜíÏù¥ ÏßÄÌòï
     // ------------------------------------------------------------
     const float h0 = FBM2D((wx + SOff) * WorldFreq, (wy + SOff) * WorldFreq, 5, 2.0f, 0.5f);
     const float h1 = FBM2D((wx - SOff) * DetailFreq, (wy + SOff) * DetailFreq, 4, 2.2f, 0.55f);
@@ -87,7 +88,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
         S.BaseHeightCm
         + Ramp
         + (h0 * S.HeightAmpCm * 0.55f)
-        + (h1 * S.HeightAmpCm * 0.18f);
+        + (h1 * S.HeightAmpCm * S.SteepnessDetailFactor);
 
     float density = (wz - SurfaceHeight);
 
@@ -118,7 +119,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
 
     if (S.VolumeStrength > 0.0f && NearSurface > 0.001f)
     {
-        const float n = FBM3D((wx2 + SOff) * WorldFreq, (wy2 + SOff) * WorldFreq, (wz2 + SOff) * WorldFreq,
+        const float n = FBM3D((wx2 + SOff) * OverFreq, (wy2 + SOff) * OverFreq, (wz2 + SOff) * OverFreq,
             3, 2.0f, 0.5f);
         const float r = Ridged(n);
 
@@ -128,11 +129,11 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
 
         const float carve = ridgeMask * NearSurface * S.VolumeStrength;
 
-        density += carve * (OverhangDepthCm / FMath::Max(1.0f, S.VoxelSizeCm));
+        density += carve * OverhangDepthCm;
     }
 
     // ------------------------------------------------------------
-    // (4) æË¿∫ µø±º(±º≈Œ)
+    // (4) ÎèôÍµ¥
     // ------------------------------------------------------------
     if (S.CaveStrength > 0.0f)
     {
@@ -140,7 +141,10 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
         const float hMaskDown = 1.0f - SmoothStep(CaveMaxHeightCm, CaveMaxHeightCm + 4000.0f, wz);
         const float HeightBand = hMaskUp * hMaskDown;
 
-        const float CaveNearSurface = 1.0f - SmoothStep(0.0f, 2500.0f, FMath::Abs(Above));
+        const float CaveNearSurface =
+            (S.CaveNearSurfaceCm <= 0.0f)
+            ? 1.0f
+            : (1.0f - SmoothStep(0.0f, S.CaveNearSurfaceCm, FMath::Abs(Above)));
 
         if (HeightBand > 0.001f && CaveNearSurface > 0.001f)
         {
@@ -151,7 +155,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
             mask = FMath::Clamp(mask, 0.0f, 1.0f);
             mask = mask * mask * (3.0f - 2.0f * mask);
 
-            density += mask * S.CaveStrength * HeightBand * CaveNearSurface * 2.0f;
+            density += mask * S.CaveStrength * HeightBand * CaveNearSurface * S.CaveDepthCm; // ‚úÖ ÍπäÏù¥ Î≥ÄÏàòÌôî
         }
     }
 
