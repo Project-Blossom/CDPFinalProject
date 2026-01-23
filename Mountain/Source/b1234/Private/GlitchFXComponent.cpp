@@ -6,8 +6,13 @@
 UGlitchEffectComponent::UGlitchEffectComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+
 	MID = nullptr;
 	BlendableIndex = INDEX_NONE;
+
+	NextGlitchIn = 0.0f;
+	BurstLeft = 0;
+	BurstTimer = 0.0f;
 }
 
 void UGlitchEffectComponent::BeginPlay()
@@ -15,6 +20,9 @@ void UGlitchEffectComponent::BeginPlay()
 	Super::BeginPlay();
 	EnsureCamera();
 	ApplyToCamera();
+
+	// 첫 자동 글리치까지 대기 시간 랜덤
+	NextGlitchIn = FMath::FRandRange(AutoMinInterval, AutoMaxInterval);
 }
 
 void UGlitchEffectComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -52,7 +60,7 @@ void UGlitchEffectComponent::ApplyToCamera()
 	BlendableIndex = TargetCamera->PostProcessSettings.WeightedBlendables.Array.Add(WB);
 
 	// 초기 파라미터 밀어넣기
-	PushAllParamsToMID(/*FinalIntensity=*/FMath::Clamp(GlitchIntensity, 0.0f, 1.0f));
+	PushAllParamsToMID(FMath::Clamp(GlitchIntensity, 0.0f, 1.0f));
 }
 
 void UGlitchEffectComponent::RemoveFromCamera()
@@ -77,15 +85,57 @@ void UGlitchEffectComponent::TriggerSpike(float PeakIntensity, float Duration)
 	SpikePeak = FMath::Clamp(PeakIntensity, 0.0f, 1.0f);
 	SpikeDuration = FMath::Max(0.05f, Duration);
 	SpikeTimeLeft = SpikeDuration;
+
+	// 펄스 시작 시 프리셋 랜덤(매번 다른 패턴)
+	RandomizePresetForPulse(SpikePeak);
 }
 
 void UGlitchEffectComponent::UpdateParameters(float DeltaTime)
 {
 	if (!MID) return;
 
+	// --- Auto Glitch Scheduler ---
+	if (bAutoGlitch)
+	{
+		if (BurstLeft > 0)
+		{
+			BurstTimer -= DeltaTime;
+			if (BurstTimer <= 0.0f)
+			{
+				const float peak = FMath::FRandRange(AutoPeakMin, AutoPeakMax);
+				const float dur = FMath::FRandRange(AutoDurMin, AutoDurMax);
+				TriggerSpike(peak, dur);
+
+				BurstLeft--;
+				BurstTimer = BurstInterval;
+			}
+		}
+		else
+		{
+			NextGlitchIn -= DeltaTime;
+			if (NextGlitchIn <= 0.0f)
+			{
+				if (FMath::FRand() < BurstChance)
+				{
+					BurstLeft = FMath::RandRange(BurstMinCount, BurstMaxCount);
+					BurstTimer = 0.0f; // 즉시 1발
+				}
+				else
+				{
+					const float peak = FMath::FRandRange(AutoPeakMin, AutoPeakMax);
+					const float dur = FMath::FRandRange(AutoDurMin, AutoDurMax);
+					TriggerSpike(peak, dur);
+				}
+
+				NextGlitchIn = FMath::FRandRange(AutoMinInterval, AutoMaxInterval);
+			}
+		}
+	}
+
+	// --- 기존 로직 ---
 	float FinalIntensity = FMath::Clamp(GlitchIntensity, 0.0f, 1.0f);
 
-	// 스파이크 삼각파(원하면 유지)
+	// 스파이크 (기본: 삼각파)
 	if (SpikeTimeLeft > 0.0f)
 	{
 		SpikeTimeLeft -= DeltaTime;
@@ -101,55 +151,37 @@ void UGlitchEffectComponent::PushAllParamsToMID(float FinalIntensity)
 {
 	if (!MID) return;
 
-	// Intensity
 	MID->SetScalarParameterValue(Param_GlitchIntensity, FinalIntensity);
-
-	// 네가 요청한 2개: ScanFreq / StripCount
 	MID->SetScalarParameterValue(Param_StripCount, StripCount);
 	MID->SetScalarParameterValue(Param_ScanFreq, ScanFreq);
-
-	// 나머지(있으면 같이)
 	MID->SetScalarParameterValue(Param_RGBShift, RGBShift);
 	MID->SetScalarParameterValue(Param_BlockShift, BlockShift);
 	MID->SetScalarParameterValue(Param_ScanIntensity, ScanIntensity);
 }
-/*
-MID = nullptr;
-}
 
-void UGlitchEffectComponent::TriggerSpike(float PeakIntensity, float Duration)
+void UGlitchEffectComponent::RandomizePresetForPulse(float Peak01)
 {
-	SpikePeak = FMath::Clamp(PeakIntensity, 0.0f, 1.0f);
-	SpikeDuration = FMath::Max(0.05f, Duration);
-	SpikeTimeLeft = SpikeDuration;
-}
+	const float k = FMath::Clamp(Peak01, 0.0f, 1.0f);
 
-void UGlitchEffectComponent::UpdateParameters(float DeltaTime)
-{
-	if (!MID)
+	// StripCount: 강할수록 줄이 굵어지게(StripCount 낮아짐) 유도
+	const float strip = FMath::Lerp(StripMax, StripMin, k) * FMath::FRandRange(0.8f, 1.2f);
+
+	// ScanFreq: 강할 때 극단값도 나오게
+	float scan = FMath::FRandRange(ScanFreqMin, ScanFreqMax);
+	if (k > 0.7f && FMath::FRand() < 0.35f)
 	{
-		return;
+		scan = (FMath::FRand() < 0.5f) ? ScanFreqMin : ScanFreqMax;
 	}
 
-	// 스파이크가 진행 중이면 Intensity를 임시로 덮어씀(삼각 파형)
-	float FinalIntensity = FMath::Clamp(Intensity, 0.0f, 1.0f);
+	// 나머지는 강도에 비례해서 스케일
+	const float rgb = FMath::FRandRange(RGBShiftMin, RGBShiftMax) * FMath::Lerp(0.6f, 1.0f, k);
+	const float block = FMath::FRandRange(BlockShiftMin, BlockShiftMax) * FMath::Lerp(0.6f, 1.0f, k);
+	const float scanI = FMath::FRandRange(ScanIntensityMin, ScanIntensityMax) * FMath::Lerp(0.4f, 1.0f, k);
 
-	if (SpikeTimeLeft > 0.0f)
-	{
-		SpikeTimeLeft -= DeltaTime;
-		const float t = 1.0f - (SpikeTimeLeft / SpikeDuration); // 0->1
-		// 0~1~0 (삼각)
-		const float tri = (t <= 0.5f) ? (t / 0.5f) : ((1.0f - t) / 0.5f);
-		FinalIntensity = FMath::Max(FinalIntensity, tri * SpikePeak);
-	}
-
-	// 여기서 글리치 파라미터들을 강도에 비례해 세팅
-	// 값은 취향대로 조절 가능(일단 무난한 범위)
-	const float RGBShift = FinalIntensity * 0.004f;   // 0 ~ 0.004
-	const float BlockShift = FinalIntensity * 0.03f;  // 0 ~ 0.03
-
-	MID->SetScalarParameterValue(TEXT("GlitchIntensity"), FinalIntensity);
-	MID->SetScalarParameterValue(TEXT("RGBShift"), RGBShift);
-	MID->SetScalarParameterValue(TEXT("BlockShift"), BlockShift);
+	// 컴포넌트 값 갱신(Details에서 확인 가능)
+	StripCount = strip;
+	ScanFreq = scan;
+	RGBShift = rgb;
+	BlockShift = block;
+	ScanIntensity = scanI;
 }
-*/

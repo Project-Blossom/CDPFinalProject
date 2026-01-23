@@ -479,7 +479,7 @@ UScriptStruct* Z_Construct_UScriptStruct_FMountainGenSettings()
 // ********** End ScriptStruct FMountainGenSettings ************************************************
 
 // ********** Begin Registration *******************************************************************
-struct Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Prototype_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics
+struct Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Mountain___copy_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics
 {
 	static constexpr FEnumRegisterCompiledInInfo EnumInfo[] = {
 		{ EMountainGenDifficulty_StaticEnum, TEXT("EMountainGenDifficulty"), &Z_Registration_Info_UEnum_EMountainGenDifficulty, CONSTRUCT_RELOAD_VERSION_INFO(FEnumReloadVersionInfo, 2314225620U) },
@@ -487,12 +487,12 @@ struct Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Prototype_
 	static constexpr FStructRegisterCompiledInInfo ScriptStructInfo[] = {
 		{ FMountainGenSettings::StaticStruct, Z_Construct_UScriptStruct_FMountainGenSettings_Statics::NewStructOps, TEXT("MountainGenSettings"),&Z_Registration_Info_UScriptStruct_FMountainGenSettings, CONSTRUCT_RELOAD_VERSION_INFO(FStructReloadVersionInfo, sizeof(FMountainGenSettings), 1910493211U) },
 	};
-}; // Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Prototype_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics 
-static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Prototype_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_3206550863{
+}; // Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Mountain___copy_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics 
+static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Mountain___copy_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_3206550863{
 	TEXT("/Script/MountainGen"),
 	nullptr, 0,
-	Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Prototype_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Prototype_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics::ScriptStructInfo),
-	Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Prototype_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Prototype_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics::EnumInfo),
+	Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Mountain___copy_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics::ScriptStructInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Mountain___copy_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics::ScriptStructInfo),
+	Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Mountain___copy_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics::EnumInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_User_Documents_Unreal_Projects_Mountain___copy_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h__Script_MountainGen_Statics::EnumInfo),
 };
 // ********** End Registration *********************************************************************
 
