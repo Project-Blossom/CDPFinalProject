@@ -6,8 +6,7 @@ class FVoxelDensityGenerator
 {
 public:
     FVoxelDensityGenerator(const FMountainGenSettings& InSettings, const FVector& InTerrainOrigin)
-        : S(InSettings), TerrainOrigin(InTerrainOrigin)
-    {
+        : S(InSettings), TerrainOrigin(InTerrainOrigin) {
     }
 
     float SampleDensity(const FVector& WorldPos) const;

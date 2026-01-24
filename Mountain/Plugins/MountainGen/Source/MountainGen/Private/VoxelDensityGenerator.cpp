@@ -45,11 +45,6 @@ static FORCEINLINE float Ridged(float n)
     return 1.0f - FMath::Abs(n);
 }
 
-static FORCEINLINE float Clamp01(float x)
-{
-    return FMath::Clamp(x, 0.0f, 1.0f);
-}
-
 float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
 {
     const FVector P = WorldPos - TerrainOrigin;
@@ -62,21 +57,50 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
 
     const float WorldFreq = 1.0f / FMath::Max(1.0f, S.WorldScaleCm);
     const float DetailFreq = 1.0f / FMath::Max(1.0f, S.DetailScaleCm);
-
     const float CaveFreq = 1.0f / FMath::Max(1.0f, S.CaveScaleCm);
     const float OverFreq = 1.0f / FMath::Max(1.0f, S.OverhangScaleCm);
 
-    const float WarpFreq = 1.0f / FMath::Max(1.0f, S.WarpPatchCm);
+    const float GravityStrength = S.GravityStrength;
 
-    const float Base3DFreq = 1.0f / FMath::Max(100.0f, S.BaseField3DScaleCm);
+    const float WarpStrength = S.WarpStrength;
+    const float WarpAmpCm = S.WarpAmpCm;
+    const float WarpPatchCm = S.WarpPatchCm;
+    const float WarpFreq = 1.0f / FMath::Max(1.0f, WarpPatchCm);
+
+    const float OverhangBias = S.OverhangBias;
+    const float OverhangDepthCm = S.OverhangDepthCm;
+
+    const float CaveMinHeightCm = S.CaveMinHeightCm;
+    const float CaveMaxHeightCm = S.CaveMaxHeightCm;
+    const float CaveThreshold = S.CaveThreshold;
+    const float CaveBand = S.CaveBand;
 
     // ------------------------------------------------------------
-    // (1) Domain Warp
+    // (1) 2D 기반 높이 지형
+    // ------------------------------------------------------------
+    const float h0 = FBM2D((wx + SOff) * WorldFreq, (wy + SOff) * WorldFreq, 5, 2.0f, 0.5f);
+    const float h1 = FBM2D((wx - SOff) * DetailFreq, (wy + SOff) * DetailFreq, 4, 2.2f, 0.55f);
+
+    const float RampT = FMath::Clamp(wx / FMath::Max(1.0f, S.RampLengthCm), 0.0f, 1.0f);
+    const float Ramp = RampT * S.RampHeightCm;
+
+    const float SurfaceHeight =
+        S.BaseHeightCm
+        + Ramp
+        + (h0 * S.HeightAmpCm * 0.55f)
+        + (h1 * S.HeightAmpCm * S.SteepnessDetailFactor);
+
+    float density = (wz - SurfaceHeight);
+
+    density -= (1.0f - SmoothStep(0.0f, 5000.0f, (wz - SurfaceHeight))) * (GravityStrength * 0.15f);
+
+    // ------------------------------------------------------------
+    // (2) Domain Warp
     // ------------------------------------------------------------
     float wx2 = wx, wy2 = wy, wz2 = wz;
-    if (S.WarpStrength > 0.0f && S.WarpAmpCm > 0.0f)
+    if (WarpStrength > 0.0f && WarpAmpCm > 0.0f)
     {
-        const float W = S.WarpAmpCm * S.WarpStrength;
+        const float W = WarpAmpCm * WarpStrength;
 
         const float wnx = Noise3D((wx + SOff) * WarpFreq, (wy + SOff) * WarpFreq, 0.0f);
         const float wny = Noise3D((wx - SOff) * WarpFreq, (wy + SOff) * WarpFreq, 0.0f);
@@ -88,77 +112,33 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
     }
 
     // ------------------------------------------------------------
-    // (2) 2D 기반 높이
-    // ------------------------------------------------------------
-    const float h0 = FBM2D((wx2 + SOff) * WorldFreq, (wy2 + SOff) * WorldFreq, 5, 2.0f, 0.5f);
-    const float h1 = FBM2D((wx2 - SOff) * DetailFreq, (wy2 + SOff) * DetailFreq, 4, 2.2f, 0.55f);
-
-    const float RampT = FMath::Clamp(wx2 / FMath::Max(1.0f, S.RampLengthCm), 0.0f, 1.0f);
-    const float Ramp = RampT * S.RampHeightCm;
-
-    const float SurfaceHeight =
-        S.BaseHeightCm
-        + Ramp
-        + (h0 * S.HeightAmpCm * 0.55f)
-        + (h1 * S.HeightAmpCm * S.SteepnessDetailFactor);
-
-    float density = (wz2 - SurfaceHeight);
-
-    // ------------------------------------------------------------
-    // (2.5) Base 3D Field
-    // ------------------------------------------------------------
-    if (S.BaseField3DStrengthCm > 0.0f)
-    {
-        const int32 Oct = FMath::Clamp(S.BaseField3DOctaves, 1, 8);
-
-        const float n3 = FBM3D(
-            (wx2 + SOff) * Base3DFreq,
-            (wy2 - SOff) * Base3DFreq,
-            (wz2 + SOff) * Base3DFreq,
-            Oct, 2.0f, 0.5f
-        );
-
-        float r = Ridged(n3);
-        r = Clamp01(r);
-        r = FMath::Pow(r, FMath::Clamp(S.BaseField3DRidgedPower, 1.0f, 4.0f));
-
-        const float disp01 = (r * 2.0f - 1.0f); // -1..1
-        density += disp01 * S.BaseField3DStrengthCm;
-    }
-
-    // ------------------------------------------------------------
     // (3) Overhang
     // ------------------------------------------------------------
-    const float Above = (wz2 - SurfaceHeight);
+    const float Above = (wz - SurfaceHeight);
     const float NearSurface = 1.0f - SmoothStep(0.0f, FMath::Max(1.0f, S.OverhangFadeCm), FMath::Abs(Above));
 
     if (S.VolumeStrength > 0.0f && NearSurface > 0.001f)
     {
-        const float n = FBM3D(
-            (wx2 + SOff) * OverFreq,
-            (wy2 + SOff) * OverFreq,
-            (wz2 + SOff) * OverFreq,
-            5, 2.0f, 0.5f
-        );
+        const float n = FBM3D((wx2 + SOff) * OverFreq, (wy2 + SOff) * OverFreq, (wz2 + SOff) * OverFreq,
+            3, 2.0f, 0.5f);
+        const float r = Ridged(n);
 
-        float r = Ridged(n);
-        r = Clamp01(r);
-
-        float ridgeMask = (r - S.OverhangBias) / FMath::Max(0.0001f, (1.0f - S.OverhangBias));
-        ridgeMask = Clamp01(ridgeMask);
-        ridgeMask = FMath::Pow(ridgeMask, 2.2f);
+        float ridgeMask = (r - OverhangBias) / FMath::Max(0.0001f, (1.0f - OverhangBias));
+        ridgeMask = FMath::Clamp(ridgeMask, 0.0f, 1.0f);
+        ridgeMask = ridgeMask * ridgeMask * (3.0f - 2.0f * ridgeMask);
 
         const float carve = ridgeMask * NearSurface * S.VolumeStrength;
-        density += carve * S.OverhangDepthCm;
+
+        density += carve * OverhangDepthCm;
     }
 
     // ------------------------------------------------------------
-    // (4) Cave
+    // (4) 동굴
     // ------------------------------------------------------------
     if (S.CaveStrength > 0.0f)
     {
-        const float hMaskUp = SmoothStep(S.CaveMinHeightCm, S.CaveMinHeightCm + 4000.0f, wz2);
-        const float hMaskDown = 1.0f - SmoothStep(S.CaveMaxHeightCm, S.CaveMaxHeightCm + 4000.0f, wz2);
+        const float hMaskUp = SmoothStep(CaveMinHeightCm, CaveMinHeightCm + 4000.0f, wz);
+        const float hMaskDown = 1.0f - SmoothStep(CaveMaxHeightCm, CaveMaxHeightCm + 4000.0f, wz);
         const float HeightBand = hMaskUp * hMaskDown;
 
         const float CaveNearSurface =
@@ -168,20 +148,14 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPos) const
 
         if (HeightBand > 0.001f && CaveNearSurface > 0.001f)
         {
-            const float c = FBM3D(
-                (wx2 + SOff) * CaveFreq,
-                (wy2 - SOff) * CaveFreq,
-                (wz2 + SOff) * CaveFreq,
-                5, 2.0f, 0.5f
-            );
-
+            const float c = Noise3D((wx2 + SOff) * CaveFreq, (wy2 - SOff) * CaveFreq, (wz2 + SOff) * CaveFreq);
             const float c01 = (c * 0.5f + 0.5f);
 
-            float mask = (c01 - S.CaveThreshold) / FMath::Max(0.0001f, S.CaveBand);
-            mask = Clamp01(mask);
-            mask = FMath::Pow(mask, 1.8f);
+            float mask = (c01 - CaveThreshold) / FMath::Max(0.0001f, CaveBand);
+            mask = FMath::Clamp(mask, 0.0f, 1.0f);
+            mask = mask * mask * (3.0f - 2.0f * mask);
 
-            density += mask * S.CaveStrength * HeightBand * CaveNearSurface * S.CaveDepthCm;
+            density += mask * S.CaveStrength * HeightBand * CaveNearSurface * S.CaveDepthCm; // ✅ 깊이 변수화
         }
     }
 

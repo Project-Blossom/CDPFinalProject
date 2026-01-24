@@ -102,7 +102,9 @@ static FMGMetrics MGComputeMetricsQuick(
     FMGMetrics M;
     const float Iso = S.IsoLevel;
 
+    // 같은 Settings면 고정
     FRandomStream Rng((int32)(S.Seed ^ 0x51A3B9D1));
+
     FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
 
     // ---- Cave void ratio ----
@@ -110,6 +112,7 @@ static FMGMetrics MGComputeMetricsQuick(
     int32 Air = 0;
 
     float Z0, Z1;
+
     if (!S.bCaveHeightsAreAbsoluteWorldZ)
     {
         Z0 = WorldMinCm.Z + S.CaveMinHeightCm;
@@ -131,7 +134,7 @@ static FMGMetrics MGComputeMetricsQuick(
         const float z = Rng.FRandRange(Z0, Z1);
 
         const float d = Gen.SampleDensity(FVector(x, y, z));
-        if (d < Iso) Air++;
+        if (d < Iso) Air++; // d < Iso => 공기
     }
 
     M.CaveSamples = CaveSamples;
@@ -139,9 +142,12 @@ static FMGMetrics MGComputeMetricsQuick(
 
     // ---- Overhang ratio + Steep ratio ----
     const int32 SurfaceTry = 45000;
+
+    // 표면 근처 판정 폭
     const float SurfaceEps = 25.f;
     const float NormalStep = FMath::Max(2.f * S.VoxelSizeCm, 80.f);
 
+    // 급경사 기준: Steep = 1 - |N.Z|, 0.6이면 |N.Z| <= 0.4
     const float SteepThreshold = 0.60f;
 
     int32 Near = 0;
@@ -157,18 +163,23 @@ static FMGMetrics MGComputeMetricsQuick(
         const FVector P(x, y, z);
         const float d = Gen.SampleDensity(P);
 
+        // 표면 근처만 표본으로 사용
         if (FMath::Abs(d - Iso) > SurfaceEps)
             continue;
 
         const FVector N = MGEstimateNormalFromDensity(Gen, P, NormalStep);
-        const float UpDot = FVector::DotProduct(N, FVector::UpVector);
+        const float UpDot = FVector::DotProduct(N, FVector::UpVector); // == N.Z
 
         Near++;
 
-        if (UpDot < 0.0f) Over++;
+        // 오버행: 위를 바라보지 못하면(= 아래로 향하면)
+        if (UpDot < 0.0f)
+            Over++;
 
+        // 급경사: Steep = 1 - |N.Z|
         const float Steepness = 1.0f - FMath::Abs(UpDot);
-        if (Steepness >= SteepThreshold) Steep++;
+        if (Steepness >= SteepThreshold)
+            Steep++;
     }
 
     M.SurfaceNearSamples = Near;
@@ -202,11 +213,14 @@ static void MGFeedbackStep_Overhang(FMountainGenSettings& S, const FMGRange& Tar
     const float BiasDelta = Err * GainBias;
 
     if (!S.bOverhangBiasIncreaseWhenValueIncreases)
+    {
         S.OverhangBias = MGClamp01(S.OverhangBias - BiasDelta);
+    }
     else
+    {
         S.OverhangBias = MGClamp01(S.OverhangBias + BiasDelta);
-
-    const float GainDepth = 1400.f;
+    }
+    const float GainDepth = 1400.f; // cm
     S.OverhangDepthCm = FMath::Clamp(S.OverhangDepthCm + Err * GainDepth, 200.f, 15000.f);
 
     const float GainVol = 0.22f;
@@ -221,6 +235,7 @@ static void MGFeedbackStep_Steep(FMountainGenSettings& S, const FMGRange& Target
     const float Err = Target.Center() - MeasuredSteep;
 
     const float Gain = 0.55f;
+
     const float Factor = FMath::Clamp(FMath::Exp(-Err * Gain), 0.75f, 1.35f);
     S.DetailScaleCm *= Factor;
 
@@ -235,6 +250,7 @@ static bool MGTuneSettingsFeedback(
     const FVector& WorldMaxCm)
 {
     const FMGTargets Targets = MGTargetsFromDifficulty(InOutS.Difficulty);
+
     const int32 MaxIters = FMath::Clamp(InOutS.AutoTuneMaxIters, 1, 20);
 
     for (int32 Iter = 0; Iter < MaxIters; ++Iter)
@@ -248,10 +264,16 @@ static bool MGTuneSettingsFeedback(
         if (bCaveOK && bOverOK && bSteepOK)
             return true;
 
-        if (!bCaveOK)  MGFeedbackStep_Cave(InOutS, Targets.CaveVoidRatio, M.CaveVoidRatio);
-        if (!bOverOK)  MGFeedbackStep_Overhang(InOutS, Targets.OverhangRatio, M.OverhangRatio);
-        if (!bSteepOK) MGFeedbackStep_Steep(InOutS, Targets.SteepRatio, M.SteepRatio);
+        if (!bCaveOK)
+            MGFeedbackStep_Cave(InOutS, Targets.CaveVoidRatio, M.CaveVoidRatio);
 
+        if (!bOverOK)
+            MGFeedbackStep_Overhang(InOutS, Targets.OverhangRatio, M.OverhangRatio);
+
+        if (!bSteepOK)
+            MGFeedbackStep_Steep(InOutS, Targets.SteepRatio, M.SteepRatio);
+
+        // ---- sanity clamps ----
         InOutS.WarpStrength = FMath::Clamp(InOutS.WarpStrength, 0.f, 3.f);
         InOutS.VolumeStrength = FMath::Clamp(InOutS.VolumeStrength, 0.f, 3.f);
         InOutS.CaveStrength = FMath::Clamp(InOutS.CaveStrength, 0.f, 3.f);
@@ -259,6 +281,7 @@ static bool MGTuneSettingsFeedback(
         InOutS.CaveScaleCm = FMath::Max(InOutS.CaveScaleCm, 100.f);
 
         InOutS.OverhangFadeCm = FMath::Clamp(InOutS.OverhangFadeCm, 50.f, 60000.f);
+
         InOutS.WorldScaleCm = FMath::Max(InOutS.WorldScaleCm, 1000.f);
         InOutS.DetailScaleCm = FMath::Clamp(InOutS.DetailScaleCm, 300.f, InOutS.WorldScaleCm);
     }
@@ -266,17 +289,8 @@ static bool MGTuneSettingsFeedback(
     return false;
 }
 
-static constexpr int32 kAutoTuneFixedSeed = 1337;
-
-static void MGCopyTunedParams_KeepSeed(FMountainGenSettings& Dst, const FMountainGenSettings& SrcTuned)
-{
-    const int32 KeepSeed = Dst.Seed;
-    Dst = SrcTuned;
-    Dst.Seed = KeepSeed;
-}
-
 // ==============================
-// Actor impl
+// Actor
 // ==============================
 
 AMountainGenWorldActor::AMountainGenWorldActor()
@@ -287,25 +301,18 @@ AMountainGenWorldActor::AMountainGenWorldActor()
     SetRootComponent(ProcMesh);
 
     ProcMesh->SetMobility(EComponentMobility::Movable);
+
     ProcMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
     ProcMesh->bUseComplexAsSimpleCollision = true;
+
     ProcMesh->bUseAsyncCooking = false;
 
     AutoReceiveInput = EAutoReceiveInput::Player0;
 }
 
-void AMountainGenWorldActor::InvalidateAutoTuneCache()
-{
-    bHasAutoTunedCache = false;
-}
-
 void AMountainGenWorldActor::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
-
-    // 에디터에서 값이 바뀐 상태 반영 위해 무효화
-    InvalidateAutoTuneCache();
-
     BuildChunkAndMesh();
 }
 
@@ -331,7 +338,6 @@ void AMountainGenWorldActor::BeginPlay()
 
 void AMountainGenWorldActor::Regenerate()
 {
-    InvalidateAutoTuneCache();
     BuildChunkAndMesh();
 }
 
@@ -339,9 +345,6 @@ void AMountainGenWorldActor::SetSeed(int32 NewSeed)
 {
     if (Settings.Seed == NewSeed) return;
     Settings.Seed = NewSeed;
-
-    InvalidateAutoTuneCache();
-    BuildChunkAndMesh();
 }
 
 void AMountainGenWorldActor::RandomizeSeed()
@@ -376,41 +379,16 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
     const FVector TerrainOriginWorld = ActorWorld;
 
-    // ============================================================
-    // AutoTune은 한 번만 계산해서 CachedTunedSettings에 저장
-    // ============================================================
+    // ===== AutoTune BEFORE sampling =====
     if (Settings.bAutoTune)
     {
-        if (!bHasAutoTunedCache)
-        {
-            const FVector WorldMin = SampleOriginWorld;
-            const FVector WorldMax =
-                SampleOriginWorld + FVector(Settings.ChunkX * Voxel, Settings.ChunkY * Voxel, Settings.ChunkZ * Voxel);
+        const FVector WorldMin = SampleOriginWorld;
+        const FVector WorldMax =
+            SampleOriginWorld + FVector(Settings.ChunkX * Voxel, Settings.ChunkY * Voxel, Settings.ChunkZ * Voxel);
 
-            FMountainGenSettings TuneS = Settings;
-            TuneS.Seed = kAutoTuneFixedSeed; // 튠 측정은 고정 시드
-
-            MGTuneSettingsFeedback(TuneS, TerrainOriginWorld, WorldMin, WorldMax);
-
-            CachedTunedSettings = TuneS;
-            bHasAutoTunedCache = true;
-        }
-
-        // 튠 결과를 적용하되 Seed는 유지
-        MGCopyTunedParams_KeepSeed(Settings, CachedTunedSettings);
+        MGTuneSettingsFeedback(Settings, TerrainOriginWorld, WorldMin, WorldMax);
     }
 
-    // ============================================================
-    // Seed < 0 이면 여기서 랜덤 확정
-    // ============================================================
-    if (Settings.Seed < 0)
-    {
-        Settings.Seed = FMath::RandRange(0, INT32_MAX);
-    }
-
-    // ============================================================
-    // 최종 Settings로 밀도 샘플링
-    // ============================================================
     FVoxelDensityGenerator Gen(Settings, TerrainOriginWorld);
 
     for (int32 z = 0; z < SampleZ; ++z)
@@ -422,6 +400,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             }
 
     FChunkMeshData MeshData;
+
     const FVector ChunkOriginWorld = SampleOriginWorld;
 
     FVoxelMesher::BuildMarchingCubes(
@@ -461,9 +440,9 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 void AMountainGenWorldActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
+
     if (!PropertyChangedEvent.Property) return;
 
-    InvalidateAutoTuneCache();
     BuildChunkAndMesh();
 }
 #endif

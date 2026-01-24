@@ -23,6 +23,12 @@ void UGlitchEffectComponent::BeginPlay()
 
 	// 첫 자동 글리치까지 대기 시간 랜덤
 	NextGlitchIn = FMath::FRandRange(AutoMinInterval, AutoMaxInterval);
+
+	UE_LOG(LogTemp, Warning, TEXT("[Glitch] BeginPlay Owner=%s  TargetCamera=%s  PPMat=%s"),
+		*GetNameSafe(GetOwner()),
+		*GetNameSafe(TargetCamera),
+		*GetNameSafe(PostProcessMaterial));
+
 }
 
 void UGlitchEffectComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -43,6 +49,16 @@ void UGlitchEffectComponent::EnsureCamera()
 	if (AActor* Owner = GetOwner())
 	{
 		TargetCamera = Owner->FindComponentByClass<UCameraComponent>();
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (APlayerController* PC = World->GetFirstPlayerController())
+		{
+			AActor* VT = PC->GetViewTarget();
+			UE_LOG(LogTemp, Warning, TEXT("[Glitch] ViewTarget = %s"),
+				VT ? *VT->GetName() : TEXT("None"));
+		}
 	}
 }
 

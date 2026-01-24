@@ -17,7 +17,7 @@ struct FMountainGenSettings
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Seed")
-    int32 Seed = -1;
+    int32 Seed = 1557;
 
     // ===== Chunk =====
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Chunk", meta = (ClampMin = "8", ClampMax = "512"))
@@ -48,31 +48,16 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Difficulty", meta = (ClampMin = "1", ClampMax = "20"))
     int32 AutoTuneMaxIters = 6;
 
-    // ===== Noise =====
+    // ===== Terrain Params =====
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Noise")
     float WorldScaleCm = 24000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Noise")
     float DetailScaleCm = 6000.f;
 
-    // 기본 필드 3D 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Noise", meta = (ClampMin = "0.0"))
-    float BaseField3DStrengthCm = 12000.f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Noise", meta = (ClampMin = "100.0"))
-    float BaseField3DScaleCm = 16000.f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Noise", meta = (ClampMin = "1", ClampMax = "8"))
-    int32 BaseField3DOctaves = 5;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Noise", meta = (ClampMin = "1.0", ClampMax = "4.0"))
-    float BaseField3DRidgedPower = 2.0f;
-
-    // ===== Volume =====
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Volume")
     float OverhangScaleCm = 8000.f;
 
-    // ===== Height =====
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Height")
     float BaseHeightCm = 0.f;
 
@@ -82,14 +67,13 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Height", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float SteepnessDetailFactor = 0.18f;
 
-    // ===== Ramp =====
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Ramp")
     float RampLengthCm = 60000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Ramp")
     float RampHeightCm = 45000.f;
 
-    // ===== Warp =====
+    // Warp
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Warp")
     float WarpPatchCm = 15000.f;
 
@@ -99,7 +83,7 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Warp")
     float WarpStrength = 1.0f;
 
-    // ===== Volume/Overhang =====
+    // Volume/Overhang
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Volume")
     float VolumeStrength = 1.0f;
 
@@ -112,7 +96,7 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Volume")
     float OverhangDepthCm = 2500.f;
 
-    // ===== Cave =====
+    // Cave
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cave")
     float CaveStrength = 1.0f;
 
@@ -132,12 +116,13 @@ struct FMountainGenSettings
     float CaveBand = 0.12f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cave", meta = (ClampMin = "0.0"))
-    float CaveDepthCm = 1500.0f;
+    float CaveDepthCm = 1500.0f; // 15m 기본
 
+    // 동굴이 표면 근처에서만 생기게 함
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cave", meta = (ClampMin = "0.0"))
-    float CaveNearSurfaceCm = 8000.0f;
+    float CaveNearSurfaceCm = 8000.0f; // 80m 기본
 
-    // ===== Misc =====
+    // Misc
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Misc")
     float GravityStrength = 1.0f;
 

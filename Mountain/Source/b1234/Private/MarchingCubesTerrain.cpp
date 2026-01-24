@@ -1,5 +1,5 @@
-#include "MarchingCubesTables.h"
 #include "MarchingCubesTerrain.h"
+#include "MarchingCubesTables.h"
 #include "ProceduralMeshComponent.h"
 #include "Math/UnrealMathUtility.h"
 #include "DrawDebugHelpers.h"

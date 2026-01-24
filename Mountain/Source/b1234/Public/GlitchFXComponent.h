@@ -24,7 +24,7 @@ public:
 
 	// ====== 실시간 조절 파라미터(Details에서 조절) ======
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float GlitchIntensity = 0.0f;
+	float GlitchIntensity = 0.3f;
 
 	// 화면 줄 글리치(스트립) 간격: 낮출수록 간격 넓어짐(줄 개수)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "1.0", ClampMax = "500.0"))
@@ -34,8 +34,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "1.0", ClampMax = "5000.0"))
 	float ScanFreq = 800.0f;
 
-	// (선택) 이미 쓰고 있으면 같이 노출
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "0.02"))
+	// 이미 쓰고 있으면 같이 노출
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "0.2"))
 	float RGBShift = 0.004f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "0.1"))

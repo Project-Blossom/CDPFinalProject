@@ -45,17 +45,6 @@ public:
 private:
     void BuildChunkAndMesh();
 
-    // =========================
-    // AutoTune cache
-    // =========================
-    UPROPERTY(Transient)
-    bool bHasAutoTunedCache = false;
-
-    UPROPERTY(Transient)
-    FMountainGenSettings CachedTunedSettings;
-
-    void InvalidateAutoTuneCache();
-
 #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
