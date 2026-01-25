@@ -35,14 +35,17 @@ public:
 	float ScanFreq = 800.0f;
 
 	// 이미 쓰고 있으면 같이 노출
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "0.2"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "0.3"))
 	float RGBShift = 0.004f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "0.1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "0.2"))
 	float BlockShift = 0.03f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float ScanIntensity = 0.08f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Params", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Threshold = 0.1f;
 
 	// ====== 머티리얼 파라미터 이름(오타 방지/교체 가능) ======
 	UPROPERTY(EditAnywhere, Category = "Glitch|ParamNames")
@@ -62,6 +65,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Glitch|ParamNames")
 	FName Param_ScanIntensity = TEXT("ScanIntensity");
+
+	UPROPERTY(EditAnywhere, Category = "Glitch|ParamNames")
+	FName Param_Threshold = TEXT("Threshold");
 
 	// ====== Auto Glitch (불규칙 스케줄러) ======
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Glitch|Auto")
