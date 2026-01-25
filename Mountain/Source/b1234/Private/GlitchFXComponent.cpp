@@ -21,7 +21,7 @@ void UGlitchEffectComponent::BeginPlay()
 	EnsureCamera();
 	ApplyToCamera();
 
-	// Ã¹ ÀÚµ¿ ±Û¸®Ä¡±îÁö ´ë±â ½Ã°£ ·£´ı
+	// ì²« ìë™ ê¸€ë¦¬ì¹˜ê¹Œì§€ ëŒ€ê¸° ì‹œê°„ ëœë¤
 	NextGlitchIn = FMath::FRandRange(AutoMinInterval, AutoMaxInterval);
 
 	UE_LOG(LogTemp, Warning, TEXT("[Glitch] BeginPlay Owner=%s  TargetCamera=%s  PPMat=%s"),
@@ -75,7 +75,7 @@ void UGlitchEffectComponent::ApplyToCamera()
 
 	BlendableIndex = TargetCamera->PostProcessSettings.WeightedBlendables.Array.Add(WB);
 
-	// ÃÊ±â ÆÄ¶ó¹ÌÅÍ ¹Ğ¾î³Ö±â
+	// ì´ˆê¸° íŒŒë¼ë¯¸í„° ë°€ì–´ë„£ê¸°
 	PushAllParamsToMID(FMath::Clamp(GlitchIntensity, 0.0f, 1.0f));
 }
 
@@ -102,7 +102,7 @@ void UGlitchEffectComponent::TriggerSpike(float PeakIntensity, float Duration)
 	SpikeDuration = FMath::Max(0.05f, Duration);
 	SpikeTimeLeft = SpikeDuration;
 
-	// ÆŞ½º ½ÃÀÛ ½Ã ÇÁ¸®¼Â ·£´ı(¸Å¹ø ´Ù¸¥ ÆĞÅÏ)
+	// í„ìŠ¤ ì‹œì‘ ì‹œ í”„ë¦¬ì…‹ ëœë¤(ë§¤ë²ˆ ë‹¤ë¥¸ íŒ¨í„´)
 	RandomizePresetForPulse(SpikePeak);
 }
 
@@ -134,7 +134,7 @@ void UGlitchEffectComponent::UpdateParameters(float DeltaTime)
 				if (FMath::FRand() < BurstChance)
 				{
 					BurstLeft = FMath::RandRange(BurstMinCount, BurstMaxCount);
-					BurstTimer = 0.0f; // Áï½Ã 1¹ß
+					BurstTimer = 0.0f; // ì¦‰ì‹œ 1ë°œ
 				}
 				else
 				{
@@ -148,10 +148,10 @@ void UGlitchEffectComponent::UpdateParameters(float DeltaTime)
 		}
 	}
 
-	// --- ±âÁ¸ ·ÎÁ÷ ---
+	// --- ê¸°ì¡´ ë¡œì§ ---
 	float FinalIntensity = FMath::Clamp(GlitchIntensity, 0.0f, 1.0f);
 
-	// ½ºÆÄÀÌÅ© (±âº»: »ï°¢ÆÄ)
+	// ìŠ¤íŒŒì´í¬ (ê¸°ë³¸: ì‚¼ê°íŒŒ)
 	if (SpikeTimeLeft > 0.0f)
 	{
 		SpikeTimeLeft -= DeltaTime;
@@ -179,22 +179,22 @@ void UGlitchEffectComponent::RandomizePresetForPulse(float Peak01)
 {
 	const float k = FMath::Clamp(Peak01, 0.0f, 1.0f);
 
-	// StripCount: °­ÇÒ¼ö·Ï ÁÙÀÌ ±½¾îÁö°Ô(StripCount ³·¾ÆÁü) À¯µµ
+	// StripCount: ê°•í• ìˆ˜ë¡ ì¤„ì´ êµµì–´ì§€ê²Œ(StripCount ë‚®ì•„ì§) ìœ ë„
 	const float strip = FMath::Lerp(StripMax, StripMin, k) * FMath::FRandRange(0.8f, 1.2f);
 
-	// ScanFreq: °­ÇÒ ¶§ ±Ø´Ü°ªµµ ³ª¿À°Ô
+	// ScanFreq: ê°•í•  ë•Œ ê·¹ë‹¨ê°’ë„ ë‚˜ì˜¤ê²Œ
 	float scan = FMath::FRandRange(ScanFreqMin, ScanFreqMax);
 	if (k > 0.7f && FMath::FRand() < 0.35f)
 	{
 		scan = (FMath::FRand() < 0.5f) ? ScanFreqMin : ScanFreqMax;
 	}
 
-	// ³ª¸ÓÁö´Â °­µµ¿¡ ºñ·ÊÇØ¼­ ½ºÄÉÀÏ
+	// ë‚˜ë¨¸ì§€ëŠ” ê°•ë„ì— ë¹„ë¡€í•´ì„œ ìŠ¤ì¼€ì¼
 	const float rgb = FMath::FRandRange(RGBShiftMin, RGBShiftMax) * FMath::Lerp(0.6f, 1.0f, k);
 	const float block = FMath::FRandRange(BlockShiftMin, BlockShiftMax) * FMath::Lerp(0.6f, 1.0f, k);
 	const float scanI = FMath::FRandRange(ScanIntensityMin, ScanIntensityMax) * FMath::Lerp(0.4f, 1.0f, k);
 
-	// ÄÄÆ÷³ÍÆ® °ª °»½Å(Details¿¡¼­ È®ÀÎ °¡´É)
+	// ì»´í¬ë„ŒíŠ¸ ê°’ ê°±ì‹ (Detailsì—ì„œ í™•ì¸ ê°€ëŠ¥)
 	StripCount = strip;
 	ScanFreq = scan;
 	RGBShift = rgb;
