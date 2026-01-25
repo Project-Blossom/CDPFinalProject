@@ -13,285 +13,9 @@
 #include "VoxelMesher.h"
 #include "MountainGenMeshData.h"
 
-// ==============================
-// Feedback AutoTune
-// ==============================
+#include "MountainGenAutoTune.h"
 
-struct FMGRange
-{
-    float Min = 0.f;
-    float Max = 0.f;
-
-    bool Contains(float v) const { return v >= Min && v <= Max; }
-    float Center() const { return 0.5f * (Min + Max); }
-};
-
-struct FMGTargets
-{
-    FMGRange CaveVoidRatio;  // 0..1
-    FMGRange OverhangRatio;  // 0..1
-    FMGRange SteepRatio;     // 0..1
-};
-
-struct FMGMetrics
-{
-    float CaveVoidRatio = 0.f;
-    float OverhangRatio = 0.f;
-    float SteepRatio = 0.f;
-
-    int32 CaveSamples = 0;
-    int32 SurfaceNearSamples = 0;
-};
-
-static FMGTargets MGTargetsFromDifficulty(EMountainGenDifficulty Diff)
-{
-    FMGTargets T;
-
-    switch (Diff)
-    {
-    case EMountainGenDifficulty::Easy:
-        T.CaveVoidRatio = { 0.00f, 0.04f };
-        T.OverhangRatio = { 0.00f, 0.05f };
-        T.SteepRatio = { 0.05f, 0.20f };
-        break;
-
-    case EMountainGenDifficulty::Normal:
-        T.CaveVoidRatio = { 0.01f, 0.07f };
-        T.OverhangRatio = { 0.02f, 0.10f };
-        T.SteepRatio = { 0.15f, 0.35f };
-        break;
-
-    case EMountainGenDifficulty::Hard:
-        T.CaveVoidRatio = { 0.03f, 0.12f };
-        T.OverhangRatio = { 0.06f, 0.18f };
-        T.SteepRatio = { 0.25f, 0.55f };
-        break;
-
-    case EMountainGenDifficulty::Extreme:
-        T.CaveVoidRatio = { 0.06f, 0.20f };
-        T.OverhangRatio = { 0.12f, 0.30f };
-        T.SteepRatio = { 0.40f, 0.80f };
-        break;
-
-    default:
-        T.CaveVoidRatio = { 0.00f, 0.04f };
-        T.OverhangRatio = { 0.00f, 0.05f };
-        T.SteepRatio = { 0.05f, 0.20f };
-        break;
-    }
-
-    return T;
-}
-
-static FVector MGEstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
-{
-    const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
-    const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
-    const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
-
-    FVector N(dx, dy, dz);
-    return N.GetSafeNormal();
-}
-
-static FMGMetrics MGComputeMetricsQuick(
-    const FMountainGenSettings& S,
-    const FVector& TerrainOriginWorld,
-    const FVector& WorldMinCm,
-    const FVector& WorldMaxCm)
-{
-    FMGMetrics M;
-    const float Iso = S.IsoLevel;
-
-    // 같은 Settings면 고정
-    FRandomStream Rng((int32)(S.Seed ^ 0x51A3B9D1));
-
-    FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
-
-    // ---- Cave void ratio ----
-    const int32 CaveSamples = 8000;
-    int32 Air = 0;
-
-    float Z0, Z1;
-
-    if (!S.bCaveHeightsAreAbsoluteWorldZ)
-    {
-        Z0 = WorldMinCm.Z + S.CaveMinHeightCm;
-        Z1 = WorldMinCm.Z + S.CaveMaxHeightCm;
-    }
-    else
-    {
-        Z0 = S.CaveMinHeightCm;
-        Z1 = S.CaveMaxHeightCm;
-    }
-
-    Z0 = FMath::Clamp(Z0, WorldMinCm.Z, WorldMaxCm.Z);
-    Z1 = FMath::Clamp(Z1, WorldMinCm.Z, WorldMaxCm.Z);
-
-    for (int32 i = 0; i < CaveSamples; ++i)
-    {
-        const float x = Rng.FRandRange(WorldMinCm.X, WorldMaxCm.X);
-        const float y = Rng.FRandRange(WorldMinCm.Y, WorldMaxCm.Y);
-        const float z = Rng.FRandRange(Z0, Z1);
-
-        const float d = Gen.SampleDensity(FVector(x, y, z));
-        if (d < Iso) Air++; // d < Iso => 공기
-    }
-
-    M.CaveSamples = CaveSamples;
-    M.CaveVoidRatio = (CaveSamples > 0) ? (float)Air / (float)CaveSamples : 0.f;
-
-    // ---- Overhang ratio + Steep ratio ----
-    const int32 SurfaceTry = 45000;
-
-    // 표면 근처 판정 폭
-    const float SurfaceEps = 25.f;
-    const float NormalStep = FMath::Max(2.f * S.VoxelSizeCm, 80.f);
-
-    // 급경사 기준: Steep = 1 - |N.Z|, 0.6이면 |N.Z| <= 0.4
-    const float SteepThreshold = 0.60f;
-
-    int32 Near = 0;
-    int32 Over = 0;
-    int32 Steep = 0;
-
-    for (int32 i = 0; i < SurfaceTry; ++i)
-    {
-        const float x = Rng.FRandRange(WorldMinCm.X, WorldMaxCm.X);
-        const float y = Rng.FRandRange(WorldMinCm.Y, WorldMaxCm.Y);
-        const float z = Rng.FRandRange(WorldMinCm.Z, WorldMaxCm.Z);
-
-        const FVector P(x, y, z);
-        const float d = Gen.SampleDensity(P);
-
-        // 표면 근처만 표본으로 사용
-        if (FMath::Abs(d - Iso) > SurfaceEps)
-            continue;
-
-        const FVector N = MGEstimateNormalFromDensity(Gen, P, NormalStep);
-        const float UpDot = FVector::DotProduct(N, FVector::UpVector); // == N.Z
-
-        Near++;
-
-        // 오버행: 위를 바라보지 못하면(= 아래로 향하면)
-        if (UpDot < 0.0f)
-            Over++;
-
-        // 급경사: Steep = 1 - |N.Z|
-        const float Steepness = 1.0f - FMath::Abs(UpDot);
-        if (Steepness >= SteepThreshold)
-            Steep++;
-    }
-
-    M.SurfaceNearSamples = Near;
-    M.OverhangRatio = (Near > 0) ? (float)Over / (float)Near : 0.f;
-    M.SteepRatio = (Near > 0) ? (float)Steep / (float)Near : 0.f;
-
-    return M;
-}
-
-static float MGClamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
-
-static void MGFeedbackStep_Cave(FMountainGenSettings& S, const FMGRange& Target, float MeasuredVoid)
-{
-    const float Err = Target.Center() - MeasuredVoid;
-
-    const float GainTh = 0.35f;
-    S.CaveThreshold = MGClamp01(S.CaveThreshold - Err * GainTh);
-
-    const float GainStr = 0.25f;
-    S.CaveStrength = FMath::Clamp(S.CaveStrength + Err * GainStr, 0.f, 3.f);
-
-    const float GainBand = 0.15f;
-    S.CaveBand = MGClamp01(S.CaveBand + Err * GainBand);
-}
-
-static void MGFeedbackStep_Overhang(FMountainGenSettings& S, const FMGRange& Target, float MeasuredOver)
-{
-    const float Err = Target.Center() - MeasuredOver;
-
-    const float GainBias = 0.30f;
-    const float BiasDelta = Err * GainBias;
-
-    if (!S.bOverhangBiasIncreaseWhenValueIncreases)
-    {
-        S.OverhangBias = MGClamp01(S.OverhangBias - BiasDelta);
-    }
-    else
-    {
-        S.OverhangBias = MGClamp01(S.OverhangBias + BiasDelta);
-    }
-    const float GainDepth = 1400.f; // cm
-    S.OverhangDepthCm = FMath::Clamp(S.OverhangDepthCm + Err * GainDepth, 200.f, 15000.f);
-
-    const float GainVol = 0.22f;
-    S.VolumeStrength = FMath::Clamp(S.VolumeStrength + Err * GainVol, 0.f, 3.f);
-
-    const float GainWarp = 0.15f;
-    S.WarpStrength = FMath::Clamp(S.WarpStrength + Err * GainWarp, 0.f, 3.f);
-}
-
-static void MGFeedbackStep_Steep(FMountainGenSettings& S, const FMGRange& Target, float MeasuredSteep)
-{
-    const float Err = Target.Center() - MeasuredSteep;
-
-    const float Gain = 0.55f;
-
-    const float Factor = FMath::Clamp(FMath::Exp(-Err * Gain), 0.75f, 1.35f);
-    S.DetailScaleCm *= Factor;
-
-    const float WarpGain = 0.10f;
-    S.WarpStrength = FMath::Clamp(S.WarpStrength + Err * WarpGain, 0.f, 3.f);
-}
-
-static bool MGTuneSettingsFeedback(
-    FMountainGenSettings& InOutS,
-    const FVector& TerrainOriginWorld,
-    const FVector& WorldMinCm,
-    const FVector& WorldMaxCm)
-{
-    const FMGTargets Targets = MGTargetsFromDifficulty(InOutS.Difficulty);
-
-    const int32 MaxIters = FMath::Clamp(InOutS.AutoTuneMaxIters, 1, 20);
-
-    for (int32 Iter = 0; Iter < MaxIters; ++Iter)
-    {
-        const FMGMetrics M = MGComputeMetricsQuick(InOutS, TerrainOriginWorld, WorldMinCm, WorldMaxCm);
-
-        const bool bCaveOK = Targets.CaveVoidRatio.Contains(M.CaveVoidRatio);
-        const bool bOverOK = Targets.OverhangRatio.Contains(M.OverhangRatio);
-        const bool bSteepOK = Targets.SteepRatio.Contains(M.SteepRatio);
-
-        if (bCaveOK && bOverOK && bSteepOK)
-            return true;
-
-        if (!bCaveOK)
-            MGFeedbackStep_Cave(InOutS, Targets.CaveVoidRatio, M.CaveVoidRatio);
-
-        if (!bOverOK)
-            MGFeedbackStep_Overhang(InOutS, Targets.OverhangRatio, M.OverhangRatio);
-
-        if (!bSteepOK)
-            MGFeedbackStep_Steep(InOutS, Targets.SteepRatio, M.SteepRatio);
-
-        // ---- sanity clamps ----
-        InOutS.WarpStrength = FMath::Clamp(InOutS.WarpStrength, 0.f, 3.f);
-        InOutS.VolumeStrength = FMath::Clamp(InOutS.VolumeStrength, 0.f, 3.f);
-        InOutS.CaveStrength = FMath::Clamp(InOutS.CaveStrength, 0.f, 3.f);
-
-        InOutS.CaveScaleCm = FMath::Max(InOutS.CaveScaleCm, 100.f);
-
-        InOutS.OverhangFadeCm = FMath::Clamp(InOutS.OverhangFadeCm, 50.f, 60000.f);
-
-        InOutS.WorldScaleCm = FMath::Max(InOutS.WorldScaleCm, 1000.f);
-        InOutS.DetailScaleCm = FMath::Clamp(InOutS.DetailScaleCm, 300.f, InOutS.WorldScaleCm);
-    }
-
-    return false;
-}
-
-// ==============================
-// Actor
-// ==============================
+static constexpr int32 kAutoTuneFixedSeed = 1337;
 
 AMountainGenWorldActor::AMountainGenWorldActor()
 {
@@ -301,10 +25,8 @@ AMountainGenWorldActor::AMountainGenWorldActor()
     SetRootComponent(ProcMesh);
 
     ProcMesh->SetMobility(EComponentMobility::Movable);
-
     ProcMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
     ProcMesh->bUseComplexAsSimpleCollision = true;
-
     ProcMesh->bUseAsyncCooking = false;
 
     AutoReceiveInput = EAutoReceiveInput::Player0;
@@ -345,12 +67,57 @@ void AMountainGenWorldActor::SetSeed(int32 NewSeed)
 {
     if (Settings.Seed == NewSeed) return;
     Settings.Seed = NewSeed;
+
+    InvalidateAutoTuneCache();
+
+    BuildChunkAndMesh();
 }
 
 void AMountainGenWorldActor::RandomizeSeed()
 {
     const int32 NewSeed = FMath::RandRange(0, INT32_MAX);
     SetSeed(NewSeed);
+}
+
+void AMountainGenWorldActor::InvalidateAutoTuneCache()
+{
+    bHasAutoTunedCache = false;
+}
+
+void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
+{
+    switch (S.Difficulty)
+    {
+    case EMountainGenDifficulty::Easy:
+        S.Targets.CaveMin = 0.00f;     S.Targets.CaveMax = 0.04f;
+        S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
+        S.Targets.SteepMin = 0.05f;    S.Targets.SteepMax = 0.20f;
+        break;
+
+    case EMountainGenDifficulty::Normal:
+        S.Targets.CaveMin = 0.01f;     S.Targets.CaveMax = 0.07f;
+        S.Targets.OverhangMin = 0.02f; S.Targets.OverhangMax = 0.10f;
+        S.Targets.SteepMin = 0.15f;    S.Targets.SteepMax = 0.35f;
+        break;
+
+    case EMountainGenDifficulty::Hard:
+        S.Targets.CaveMin = 0.03f;     S.Targets.CaveMax = 0.12f;
+        S.Targets.OverhangMin = 0.06f; S.Targets.OverhangMax = 0.18f;
+        S.Targets.SteepMin = 0.25f;    S.Targets.SteepMax = 0.55f;
+        break;
+
+    case EMountainGenDifficulty::Extreme:
+        S.Targets.CaveMin = 0.06f;     S.Targets.CaveMax = 0.20f;
+        S.Targets.OverhangMin = 0.12f; S.Targets.OverhangMax = 0.30f;
+        S.Targets.SteepMin = 0.40f;    S.Targets.SteepMax = 0.80f;
+        break;
+
+    default:
+        S.Targets.CaveMin = 0.00f;     S.Targets.CaveMax = 0.04f;
+        S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
+        S.Targets.SteepMin = 0.05f;    S.Targets.SteepMax = 0.20f;
+        break;
+    }
 }
 
 void AMountainGenWorldActor::BuildChunkAndMesh()
@@ -360,6 +127,9 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     ProcMesh->ClearAllMeshSections();
     ProcMesh->ClearCollisionConvexMeshes();
 
+    // ------------------------------------------------------------
+    // (0) 샘플링 그리드 / 월드 범위
+    // ------------------------------------------------------------
     const int32 SampleX = Settings.ChunkX + 1;
     const int32 SampleY = Settings.ChunkY + 1;
     const int32 SampleZ = Settings.ChunkZ + 1;
@@ -374,22 +144,63 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     const float HalfZ = (Settings.ChunkZ * Voxel) * 0.5f;
 
     const FVector ActorWorld = GetActorLocation();
-    const float BaseZ = Settings.BaseHeightCm;
-    const FVector SampleOriginWorld = ActorWorld + FVector(-HalfX, -HalfY, BaseZ);
-
+    const FVector SampleOriginWorld = ActorWorld + FVector(-HalfX, -HalfY, -HalfZ);
     const FVector TerrainOriginWorld = ActorWorld;
+    const FVector ChunkOriginWorld = SampleOriginWorld;
 
-    // ===== AutoTune BEFORE sampling =====
-    if (Settings.bAutoTune)
+    const FVector WorldMin = SampleOriginWorld;
+    const FVector WorldMax = SampleOriginWorld + FVector(Settings.ChunkX * Voxel, Settings.ChunkY * Voxel, Settings.ChunkZ * Voxel);
+
+    // ------------------------------------------------------------
+    // (1) 입력(유저) 값 백업
+    // ------------------------------------------------------------
+    const int32 InputSeed = Settings.Seed;
+    const EMountainGenDifficulty InputDiff = Settings.Difficulty;
+
+    // ------------------------------------------------------------
+    // (2) “생성에만 쓰는” 최종 세팅 FinalS 구성
+    // ------------------------------------------------------------
+    FMountainGenSettings FinalS = Settings;
+
+    ApplyDifficultyPresetTo(FinalS);
+
+    // ------------------------------------------------------------
+    // (3) AutoTune (캐시)
+    // ------------------------------------------------------------
+    if (FinalS.bAutoTune)
     {
-        const FVector WorldMin = SampleOriginWorld;
-        const FVector WorldMax =
-            SampleOriginWorld + FVector(Settings.ChunkX * Voxel, Settings.ChunkY * Voxel, Settings.ChunkZ * Voxel);
+        if (!bHasAutoTunedCache)
+        {
+            FMountainGenSettings TuneS = FinalS;
+            TuneS.Seed = kAutoTuneFixedSeed;
 
-        MGTuneSettingsFeedback(Settings, TerrainOriginWorld, WorldMin, WorldMax);
+            MGTuneSettingsFeedback(TuneS, TerrainOriginWorld, WorldMin, WorldMax);
+
+            CachedTunedSettings = TuneS;
+            bHasAutoTunedCache = true;
+        }
+
+        const int32 KeepSeed = FinalS.Seed;
+        FinalS = CachedTunedSettings;
+        FinalS.Difficulty = InputDiff;
+        ApplyDifficultyPresetTo(FinalS);
+        FinalS.Seed = KeepSeed;
     }
 
-    FVoxelDensityGenerator Gen(Settings, TerrainOriginWorld);
+    // ------------------------------------------------------------
+    // (4) 최종 Seed 확정
+    // ------------------------------------------------------------
+    if (InputSeed < 0)
+        FinalS.Seed = FMath::RandRange(0, INT32_MAX);
+    else
+        FinalS.Seed = InputSeed;
+
+    Settings.Seed = FinalS.Seed;
+
+    // ------------------------------------------------------------
+    // (5) density 샘플링
+    // ------------------------------------------------------------
+    FVoxelDensityGenerator Gen(FinalS, TerrainOriginWorld);
 
     for (int32 z = 0; z < SampleZ; ++z)
         for (int32 y = 0; y < SampleY; ++y)
@@ -399,21 +210,26 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 Chunk.Set(x, y, z, Gen.SampleDensity(WorldPos));
             }
 
+    // ------------------------------------------------------------
+    // (6) Marching Cubes
+    // ------------------------------------------------------------
     FChunkMeshData MeshData;
-
-    const FVector ChunkOriginWorld = SampleOriginWorld;
 
     FVoxelMesher::BuildMarchingCubes(
         Chunk,
-        Settings.VoxelSizeCm,
-        Settings.IsoLevel,
+        FinalS.VoxelSizeCm,
+        FinalS.IsoLevel,
         ChunkOriginWorld,
+        Gen,
         MeshData
     );
 
     if (MeshData.Vertices.Num() == 0 || MeshData.Triangles.Num() == 0)
         return;
 
+    // ------------------------------------------------------------
+    // (7) Mesh apply
+    // ------------------------------------------------------------
     TArray<FLinearColor> Colors;
     Colors.SetNumZeroed(MeshData.Vertices.Num());
 
@@ -425,11 +241,11 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         MeshData.UV0,
         Colors,
         MeshData.Tangents,
-        Settings.bCreateCollision
+        FinalS.bCreateCollision
     );
 
     ProcMesh->SetCollisionEnabled(
-        Settings.bCreateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision
+        FinalS.bCreateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision
     );
 
     if (VoxelMaterial)
@@ -440,9 +256,9 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 void AMountainGenWorldActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
-
     if (!PropertyChangedEvent.Property) return;
 
+    InvalidateAutoTuneCache();
     BuildChunkAndMesh();
 }
 #endif

@@ -2,21 +2,20 @@
 #include "CoreMinimal.h"
 #include "MountainGenSettings.h"
 
-class FVoxelDensityGenerator
+struct FVoxelDensityGenerator
 {
-public:
-    FVoxelDensityGenerator(const FMountainGenSettings& InSettings, const FVector& InTerrainOrigin)
-        : S(InSettings), TerrainOrigin(InTerrainOrigin) {
-    }
-
-    float SampleDensity(const FVector& WorldPos) const;
-
-private:
     const FMountainGenSettings& S;
-    FVector TerrainOrigin;
+    const FVector TerrainOrigin;
+
+    FVoxelDensityGenerator(const FMountainGenSettings& InS, const FVector& InTerrainOrigin)
+        : S(InS), TerrainOrigin(InTerrainOrigin)
+    {
+    }
 
     FORCEINLINE float SeedOffsetCm() const
     {
-        return (float)(S.Seed % 100000) * 0.01f;
+        return static_cast<float>(S.Seed % 100000) * 0.01557f;
     }
+
+    float SampleDensity(const FVector& WorldPos) const;
 };

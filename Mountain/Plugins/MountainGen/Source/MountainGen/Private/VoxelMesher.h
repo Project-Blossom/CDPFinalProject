@@ -1,17 +1,17 @@
 #pragma once
 #include "CoreMinimal.h"
-#include "MountainGenMeshData.h"
 
 struct FVoxelChunk;
+struct FChunkMeshData;
+struct FVoxelDensityGenerator;
 
-class FVoxelMesher
+struct FVoxelMesher
 {
-public:
     static void BuildMarchingCubes(
         const FVoxelChunk& Chunk,
         float VoxelSizeCm,
         float IsoLevel,
         const FVector& ChunkOriginWorld,
-        FChunkMeshData& Out
-    );
+        const FVoxelDensityGenerator& Gen,
+        FChunkMeshData& Out);
 };

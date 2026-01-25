@@ -38,12 +38,21 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen")
     FMountainGenSettings Settings;
 
-    // 런타임에서 1번 키로 랜덤 시드 재생성을 할지
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Runtime")
     bool bEnableRandomSeedKey = true;
 
 private:
     void BuildChunkAndMesh();
+
+    static void ApplyDifficultyPresetTo(FMountainGenSettings& S);
+
+    UPROPERTY(Transient)
+    bool bHasAutoTunedCache = false;
+
+    UPROPERTY(Transient)
+    FMountainGenSettings CachedTunedSettings;
+
+    void InvalidateAutoTuneCache();
 
 #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
