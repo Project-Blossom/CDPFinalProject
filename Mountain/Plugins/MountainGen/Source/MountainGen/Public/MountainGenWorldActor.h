@@ -17,12 +17,16 @@ public:
     AMountainGenWorldActor();
 
     virtual void OnConstruction(const FTransform& Transform) override;
+    virtual void BeginPlay() override;
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen")
     void Regenerate();
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen")
     void SetSeed(int32 NewSeed);
+
+    UFUNCTION(BlueprintCallable, Category = "MountainGen")
+    void RandomizeSeed();
 
 public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen")
@@ -34,6 +38,23 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen")
     FMountainGenSettings Settings;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Runtime")
+    bool bEnableRandomSeedKey = true;
+
 private:
     void BuildChunkAndMesh();
+
+    static void ApplyDifficultyPresetTo(FMountainGenSettings& S);
+
+    UPROPERTY(Transient)
+    bool bHasAutoTunedCache = false;
+
+    UPROPERTY(Transient)
+    FMountainGenSettings CachedTunedSettings;
+
+    void InvalidateAutoTuneCache();
+
+#if WITH_EDITOR
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 };

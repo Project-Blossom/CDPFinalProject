@@ -1,4 +1,5 @@
 #include "MarchingCubesTerrain.h"
+#include "MarchingCubesTables.h"
 #include "ProceduralMeshComponent.h"
 #include "Math/UnrealMathUtility.h"
 #include "DrawDebugHelpers.h"
@@ -35,6 +36,31 @@ void AMarchingCubesTerrain::BeginPlay()
         DebugDrawHeightPoints();
     }
 
+    TArray<FVector> Verts;
+    TArray<int32> Tris;
+
+    for (int32 z = 0; z < NumZ - 1; ++z)
+        for (int32 y = 0; y < NumY - 1; ++y)
+            for (int32 x = 0; x < NumX - 1; ++x)
+            {
+                TriangulateCell(x, y, z, Verts, Tris);
+            }
+
+    // 최소 구성으로 섹션 생성 (노말/UV는 다음 Step에서)
+    TArray<FVector> Normals;
+    TArray<FVector2D> UV0;
+    TArray<FColor> Colors;
+    TArray<FProcMeshTangent> Tangents;
+    Normals.SetNumZeroed(Verts.Num());
+    for (int32 i = 0; i < Normals.Num(); ++i)
+        Normals[i] = FVector::UpVector;
+    UV0.SetNumZeroed(Verts.Num());
+    Colors.SetNumZeroed(Verts.Num());
+    Tangents.SetNumZeroed(Verts.Num());
+
+    ProcMesh->CreateMeshSection(0, Verts, Tris, Normals, UV0, Colors, Tangents, false);
+
+    UE_LOG(LogTemp, Warning, TEXT("[MC] Built mesh: V=%d  T=%d"), Verts.Num(), Tris.Num() / 3);
 }
 
 void AMarchingCubesTerrain::CreateTestTriangle()
@@ -257,4 +283,96 @@ void AMarchingCubesTerrain::DebugDrawHeightPoints() const
         }
 
     UE_LOG(LogTemp, Warning, TEXT("[MC] Height debug drew %d points (step=%d)"), DrawCount, DebugHeightStep);
+}
+
+FVector AMarchingCubesTerrain::VertexInterp(float Iso, const FVector& P1, const FVector& P2, float V1, float V2) const
+{
+    // Iso와 거의 같으면 바로 리턴
+    if (FMath::Abs(Iso - V1) < KINDA_SMALL_NUMBER) return P1;
+    if (FMath::Abs(Iso - V2) < KINDA_SMALL_NUMBER) return P2;
+
+    const float Den = (V2 - V1);
+    if (FMath::Abs(Den) < KINDA_SMALL_NUMBER) return P1; // divide-by-zero 방지
+
+    const float T = (Iso - V1) / Den;
+    return P1 + T * (P2 - P1);
+}
+
+bool AMarchingCubesTerrain::TriangulateCell(int32 X, int32 Y, int32 Z,
+    TArray<FVector>& OutVerts,
+    TArray<int32>& OutTris) const
+{
+    // 8 코너 로컬 좌표 오프셋(표준 MC 코너 순서)
+    static const int32 CornerOffset[8][3] =
+    {
+        {0,0,0},{1,0,0},{1,1,0},{0,1,0},
+        {0,0,1},{1,0,1},{1,1,1},{0,1,1}
+    };
+
+    // edge가 연결하는 코너 인덱스(표준 12 edges)
+    static const int32 EdgeConnection[12][2] =
+    {
+        {0,1},{1,2},{2,3},{3,0},
+        {4,5},{5,6},{6,7},{7,4},
+        {0,4},{1,5},{2,6},{3,7}
+    };
+
+    FVector P[8];
+    float   V[8];
+
+    for (int i = 0; i < 8; ++i)
+    {
+        const int32 cx = X + CornerOffset[i][0];
+        const int32 cy = Y + CornerOffset[i][1];
+        const int32 cz = Z + CornerOffset[i][2];
+
+        P[i] = GridToWorld(cx, cy, cz);  // 로컬
+        V[i] = Sample(cx, cy, cz);
+    }
+
+    // cubeIndex(bitmask)
+    int32 CubeIndex = 0;
+    for (int i = 0; i < 8; ++i)
+    {
+        if (V[i] < IsoLevel) CubeIndex |= (1 << i);
+    }
+
+    const int32 Edges = FMarchingCubesTables::EdgeTable[CubeIndex];
+    if (Edges == 0) return false; // 교차 없음
+
+    FVector VertList[12];
+
+    // 교차하는 edge들의 정점 보간
+    for (int e = 0; e < 12; ++e)
+    {
+        if (Edges & (1 << e))
+        {
+            const int a = EdgeConnection[e][0];
+            const int b = EdgeConnection[e][1];
+            VertList[e] = VertexInterp(IsoLevel, P[a], P[b], V[a], V[b]);
+        }
+    }
+
+    // TriTable 기반으로 triangle 생성
+    // TriTable[CubeIndex]는 edge index 3개씩 묶어 triangle을 만든다.
+    for (int t = 0; t < 16; t += 3)
+    {
+        const int32 A = FMarchingCubesTables::TriTable[CubeIndex][t];
+        if (A == -1) break;
+        const int32 B = FMarchingCubesTables::TriTable[CubeIndex][t + 1];
+        const int32 C = FMarchingCubesTables::TriTable[CubeIndex][t + 2];
+
+        const int32 BaseIndex = OutVerts.Num();
+
+        OutVerts.Add(VertList[A]);
+        OutVerts.Add(VertList[B]);
+        OutVerts.Add(VertList[C]);
+
+        // winding: 기본은 (0,1,2)로 시작. 노말이 뒤집히면 여기서 1,2를 바꿔.
+        OutTris.Add(BaseIndex + 0);
+        OutTris.Add(BaseIndex + 1);
+        OutTris.Add(BaseIndex + 2);
+    }
+
+    return true;
 }

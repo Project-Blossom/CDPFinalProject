@@ -6,8 +6,13 @@
 UGlitchEffectComponent::UGlitchEffectComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+
 	MID = nullptr;
 	BlendableIndex = INDEX_NONE;
+
+	NextGlitchIn = 0.0f;
+	BurstLeft = 0;
+	BurstTimer = 0.0f;
 }
 
 void UGlitchEffectComponent::BeginPlay()
@@ -15,6 +20,15 @@ void UGlitchEffectComponent::BeginPlay()
 	Super::BeginPlay();
 	EnsureCamera();
 	ApplyToCamera();
+
+	// ì²« ìë™ ê¸€ë¦¬ì¹˜ê¹Œì§€ ëŒ€ê¸° ì‹œê°„ ëœë¤
+	NextGlitchIn = FMath::FRandRange(AutoMinInterval, AutoMaxInterval);
+
+	UE_LOG(LogTemp, Warning, TEXT("[Glitch] BeginPlay Owner=%s  TargetCamera=%s  PPMat=%s"),
+		*GetNameSafe(GetOwner()),
+		*GetNameSafe(TargetCamera),
+		*GetNameSafe(PostProcessMaterial));
+
 }
 
 void UGlitchEffectComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -36,6 +50,16 @@ void UGlitchEffectComponent::EnsureCamera()
 	{
 		TargetCamera = Owner->FindComponentByClass<UCameraComponent>();
 	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (APlayerController* PC = World->GetFirstPlayerController())
+		{
+			AActor* VT = PC->GetViewTarget();
+			UE_LOG(LogTemp, Warning, TEXT("[Glitch] ViewTarget = %s"),
+				VT ? *VT->GetName() : TEXT("None"));
+		}
+	}
 }
 
 void UGlitchEffectComponent::ApplyToCamera()
@@ -51,8 +75,8 @@ void UGlitchEffectComponent::ApplyToCamera()
 
 	BlendableIndex = TargetCamera->PostProcessSettings.WeightedBlendables.Array.Add(WB);
 
-	// ÃÊ±â ÆÄ¶ó¹ÌÅÍ ¹Ğ¾î³Ö±â
-	PushAllParamsToMID(/*FinalIntensity=*/FMath::Clamp(GlitchIntensity, 0.0f, 1.0f));
+	// ì´ˆê¸° íŒŒë¼ë¯¸í„° ë°€ì–´ë„£ê¸°
+	PushAllParamsToMID(FMath::Clamp(GlitchIntensity, 0.0f, 1.0f));
 }
 
 void UGlitchEffectComponent::RemoveFromCamera()
@@ -77,15 +101,57 @@ void UGlitchEffectComponent::TriggerSpike(float PeakIntensity, float Duration)
 	SpikePeak = FMath::Clamp(PeakIntensity, 0.0f, 1.0f);
 	SpikeDuration = FMath::Max(0.05f, Duration);
 	SpikeTimeLeft = SpikeDuration;
+
+	// í„ìŠ¤ ì‹œì‘ ì‹œ í”„ë¦¬ì…‹ ëœë¤(ë§¤ë²ˆ ë‹¤ë¥¸ íŒ¨í„´)
+	RandomizePresetForPulse(SpikePeak);
 }
 
 void UGlitchEffectComponent::UpdateParameters(float DeltaTime)
 {
 	if (!MID) return;
 
+	// --- Auto Glitch Scheduler ---
+	if (bAutoGlitch)
+	{
+		if (BurstLeft > 0)
+		{
+			BurstTimer -= DeltaTime;
+			if (BurstTimer <= 0.0f)
+			{
+				const float peak = FMath::FRandRange(AutoPeakMin, AutoPeakMax);
+				const float dur = FMath::FRandRange(AutoDurMin, AutoDurMax);
+				TriggerSpike(peak, dur);
+
+				BurstLeft--;
+				BurstTimer = BurstInterval;
+			}
+		}
+		else
+		{
+			NextGlitchIn -= DeltaTime;
+			if (NextGlitchIn <= 0.0f)
+			{
+				if (FMath::FRand() < BurstChance)
+				{
+					BurstLeft = FMath::RandRange(BurstMinCount, BurstMaxCount);
+					BurstTimer = 0.0f; // ì¦‰ì‹œ 1ë°œ
+				}
+				else
+				{
+					const float peak = FMath::FRandRange(AutoPeakMin, AutoPeakMax);
+					const float dur = FMath::FRandRange(AutoDurMin, AutoDurMax);
+					TriggerSpike(peak, dur);
+				}
+
+				NextGlitchIn = FMath::FRandRange(AutoMinInterval, AutoMaxInterval);
+			}
+		}
+	}
+
+	// --- ê¸°ì¡´ ë¡œì§ ---
 	float FinalIntensity = FMath::Clamp(GlitchIntensity, 0.0f, 1.0f);
 
-	// ½ºÆÄÀÌÅ© »ï°¢ÆÄ(¿øÇÏ¸é À¯Áö)
+	// ìŠ¤íŒŒì´í¬ (ê¸°ë³¸: ì‚¼ê°íŒŒ)
 	if (SpikeTimeLeft > 0.0f)
 	{
 		SpikeTimeLeft -= DeltaTime;
@@ -101,55 +167,37 @@ void UGlitchEffectComponent::PushAllParamsToMID(float FinalIntensity)
 {
 	if (!MID) return;
 
-	// Intensity
 	MID->SetScalarParameterValue(Param_GlitchIntensity, FinalIntensity);
-
-	// ³×°¡ ¿äÃ»ÇÑ 2°³: ScanFreq / StripCount
 	MID->SetScalarParameterValue(Param_StripCount, StripCount);
 	MID->SetScalarParameterValue(Param_ScanFreq, ScanFreq);
-
-	// ³ª¸ÓÁö(ÀÖÀ¸¸é °°ÀÌ)
 	MID->SetScalarParameterValue(Param_RGBShift, RGBShift);
 	MID->SetScalarParameterValue(Param_BlockShift, BlockShift);
 	MID->SetScalarParameterValue(Param_ScanIntensity, ScanIntensity);
 }
-/*
-MID = nullptr;
-}
 
-void UGlitchEffectComponent::TriggerSpike(float PeakIntensity, float Duration)
+void UGlitchEffectComponent::RandomizePresetForPulse(float Peak01)
 {
-	SpikePeak = FMath::Clamp(PeakIntensity, 0.0f, 1.0f);
-	SpikeDuration = FMath::Max(0.05f, Duration);
-	SpikeTimeLeft = SpikeDuration;
-}
+	const float k = FMath::Clamp(Peak01, 0.0f, 1.0f);
 
-void UGlitchEffectComponent::UpdateParameters(float DeltaTime)
-{
-	if (!MID)
+	// StripCount: ê°•í• ìˆ˜ë¡ ì¤„ì´ êµµì–´ì§€ê²Œ(StripCount ë‚®ì•„ì§) ìœ ë„
+	const float strip = FMath::Lerp(StripMax, StripMin, k) * FMath::FRandRange(0.8f, 1.2f);
+
+	// ScanFreq: ê°•í•  ë•Œ ê·¹ë‹¨ê°’ë„ ë‚˜ì˜¤ê²Œ
+	float scan = FMath::FRandRange(ScanFreqMin, ScanFreqMax);
+	if (k > 0.7f && FMath::FRand() < 0.35f)
 	{
-		return;
+		scan = (FMath::FRand() < 0.5f) ? ScanFreqMin : ScanFreqMax;
 	}
 
-	// ½ºÆÄÀÌÅ©°¡ ÁøÇà ÁßÀÌ¸é Intensity¸¦ ÀÓ½Ã·Î µ¤¾î¾¸(»ï°¢ ÆÄÇü)
-	float FinalIntensity = FMath::Clamp(Intensity, 0.0f, 1.0f);
+	// ë‚˜ë¨¸ì§€ëŠ” ê°•ë„ì— ë¹„ë¡€í•´ì„œ ìŠ¤ì¼€ì¼
+	const float rgb = FMath::FRandRange(RGBShiftMin, RGBShiftMax) * FMath::Lerp(0.6f, 1.0f, k);
+	const float block = FMath::FRandRange(BlockShiftMin, BlockShiftMax) * FMath::Lerp(0.6f, 1.0f, k);
+	const float scanI = FMath::FRandRange(ScanIntensityMin, ScanIntensityMax) * FMath::Lerp(0.4f, 1.0f, k);
 
-	if (SpikeTimeLeft > 0.0f)
-	{
-		SpikeTimeLeft -= DeltaTime;
-		const float t = 1.0f - (SpikeTimeLeft / SpikeDuration); // 0->1
-		// 0~1~0 (»ï°¢)
-		const float tri = (t <= 0.5f) ? (t / 0.5f) : ((1.0f - t) / 0.5f);
-		FinalIntensity = FMath::Max(FinalIntensity, tri * SpikePeak);
-	}
-
-	// ¿©±â¼­ ±Û¸®Ä¡ ÆÄ¶ó¹ÌÅÍµéÀ» °­µµ¿¡ ºñ·ÊÇØ ¼¼ÆÃ
-	// °ªÀº ÃëÇâ´ë·Î Á¶Àı °¡´É(ÀÏ´Ü ¹«³­ÇÑ ¹üÀ§)
-	const float RGBShift = FinalIntensity * 0.004f;   // 0 ~ 0.004
-	const float BlockShift = FinalIntensity * 0.03f;  // 0 ~ 0.03
-
-	MID->SetScalarParameterValue(TEXT("GlitchIntensity"), FinalIntensity);
-	MID->SetScalarParameterValue(TEXT("RGBShift"), RGBShift);
-	MID->SetScalarParameterValue(TEXT("BlockShift"), BlockShift);
+	// ì»´í¬ë„ŒíŠ¸ ê°’ ê°±ì‹ (Detailsì—ì„œ í™•ì¸ ê°€ëŠ¥)
+	StripCount = strip;
+	ScanFreq = scan;
+	RGBShift = rgb;
+	BlockShift = block;
+	ScanIntensity = scanI;
 }
-*/

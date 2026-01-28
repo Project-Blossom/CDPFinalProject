@@ -6,17 +6,15 @@ public class MountainGen : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        PublicDependencyModuleNames.AddRange(new string[]
-        {
-            "Core",
-            "CoreUObject",
-            "Engine",
-            "ProceduralMeshComponent"
-        });
-
-        PrivateDependencyModuleNames.AddRange(new string[]
-        {
-            "Projects"
-        });
+        PublicDependencyModuleNames.AddRange(
+            new string[]
+            {
+                "Core",
+                "CoreUObject",
+                "Engine",
+                "ProceduralMeshComponent",
+                "InputCore"
+            }
+        );
     }
 }
