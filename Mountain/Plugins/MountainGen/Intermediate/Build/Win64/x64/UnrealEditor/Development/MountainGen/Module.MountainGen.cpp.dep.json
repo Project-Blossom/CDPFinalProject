@@ -27,14 +27,14 @@
             "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\marchingcubestables.h",
             "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\mountaingen.cpp",
             "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\public\\mountaingen.h",
+            "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\mountaingenautotune.cpp",
+            "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\mountaingenautotune.h",
+            "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\voxeldensitygenerator.h",
             "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\mountaingenchunkcomponent.cpp",
             "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\mountaingenworldactor.cpp",
             "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\voxelchunk.h",
-            "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\voxeldensitygenerator.h",
             "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\voxelmesher.h",
-            "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\public\\mountaingenmeshdata.h",
-            "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\voxeldensitygenerator.cpp",
-            "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\private\\voxelmesher.cpp"
+            "c:\\users\\user\\documents\\github\\cdpfinalproject\\mountain\\plugins\\mountaingen\\source\\mountaingen\\public\\mountaingenmeshdata.h"
         ],
         "ImportedModules": [],
         "ImportedHeaderUnits": []

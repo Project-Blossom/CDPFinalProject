@@ -7,7 +7,6 @@
 #include "C:/Users/User/Documents/GitHub/CDPFinalProject/Mountain/Plugins/MountainGen/Intermediate/Build/Win64/x64/UnrealEditor/Development/MountainGen/PerModuleInline.gen.cpp"
 #include "C:/Users/User/Documents/GitHub/CDPFinalProject/Mountain/Plugins/MountainGen/Source/MountainGen/Private/MarchingCubesTables.cpp"
 #include "C:/Users/User/Documents/GitHub/CDPFinalProject/Mountain/Plugins/MountainGen/Source/MountainGen/Private/MountainGen.cpp"
+#include "C:/Users/User/Documents/GitHub/CDPFinalProject/Mountain/Plugins/MountainGen/Source/MountainGen/Private/MountainGenAutoTune.cpp"
 #include "C:/Users/User/Documents/GitHub/CDPFinalProject/Mountain/Plugins/MountainGen/Source/MountainGen/Private/MountainGenChunkComponent.cpp"
 #include "C:/Users/User/Documents/GitHub/CDPFinalProject/Mountain/Plugins/MountainGen/Source/MountainGen/Private/MountainGenWorldActor.cpp"
-#include "C:/Users/User/Documents/GitHub/CDPFinalProject/Mountain/Plugins/MountainGen/Source/MountainGen/Private/VoxelDensityGenerator.cpp"
-#include "C:/Users/User/Documents/GitHub/CDPFinalProject/Mountain/Plugins/MountainGen/Source/MountainGen/Private/VoxelMesher.cpp"

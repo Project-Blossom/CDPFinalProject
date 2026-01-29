@@ -198,13 +198,13 @@ struct Z_Construct_UClass_AMountainGenWorldActor_Statics
 	};
 	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_bEnableRandomSeedKey_MetaData[] = {
 		{ "Category", "MountainGen|Runtime" },
-#if !UE_BUILD_SHIPPING
-		{ "Comment", "// \xef\xbf\xbd\xef\xbf\xbd\xc5\xb8\xef\xbf\xbd\xd3\xbf\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd 1\xef\xbf\xbd\xef\xbf\xbd \xc5\xb0\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xc3\xb5\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\n" },
-#endif
 		{ "ModuleRelativePath", "Public/MountainGenWorldActor.h" },
-#if !UE_BUILD_SHIPPING
-		{ "ToolTip", "\xef\xbf\xbd\xef\xbf\xbd\xc5\xb8\xef\xbf\xbd\xd3\xbf\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd 1\xef\xbf\xbd\xef\xbf\xbd \xc5\xb0\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xc3\xb5\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd" },
-#endif
+	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_SeedSearchTries_MetaData[] = {
+		{ "Category", "MountainGen|AutoTune" },
+		{ "ClampMax", "2000" },
+		{ "ClampMin", "1" },
+		{ "ModuleRelativePath", "Public/MountainGenWorldActor.h" },
 	};
 #endif // WITH_METADATA
 
@@ -214,6 +214,7 @@ struct Z_Construct_UClass_AMountainGenWorldActor_Statics
 	static const UECodeGen_Private::FStructPropertyParams NewProp_Settings;
 	static void NewProp_bEnableRandomSeedKey_SetBit(void* Obj);
 	static const UECodeGen_Private::FBoolPropertyParams NewProp_bEnableRandomSeedKey;
+	static const UECodeGen_Private::FIntPropertyParams NewProp_SeedSearchTries;
 	static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 // ********** End Class AMountainGenWorldActor constinit property declarations *********************
 	static constexpr UE::CodeGen::FClassNativeFunction Funcs[] = {
@@ -237,17 +238,19 @@ struct Z_Construct_UClass_AMountainGenWorldActor_Statics
 // ********** Begin Class AMountainGenWorldActor Property Definitions ******************************
 const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_ProcMesh = { "ProcMesh", nullptr, (EPropertyFlags)0x01140000000a001d, UECodeGen_Private::EPropertyGenFlags::Object | UECodeGen_Private::EPropertyGenFlags::ObjectPtr, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenWorldActor, ProcMesh), Z_Construct_UClass_UProceduralMeshComponent_NoRegister, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_ProcMesh_MetaData), NewProp_ProcMesh_MetaData) };
 const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_VoxelMaterial = { "VoxelMaterial", nullptr, (EPropertyFlags)0x0114000000000005, UECodeGen_Private::EPropertyGenFlags::Object | UECodeGen_Private::EPropertyGenFlags::ObjectPtr, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenWorldActor, VoxelMaterial), Z_Construct_UClass_UMaterialInterface_NoRegister, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_VoxelMaterial_MetaData), NewProp_VoxelMaterial_MetaData) };
-const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_Settings = { "Settings", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenWorldActor, Settings), Z_Construct_UScriptStruct_FMountainGenSettings, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_Settings_MetaData), NewProp_Settings_MetaData) }; // 1910493211
+const UECodeGen_Private::FStructPropertyParams Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_Settings = { "Settings", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Struct, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenWorldActor, Settings), Z_Construct_UScriptStruct_FMountainGenSettings, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_Settings_MetaData), NewProp_Settings_MetaData) }; // 448512426
 void Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_bEnableRandomSeedKey_SetBit(void* Obj)
 {
 	((AMountainGenWorldActor*)Obj)->bEnableRandomSeedKey = 1;
 }
 const UECodeGen_Private::FBoolPropertyParams Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_bEnableRandomSeedKey = { "bEnableRandomSeedKey", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Bool | UECodeGen_Private::EPropertyGenFlags::NativeBool, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, sizeof(bool), sizeof(AMountainGenWorldActor), &Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_bEnableRandomSeedKey_SetBit, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_bEnableRandomSeedKey_MetaData), NewProp_bEnableRandomSeedKey_MetaData) };
+const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_SeedSearchTries = { "SeedSearchTries", nullptr, (EPropertyFlags)0x0010000000000005, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AMountainGenWorldActor, SeedSearchTries), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_SeedSearchTries_MetaData), NewProp_SeedSearchTries_MetaData) };
 const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AMountainGenWorldActor_Statics::PropPointers[] = {
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_ProcMesh,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_VoxelMaterial,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_Settings,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_bEnableRandomSeedKey,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AMountainGenWorldActor_Statics::NewProp_SeedSearchTries,
 };
 static_assert(UE_ARRAY_COUNT(Z_Construct_UClass_AMountainGenWorldActor_Statics::PropPointers) < 2048);
 // ********** End Class AMountainGenWorldActor Property Definitions ********************************
@@ -292,10 +295,10 @@ AMountainGenWorldActor::~AMountainGenWorldActor() {}
 struct Z_CompiledInDeferFile_FID_Users_User_Documents_GitHub_CDPFinalProject_Mountain_Plugins_MountainGen_Source_MountainGen_Public_MountainGenWorldActor_h__Script_MountainGen_Statics
 {
 	static constexpr FClassRegisterCompiledInInfo ClassInfo[] = {
-		{ Z_Construct_UClass_AMountainGenWorldActor, AMountainGenWorldActor::StaticClass, TEXT("AMountainGenWorldActor"), &Z_Registration_Info_UClass_AMountainGenWorldActor, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMountainGenWorldActor), 4065302284U) },
+		{ Z_Construct_UClass_AMountainGenWorldActor, AMountainGenWorldActor::StaticClass, TEXT("AMountainGenWorldActor"), &Z_Registration_Info_UClass_AMountainGenWorldActor, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AMountainGenWorldActor), 4224050107U) },
 	};
 }; // Z_CompiledInDeferFile_FID_Users_User_Documents_GitHub_CDPFinalProject_Mountain_Plugins_MountainGen_Source_MountainGen_Public_MountainGenWorldActor_h__Script_MountainGen_Statics 
-static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_User_Documents_GitHub_CDPFinalProject_Mountain_Plugins_MountainGen_Source_MountainGen_Public_MountainGenWorldActor_h__Script_MountainGen_4292546013{
+static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_User_Documents_GitHub_CDPFinalProject_Mountain_Plugins_MountainGen_Source_MountainGen_Public_MountainGenWorldActor_h__Script_MountainGen_3659379006{
 	TEXT("/Script/MountainGen"),
 	Z_CompiledInDeferFile_FID_Users_User_Documents_GitHub_CDPFinalProject_Mountain_Plugins_MountainGen_Source_MountainGen_Public_MountainGenWorldActor_h__Script_MountainGen_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_User_Documents_GitHub_CDPFinalProject_Mountain_Plugins_MountainGen_Source_MountainGen_Public_MountainGenWorldActor_h__Script_MountainGen_Statics::ClassInfo),
 	nullptr, 0,

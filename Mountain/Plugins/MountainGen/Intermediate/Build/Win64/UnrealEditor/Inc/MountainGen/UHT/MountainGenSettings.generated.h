@@ -16,9 +16,19 @@
 
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 
+// ********** Begin ScriptStruct FMGTargets ********************************************************
+struct Z_Construct_UScriptStruct_FMGTargets_Statics;
+#define FID_Users_User_Documents_GitHub_CDPFinalProject_Mountain_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h_17_GENERATED_BODY \
+	friend struct ::Z_Construct_UScriptStruct_FMGTargets_Statics; \
+	MOUNTAINGEN_API static class UScriptStruct* StaticStruct();
+
+
+struct FMGTargets;
+// ********** End ScriptStruct FMGTargets **********************************************************
+
 // ********** Begin ScriptStruct FMountainGenSettings **********************************************
 struct Z_Construct_UScriptStruct_FMountainGenSettings_Statics;
-#define FID_Users_User_Documents_GitHub_CDPFinalProject_Mountain_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h_17_GENERATED_BODY \
+#define FID_Users_User_Documents_GitHub_CDPFinalProject_Mountain_Plugins_MountainGen_Source_MountainGen_Public_MountainGenSettings_h_44_GENERATED_BODY \
 	friend struct ::Z_Construct_UScriptStruct_FMountainGenSettings_Statics; \
 	MOUNTAINGEN_API static class UScriptStruct* StaticStruct();
 

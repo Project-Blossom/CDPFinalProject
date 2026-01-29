@@ -12,10 +12,7 @@
 #include "VoxelDensityGenerator.h"
 #include "VoxelMesher.h"
 #include "MountainGenMeshData.h"
-
 #include "MountainGenAutoTune.h"
-
-static constexpr int32 kAutoTuneFixedSeed = 1337;
 
 AMountainGenWorldActor::AMountainGenWorldActor()
 {
@@ -35,6 +32,7 @@ AMountainGenWorldActor::AMountainGenWorldActor()
 void AMountainGenWorldActor::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
+    ApplyDifficultyPreset();
     BuildChunkAndMesh();
 }
 
@@ -48,7 +46,6 @@ void AMountainGenWorldActor::BeginPlay()
         if (PC)
         {
             EnableInput(PC);
-
             if (InputComponent)
             {
                 InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
@@ -67,21 +64,13 @@ void AMountainGenWorldActor::SetSeed(int32 NewSeed)
 {
     if (Settings.Seed == NewSeed) return;
     Settings.Seed = NewSeed;
-
-    InvalidateAutoTuneCache();
-
     BuildChunkAndMesh();
 }
 
 void AMountainGenWorldActor::RandomizeSeed()
 {
-    const int32 NewSeed = FMath::RandRange(0, INT32_MAX);
-    SetSeed(NewSeed);
-}
-
-void AMountainGenWorldActor::InvalidateAutoTuneCache()
-{
-    bHasAutoTunedCache = false;
+    Settings.Seed = -1;
+    BuildChunkAndMesh();
 }
 
 void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
@@ -89,35 +78,40 @@ void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
     switch (S.Difficulty)
     {
     case EMountainGenDifficulty::Easy:
-        S.Targets.CaveMin = 0.00f;     S.Targets.CaveMax = 0.04f;
+        S.Targets.CaveMin = 0.00f;   S.Targets.CaveMax = 0.04f;
         S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
-        S.Targets.SteepMin = 0.05f;    S.Targets.SteepMax = 0.20f;
+        S.Targets.SteepMin = 0.05f;  S.Targets.SteepMax = 0.20f;
         break;
 
     case EMountainGenDifficulty::Normal:
-        S.Targets.CaveMin = 0.01f;     S.Targets.CaveMax = 0.07f;
+        S.Targets.CaveMin = 0.01f;   S.Targets.CaveMax = 0.07f;
         S.Targets.OverhangMin = 0.02f; S.Targets.OverhangMax = 0.10f;
-        S.Targets.SteepMin = 0.15f;    S.Targets.SteepMax = 0.35f;
+        S.Targets.SteepMin = 0.15f;  S.Targets.SteepMax = 0.35f;
         break;
 
     case EMountainGenDifficulty::Hard:
-        S.Targets.CaveMin = 0.03f;     S.Targets.CaveMax = 0.12f;
+        S.Targets.CaveMin = 0.03f;   S.Targets.CaveMax = 0.12f;
         S.Targets.OverhangMin = 0.06f; S.Targets.OverhangMax = 0.18f;
-        S.Targets.SteepMin = 0.25f;    S.Targets.SteepMax = 0.55f;
+        S.Targets.SteepMin = 0.25f;  S.Targets.SteepMax = 0.55f;
         break;
 
     case EMountainGenDifficulty::Extreme:
-        S.Targets.CaveMin = 0.06f;     S.Targets.CaveMax = 0.20f;
+        S.Targets.CaveMin = 0.06f;   S.Targets.CaveMax = 0.20f;
         S.Targets.OverhangMin = 0.12f; S.Targets.OverhangMax = 0.30f;
-        S.Targets.SteepMin = 0.40f;    S.Targets.SteepMax = 0.80f;
+        S.Targets.SteepMin = 0.40f;  S.Targets.SteepMax = 0.80f;
         break;
 
     default:
-        S.Targets.CaveMin = 0.00f;     S.Targets.CaveMax = 0.04f;
+        S.Targets.CaveMin = 0.00f;   S.Targets.CaveMax = 0.04f;
         S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
-        S.Targets.SteepMin = 0.05f;    S.Targets.SteepMax = 0.20f;
+        S.Targets.SteepMin = 0.05f;  S.Targets.SteepMax = 0.20f;
         break;
     }
+}
+
+void AMountainGenWorldActor::ApplyDifficultyPreset()
+{
+    ApplyDifficultyPresetTo(Settings);
 }
 
 void AMountainGenWorldActor::BuildChunkAndMesh()
@@ -128,8 +122,10 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     ProcMesh->ClearCollisionConvexMeshes();
 
     // ------------------------------------------------------------
-    // (0) 샘플링 그리드 / 월드 범위
+    // (0) 범위/샘플링 그리드
     // ------------------------------------------------------------
+    ApplyDifficultyPreset();
+
     const int32 SampleX = Settings.ChunkX + 1;
     const int32 SampleY = Settings.ChunkY + 1;
     const int32 SampleZ = Settings.ChunkZ + 1;
@@ -141,64 +137,85 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
     const float HalfX = (Settings.ChunkX * Voxel) * 0.5f;
     const float HalfY = (Settings.ChunkY * Voxel) * 0.5f;
-    const float HalfZ = (Settings.ChunkZ * Voxel) * 0.5f;
 
     const FVector ActorWorld = GetActorLocation();
-    const FVector SampleOriginWorld = ActorWorld + FVector(-HalfX, -HalfY, -HalfZ);
     const FVector TerrainOriginWorld = ActorWorld;
+
+    const FVector SampleOriginWorld = ActorWorld + FVector(-HalfX, -HalfY, Settings.BaseHeightCm);
     const FVector ChunkOriginWorld = SampleOriginWorld;
 
     const FVector WorldMin = SampleOriginWorld;
     const FVector WorldMax = SampleOriginWorld + FVector(Settings.ChunkX * Voxel, Settings.ChunkY * Voxel, Settings.ChunkZ * Voxel);
 
     // ------------------------------------------------------------
-    // (1) 입력(유저) 값 백업
+    // (1) 입력 Seed 보관
     // ------------------------------------------------------------
     const int32 InputSeed = Settings.Seed;
-    const EMountainGenDifficulty InputDiff = Settings.Difficulty;
 
     // ------------------------------------------------------------
-    // (2) “생성에만 쓰는” 최종 세팅 FinalS 구성
+    // (2) FinalS 구성
     // ------------------------------------------------------------
     FMountainGenSettings FinalS = Settings;
-
     ApplyDifficultyPresetTo(FinalS);
 
+    // ✅ 고정 조건(너 요구)
+    const float FixedHeightAmp = FinalS.HeightAmpCm;         // 최대높이
+    const float FixedRadius = FinalS.EnvelopeRadiusCm;    // 범위
+    const float FixedBaseH = FinalS.BaseHeightCm;
+
     // ------------------------------------------------------------
-    // (3) AutoTune (캐시)
+    // (3) AutoTune
     // ------------------------------------------------------------
     if (FinalS.bAutoTune)
     {
-        if (!bHasAutoTunedCache)
+        if (InputSeed > 0)
         {
-            FMountainGenSettings TuneS = FinalS;
-            TuneS.Seed = kAutoTuneFixedSeed;
+            FinalS.HeightAmpCm = FixedHeightAmp;
+            FinalS.EnvelopeRadiusCm = FixedRadius;
+            FinalS.BaseHeightCm = FixedBaseH;
 
-            MGTuneSettingsFeedback(TuneS, TerrainOriginWorld, WorldMin, WorldMax);
-
-            CachedTunedSettings = TuneS;
-            bHasAutoTunedCache = true;
+            MGDeriveParamsFromSeed(FinalS, InputSeed);
+            (void)MGFinalizeSettingsFromSeed(FinalS, TerrainOriginWorld, WorldMin, WorldMax);
+            FinalS.Seed = InputSeed;
         }
+        else
+        {
+            const int32 StartSeed = FMath::RandRange(1, INT32_MAX);
+            const int32 Tries = FMath::Max(1, SeedSearchTries);
 
-        const int32 KeepSeed = FinalS.Seed;
-        FinalS = CachedTunedSettings;
-        FinalS.Difficulty = InputDiff;
-        ApplyDifficultyPresetTo(FinalS);
-        FinalS.Seed = KeepSeed;
+            FinalS.HeightAmpCm = FixedHeightAmp;
+            FinalS.EnvelopeRadiusCm = FixedRadius;
+            FinalS.BaseHeightCm = FixedBaseH;
+
+            const bool bFound = MGFindFinalSeedByFeedback(
+                FinalS,
+                TerrainOriginWorld,
+                WorldMin,
+                WorldMax,
+                StartSeed,
+                Tries
+            );
+
+            if (!bFound)
+            {
+                MGDeriveParamsFromSeed(FinalS, StartSeed);
+                (void)MGFinalizeSettingsFromSeed(FinalS, TerrainOriginWorld, WorldMin, WorldMax);
+                FinalS.Seed = StartSeed;
+            }
+        }
     }
-
-    // ------------------------------------------------------------
-    // (4) 최종 Seed 확정
-    // ------------------------------------------------------------
-    if (InputSeed < 0)
-        FinalS.Seed = FMath::RandRange(0, INT32_MAX);
     else
-        FinalS.Seed = InputSeed;
+    {
+        if (InputSeed <= 0)
+            FinalS.Seed = FMath::RandRange(1, INT32_MAX);
+        else
+            FinalS.Seed = InputSeed;
+    }
 
     Settings.Seed = FinalS.Seed;
 
     // ------------------------------------------------------------
-    // (5) density 샘플링
+    // (4) density 샘플링
     // ------------------------------------------------------------
     FVoxelDensityGenerator Gen(FinalS, TerrainOriginWorld);
 
@@ -211,7 +228,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             }
 
     // ------------------------------------------------------------
-    // (6) Marching Cubes
+    // (5) Marching Cubes
     // ------------------------------------------------------------
     FChunkMeshData MeshData;
 
@@ -220,6 +237,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         FinalS.VoxelSizeCm,
         FinalS.IsoLevel,
         ChunkOriginWorld,
+        ActorWorld,
         Gen,
         MeshData
     );
@@ -228,7 +246,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         return;
 
     // ------------------------------------------------------------
-    // (7) Mesh apply
+    // (6) Mesh apply
     // ------------------------------------------------------------
     TArray<FLinearColor> Colors;
     Colors.SetNumZeroed(MeshData.Vertices.Num());
@@ -258,7 +276,7 @@ void AMountainGenWorldActor::PostEditChangeProperty(FPropertyChangedEvent& Prope
     Super::PostEditChangeProperty(PropertyChangedEvent);
     if (!PropertyChangedEvent.Property) return;
 
-    InvalidateAutoTuneCache();
+    ApplyDifficultyPreset();
     BuildChunkAndMesh();
 }
 #endif
