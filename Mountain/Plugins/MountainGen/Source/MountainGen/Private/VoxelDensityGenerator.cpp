@@ -1,23 +1,33 @@
 ﻿#include "VoxelDensityGenerator.h"
 #include "Math/UnrealMathUtility.h"
 
-static FORCEINLINE float Clamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
-
-static FORCEINLINE float SmoothStep(float edge0, float edge1, float x)
+namespace
 {
-    const float den = (edge1 - edge0);
-    if (FMath::IsNearlyZero(den)) return (x >= edge1) ? 1.f : 0.f;
+    static FORCEINLINE float Clamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
 
-    const float t = FMath::Clamp((x - edge0) / den, 0.f, 1.f);
-    return t * t * (3.f - 2.f * t);
+    static FORCEINLINE float SmoothStep(float edge0, float edge1, float x)
+    {
+        const float den = (edge1 - edge0);
+        if (FMath::IsNearlyZero(den)) return (x >= edge1) ? 1.f : 0.f;
+
+        const float t = FMath::Clamp((x - edge0) / den, 0.f, 1.f);
+        return t * t * (3.f - 2.f * t);
+    }
+
+    // UE 기본 Perlin ( -1..1 )
+    static FORCEINLINE float Noise3D(const FVector& p)
+    {
+        return FMath::PerlinNoise3D(p);
+    }
+    
+    static FORCEINLINE float Ridged01(float n)
+    {
+        // 1 - abs(noise) : ridged (0..1)
+        float r = 1.f - FMath::Abs(n);
+        r = FMath::Clamp(r, 0.f, 1.f);
+        return r * r;
+    }
 }
-
-// UE 기본 Perlin ( -1..1 )
-static FORCEINLINE float Noise3D(const FVector& p)
-{
-    return FMath::PerlinNoise3D(p);
-}
-
 float FVoxelDensityGenerator::FBM3D(const FVector& p, int32 Octaves, float Lacunarity, float Gain) const
 {
     Octaves = FMath::Clamp(Octaves, 1, 12);
@@ -33,14 +43,6 @@ float FVoxelDensityGenerator::FBM3D(const FVector& p, int32 Octaves, float Lacun
         amp *= Gain;
     }
     return sum;
-}
-
-static FORCEINLINE float Ridged01(float n)
-{
-    // 1 - abs(noise) : ridged (0..1)
-    float r = 1.f - FMath::Abs(n);
-    r = FMath::Clamp(r, 0.f, 1.f);
-    return r * r;
 }
 
 float FVoxelDensityGenerator::RidgedFBM01(const FVector& p, int32 Octaves, float Lacunarity, float Gain) const
