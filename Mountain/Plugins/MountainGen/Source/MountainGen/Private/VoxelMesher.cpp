@@ -1,10 +1,15 @@
 ﻿#include "VoxelMesher.h"
+
 #include "VoxelChunk.h"
 #include "MountainGenMeshData.h"
 #include "MarchingCubesTables.h"
 #include "VoxelDensityGenerator.h"
+
 #include "ProceduralMeshComponent.h"
 
+// ------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------
 static FORCEINLINE int32 Idx3(int32 X, int32 Y, int32 Z, int32 SX, int32 SY)
 {
     return X + Y * SX + Z * SX * SY;
@@ -14,8 +19,17 @@ static FORCEINLINE FVector LerpVertex(const FVector& P1, const FVector& P2, floa
 {
     const float Den = (V2 - V1);
     if (FMath::IsNearlyZero(Den)) return P1;
+
     const float T = (Iso - V1) / Den;
     return P1 + T * (P2 - P1);
+}
+
+static FORCEINLINE FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
+{
+    const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
+    const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
+    const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
+    return FVector(dx, dy, dz).GetSafeNormal();
 }
 
 static FORCEINLINE FProcMeshTangent MakeTangentFromNormal(const FVector& N)
@@ -26,22 +40,15 @@ static FORCEINLINE FProcMeshTangent MakeTangentFromNormal(const FVector& N)
     return FProcMeshTangent(T, false);
 }
 
-static FORCEINLINE FVector EstimateNormalFromDensity(
-    const FVoxelDensityGenerator& Gen,
-    const FVector& Pcm,
-    float StepCm)
-{
-    const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
-    const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
-    const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
-    return FVector(dx, dy, dz).GetSafeNormal();
-}
-
+// ------------------------------------------------------------
+// FVoxelMesher
+// ------------------------------------------------------------
 void FVoxelMesher::BuildMarchingCubes(
     const FVoxelChunk& Chunk,
     float VoxelSizeCm,
     float IsoLevel,
     const FVector& ChunkOriginWorld,
+    const FVector& ActorWorld,
     const FVoxelDensityGenerator& Gen,
     FChunkMeshData& Out)
 {
@@ -71,11 +78,13 @@ void FVoxelMesher::BuildMarchingCubes(
         };
 
     // ============================================================
-    // 에지 캐시
+    // Edge caches
     // ============================================================
     const int32 XW = SX - 1;
     const int32 YW = SY - 1;
     const int32 ZW = SZ - 1;
+
+    if (XW <= 0 || YW <= 0 || ZW <= 0) return;
 
     const int32 NumXEdges = XW * SY * SZ;
     const int32 NumYEdges = SX * YW * SZ;
@@ -85,21 +94,35 @@ void FVoxelMesher::BuildMarchingCubes(
     TArray<int32> YEdgeCache; YEdgeCache.Init(-1, NumYEdges);
     TArray<int32> ZEdgeCache; ZEdgeCache.Init(-1, NumZEdges);
 
-    auto XEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32 { return x + y * XW + z * XW * SY; };
-    auto YEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32 { return x + y * SX + z * SX * YW; };
-    auto ZEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32 { return x + y * SX + z * SX * SY; };
+    auto XEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32
+        {
+            return x + y * XW + z * XW * SY;
+        };
+    auto YEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32
+        {
+            return x + y * SX + z * SX * YW;
+        };
+    auto ZEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32
+        {
+            return x + y * SX + z * SX * SY;
+        };
 
-    auto AddSharedVertex = [&](const FVector& P) -> int32
+    auto AddSharedVertex = [&](const FVector& PWorld) -> int32
         {
             const int32 Idx = Out.Vertices.Num();
-            Out.Vertices.Add(P);
 
-            const float Step = FMath::Max(2.0f * VoxelSizeCm, 20.0f);
-            FVector N = EstimateNormalFromDensity(Gen, P, Step);
+            Out.Vertices.Add(PWorld - ActorWorld);
+
+            const float Step = FMath::Max(2.0f * VoxelSizeCm, 40.0f);
+
+            FVector N = -EstimateNormalFromDensity(Gen, PWorld, Step);
             if (!N.IsNormalized()) N = FVector::UpVector;
 
             Out.Normals.Add(N);
-            Out.UV0.Add(FVector2D(P.X * 0.001f, P.Y * 0.001f));
+
+            const FVector PLocal = (PWorld - ActorWorld);
+            Out.UV0.Add(FVector2D(PLocal.X * 0.001f, PLocal.Y * 0.001f));
+
             Out.Tangents.Add(MakeTangentFromNormal(N));
             return Idx;
         };
@@ -117,25 +140,27 @@ void FVoxelMesher::BuildMarchingCubes(
         {
             switch (e)
             {
-            case 0: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z)];             return MakeAndCache(slot, 0, 1, V, P); }
-            case 1: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z)];         return MakeAndCache(slot, 1, 2, V, P); }
-            case 2: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z)];         return MakeAndCache(slot, 2, 3, V, P); }
-            case 3: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z)];             return MakeAndCache(slot, 3, 0, V, P); }
+            case 0: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z)];     return MakeAndCache(slot, 0, 1, V, P); }
+            case 1: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z)];     return MakeAndCache(slot, 1, 2, V, P); }
+            case 2: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z)];     return MakeAndCache(slot, 2, 3, V, P); }
+            case 3: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z)];     return MakeAndCache(slot, 3, 0, V, P); }
 
-            case 4: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z + 1)];         return MakeAndCache(slot, 4, 5, V, P); }
-            case 5: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z + 1)];     return MakeAndCache(slot, 5, 6, V, P); }
-            case 6: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z + 1)];     return MakeAndCache(slot, 6, 7, V, P); }
-            case 7: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z + 1)];         return MakeAndCache(slot, 7, 4, V, P); }
+            case 4: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z + 1)]; return MakeAndCache(slot, 4, 5, V, P); }
+            case 5: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z + 1)]; return MakeAndCache(slot, 5, 6, V, P); }
+            case 6: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z + 1)]; return MakeAndCache(slot, 6, 7, V, P); }
+            case 7: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z + 1)]; return MakeAndCache(slot, 7, 4, V, P); }
 
-            case 8: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y, z)];             return MakeAndCache(slot, 0, 4, V, P); }
-            case 9: { int32& slot = ZEdgeCache[ZEdgeIdx(x + 1, y, z)];         return MakeAndCache(slot, 1, 5, V, P); }
+            case 8: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y, z)];     return MakeAndCache(slot, 0, 4, V, P); }
+            case 9: { int32& slot = ZEdgeCache[ZEdgeIdx(x + 1, y, z)];     return MakeAndCache(slot, 1, 5, V, P); }
             case 10: { int32& slot = ZEdgeCache[ZEdgeIdx(x + 1, y + 1, z)];     return MakeAndCache(slot, 2, 6, V, P); }
-            case 11: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y + 1, z)];         return MakeAndCache(slot, 3, 7, V, P); }
-            default:
-                return -1;
+            case 11: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y + 1, z)];     return MakeAndCache(slot, 3, 7, V, P); }
+            default: return -1;
             }
         };
 
+    // ============================================================
+    // Triangulation
+    // ============================================================
     Out.Vertices.Reserve(NumXEdges + NumYEdges + NumZEdges);
     Out.Normals.Reserve(NumXEdges + NumYEdges + NumZEdges);
     Out.UV0.Reserve(NumXEdges + NumYEdges + NumZEdges);
@@ -143,7 +168,9 @@ void FVoxelMesher::BuildMarchingCubes(
     Out.Triangles.Reserve(CX * CY * CZ * 15);
 
     for (int32 z = 0; z < CZ; ++z)
+    {
         for (int32 y = 0; y < CY; ++y)
+        {
             for (int32 x = 0; x < CX; ++x)
             {
                 float V[8];
@@ -179,6 +206,7 @@ void FVoxelMesher::BuildMarchingCubes(
                 P[6] = WorldP(x + 1, y + 1, z + 1);
                 P[7] = WorldP(x, y + 1, z + 1);
 
+                // 삼각형 생성
                 for (int32 i = 0; TriTable[CubeIndex][i] != -1; i += 3)
                 {
                     const int32 eA = TriTable[CubeIndex][i];
@@ -193,8 +221,10 @@ void FVoxelMesher::BuildMarchingCubes(
                     if (iA == iB || iB == iC || iC == iA) continue;
 
                     Out.Triangles.Add(iA);
-                    Out.Triangles.Add(iB);
                     Out.Triangles.Add(iC);
+                    Out.Triangles.Add(iB);
                 }
             }
+        }
+    }
 }

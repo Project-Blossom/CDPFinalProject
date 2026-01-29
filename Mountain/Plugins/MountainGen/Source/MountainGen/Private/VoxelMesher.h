@@ -12,6 +12,7 @@ struct FVoxelMesher
         float VoxelSizeCm,
         float IsoLevel,
         const FVector& ChunkOriginWorld,
+        const FVector& ActorWorld,
         const FVoxelDensityGenerator& Gen,
         FChunkMeshData& Out);
 };

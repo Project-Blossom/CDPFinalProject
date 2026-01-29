@@ -41,18 +41,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Runtime")
     bool bEnableRandomSeedKey = true;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune", meta = (ClampMin = "1", ClampMax = "2000"))
+    int32 SeedSearchTries = 300;
+
 private:
     void BuildChunkAndMesh();
 
     static void ApplyDifficultyPresetTo(FMountainGenSettings& S);
-
-    UPROPERTY(Transient)
-    bool bHasAutoTunedCache = false;
-
-    UPROPERTY(Transient)
-    FMountainGenSettings CachedTunedSettings;
-
-    void InvalidateAutoTuneCache();
+    void ApplyDifficultyPreset();
 
 #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
