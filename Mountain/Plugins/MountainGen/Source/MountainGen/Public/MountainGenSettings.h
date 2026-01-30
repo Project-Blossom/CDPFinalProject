@@ -103,11 +103,11 @@ struct FMountainGenSettings
 
     // 피드백 반복 횟수
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune", meta = (ClampMin = "1", ClampMax = "20"))
-    int32 AutoTuneMaxIters = 6;
+    int32 AutoTuneMaxIters = 1;
 
     // Seed 후보를 몇 번 찾아볼지
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune", meta = (ClampMin = "1", ClampMax = "2000"))
-    int32 SeedSearchTries = 300;
+    int32 SeedSearchTries = 5;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune")
     FMGTargets Targets;
