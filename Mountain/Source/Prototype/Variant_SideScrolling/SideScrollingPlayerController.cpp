@@ -18,7 +18,7 @@ void ASideScrollingPlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	// only spawn touch controls on local player controllers
-	if (ShouldUseTouchControls() && IsLocalPlayerController())
+	if (SVirtualJoystick::ShouldDisplayTouchInterface() && IsLocalPlayerController())
 	{
 		// spawn the mobile controls widget
 		MobileControlsWidget = CreateWidget<UUserWidget>(this, MobileControlsWidgetClass);
@@ -39,8 +39,6 @@ void ASideScrollingPlayerController::BeginPlay()
 
 void ASideScrollingPlayerController::SetupInputComponent()
 {
-	Super::SetupInputComponent();
-
 	// only add IMCs for local player controllers
 	if (IsLocalPlayerController())
 	{
@@ -53,7 +51,7 @@ void ASideScrollingPlayerController::SetupInputComponent()
 			}
 
 			// only add these IMCs if we're not using mobile touch input
-			if (!ShouldUseTouchControls())
+			if (!SVirtualJoystick::ShouldDisplayTouchInterface())
 			{
 				for (UInputMappingContext* CurrentContext : MobileExcludedMappingContexts)
 				{
@@ -89,10 +87,4 @@ void ASideScrollingPlayerController::OnPawnDestroyed(AActor* DestroyedActor)
 			Possess(RespawnedCharacter);
 		}
 	}
-}
-
-bool ASideScrollingPlayerController::ShouldUseTouchControls() const
-{
-	// are we on a mobile platform? Should we force touch?
-	return SVirtualJoystick::ShouldDisplayTouchInterface() || bForceTouchControls;
 }

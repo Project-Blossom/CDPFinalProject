@@ -9,17 +9,19 @@ public class Prototype : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[] {
-			"Core",
-			"CoreUObject",
-			"Engine",
-			"InputCore",
-			"EnhancedInput",
-			"AIModule",
-			"StateTreeModule",
-			"GameplayStateTreeModule",
-			"UMG",
-			"Slate"
-		});
+            "Core",
+            "CoreUObject",
+            "Engine",
+            "InputCore",
+            "EnhancedInput",
+            "AIModule",
+            "StateTreeModule",
+            "GameplayStateTreeModule",
+            "UMG",
+            "Slate",
+            "ProceduralMeshComponent",
+            "PhysicsCore"
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 

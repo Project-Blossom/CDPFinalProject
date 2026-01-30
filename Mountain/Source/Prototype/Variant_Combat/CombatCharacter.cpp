@@ -86,12 +86,6 @@ void ACombatCharacter::ChargedAttackReleased()
 	DoChargedAttackEnd();
 }
 
-void ACombatCharacter::ToggleCamera()
-{
-	// call the BP hook
-	BP_ToggleCamera();
-}
-
 void ACombatCharacter::DoMove(float Right, float Forward)
 {
 	if (GetController() != nullptr)
@@ -187,9 +181,6 @@ void ACombatCharacter::ComboAttack()
 	// reset the combo count
 	ComboCount = 0;
 
-	// notify enemies they are about to be attacked
-	NotifyEnemiesOfIncomingAttack();
-
 	// play the attack montage
 	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
 	{
@@ -212,9 +203,6 @@ void ACombatCharacter::ChargedAttack()
 
 	// reset the charge loop flag
 	bHasLoopedChargedAttack = false;
-
-	// notify enemies they are about to be attacked
-	NotifyEnemiesOfIncomingAttack();
 
 	// play the charged attack montage
 	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
@@ -314,9 +302,6 @@ void ACombatCharacter::CheckCombo()
 			// do we still have a combo section to play?
 			if (ComboCount < ComboSectionNames.Num())
 			{
-				// notify enemies they are about to be attacked
-				NotifyEnemiesOfIncomingAttack();
-
 				// jump to the next combo section
 				if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
 				{
@@ -336,44 +321,6 @@ void ACombatCharacter::CheckChargedAttack()
 	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
 	{
 		AnimInstance->Montage_JumpToSection(bIsChargingAttack ? ChargeLoopSection : ChargeAttackSection, ChargedAttackMontage);
-	}
-}
-
-void ACombatCharacter::NotifyEnemiesOfIncomingAttack()
-{
-	// sweep for objects in front of the character to be hit by the attack
-	TArray<FHitResult> OutHits;
-
-	// start at the actor location, sweep forward
-	const FVector TraceStart = GetActorLocation();
-	const FVector TraceEnd = TraceStart + (GetActorForwardVector() * DangerTraceDistance);
-
-	// check for pawn object types only
-	FCollisionObjectQueryParams ObjectParams;
-	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
-
-	// use a sphere shape for the sweep
-	FCollisionShape CollisionShape;
-	CollisionShape.SetSphere(DangerTraceRadius);
-
-	// ignore self
-	FCollisionQueryParams QueryParams;
-	QueryParams.AddIgnoredActor(this);
-
-	if (GetWorld()->SweepMultiByObjectType(OutHits, TraceStart, TraceEnd, FQuat::Identity, ObjectParams, CollisionShape, QueryParams))
-	{
-		// iterate over each object hit
-		for (const FHitResult& CurrentHit : OutHits)
-		{
-			// check if we've hit a damageable actor
-			ICombatDamageable* Damageable = Cast<ICombatDamageable>(CurrentHit.GetActor());
-
-			if (Damageable)
-			{
-				// notify the enemy
-				Damageable->NotifyDanger(GetActorLocation(), this);
-			}
-		}
 	}
 }
 
@@ -421,11 +368,6 @@ void ACombatCharacter::HandleDeath()
 }
 
 void ACombatCharacter::ApplyHealing(float Healing, AActor* Healer)
-{
-	// stub
-}
-
-void ACombatCharacter::NotifyDanger(const FVector& DangerLocation, AActor* DangerSource)
 {
 	// stub
 }
@@ -528,9 +470,6 @@ void ACombatCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		// Charged Attack
 		EnhancedInputComponent->BindAction(ChargedAttackAction, ETriggerEvent::Started, this, &ACombatCharacter::ChargedAttackPressed);
 		EnhancedInputComponent->BindAction(ChargedAttackAction, ETriggerEvent::Completed, this, &ACombatCharacter::ChargedAttackReleased);
-
-		// Camera Side Toggle
-		EnhancedInputComponent->BindAction(ToggleCameraAction, ETriggerEvent::Triggered, this, &ACombatCharacter::ToggleCamera);
 	}
 }
 

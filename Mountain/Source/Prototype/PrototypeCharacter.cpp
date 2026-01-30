@@ -1,133 +1,191 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
-
 #include "PrototypeCharacter.h"
+
 #include "Engine/LocalPlayer.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
+
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
-#include "Prototype.h"
+
+#include "InputMappingContext.h"
+#include "InputAction.h"
+#include "InputCoreTypes.h"
+
+#include "ClimbDebugComponent.h"
 
 APrototypeCharacter::APrototypeCharacter()
 {
-	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
-		
-	// Don't rotate when the controller rotates. Let that just affect the camera.
+
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	// Configure character movement
 	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
+	GetCharacterMovement()->RotationRate = FRotator(0.f, 500.f, 0.f);
 
-	// Note: For faster iteration times these variables, and many more, can be tweaked in the Character Blueprint
-	// instead of recompiling to adjust them
 	GetCharacterMovement()->JumpZVelocity = 500.f;
 	GetCharacterMovement()->AirControl = 0.35f;
 	GetCharacterMovement()->MaxWalkSpeed = 500.f;
 	GetCharacterMovement()->MinAnalogWalkSpeed = 20.f;
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
-	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
+	GetCharacterMovement()->BrakingDecelerationFalling = 1500.f;
 
-	// Create a camera boom (pulls in towards the player if there is a collision)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.0f;
+	CameraBoom->TargetArmLength = 400.f;
 	CameraBoom->bUsePawnControlRotation = true;
 
-	// Create a follow camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
-	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
+	ClimbDebugComp = CreateDefaultSubobject<UClimbDebugComponent>(TEXT("ClimbDebugComp"));
+
+	DebugIMC = CreateDefaultSubobject<UInputMappingContext>(TEXT("IMC_DebugRuntime"));
+	IA_DebugEnterFP = CreateDefaultSubobject<UInputAction>(TEXT("IA_DebugEnterFP"));
+	IA_DebugExitFP = CreateDefaultSubobject<UInputAction>(TEXT("IA_DebugExitFP"));
+	IA_DebugTrace = CreateDefaultSubobject<UInputAction>(TEXT("IA_DebugTrace"));
+
+	IA_DebugEnterFP->ValueType = EInputActionValueType::Boolean;
+	IA_DebugExitFP->ValueType = EInputActionValueType::Boolean;
+	IA_DebugTrace->ValueType = EInputActionValueType::Boolean;
+}
+
+void APrototypeCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (!IsLocallyControlled()) return;
+
+	SetupDebugEnhancedInput();
+	AddDebugMappingContext();
 }
 
 void APrototypeCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
-	// Set up action bindings
-	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent)) {
-		
-		// Jumping
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-		// Moving
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &APrototypeCharacter::Move);
-		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &APrototypeCharacter::Look);
-
-		// Looking
-		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &APrototypeCharacter::Look);
-	}
-	else
+	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		UE_LOG(LogPrototype, Error, TEXT("'%s' Failed to find an Enhanced Input component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."), *GetNameSafe(this));
+		if (JumpAction)
+		{
+			EIC->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+			EIC->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+		}
+
+		if (MoveAction)
+		{
+			EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &APrototypeCharacter::Move);
+		}
+		if (LookAction)
+		{
+			EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &APrototypeCharacter::Look);
+		}
+		if (MouseLookAction)
+		{
+			EIC->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &APrototypeCharacter::Look);
+		}
+
+		// Debug bindings
+		if (IA_DebugEnterFP) EIC->BindAction(IA_DebugEnterFP, ETriggerEvent::Started, this, &APrototypeCharacter::DbgEnterFP);
+		if (IA_DebugExitFP)  EIC->BindAction(IA_DebugExitFP, ETriggerEvent::Started, this, &APrototypeCharacter::DbgExitFP);
+		if (IA_DebugTrace)   EIC->BindAction(IA_DebugTrace, ETriggerEvent::Started, this, &APrototypeCharacter::DbgTrace);
 	}
 }
 
 void APrototypeCharacter::Move(const FInputActionValue& Value)
 {
-	// input is a Vector2D
-	FVector2D MovementVector = Value.Get<FVector2D>();
-
-	// route the input
-	DoMove(MovementVector.X, MovementVector.Y);
+	const FVector2D V = Value.Get<FVector2D>();
+	DoMove(V.X, V.Y);
 }
 
 void APrototypeCharacter::Look(const FInputActionValue& Value)
 {
-	// input is a Vector2D
-	FVector2D LookAxisVector = Value.Get<FVector2D>();
-
-	// route the input
-	DoLook(LookAxisVector.X, LookAxisVector.Y);
+	const FVector2D V = Value.Get<FVector2D>();
+	DoLook(V.X, V.Y);
 }
 
 void APrototypeCharacter::DoMove(float Right, float Forward)
 {
-	if (GetController() != nullptr)
-	{
-		// find out which way is forward
-		const FRotator Rotation = GetController()->GetControlRotation();
-		const FRotator YawRotation(0, Rotation.Yaw, 0);
+	if (!Controller) return;
 
-		// get forward vector
-		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FRotator Rot = Controller->GetControlRotation();
+	const FRotator YawRot(0.f, Rot.Yaw, 0.f);
 
-		// get right vector 
-		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+	const FVector Fwd = FRotationMatrix(YawRot).GetUnitAxis(EAxis::X);
+	const FVector Rgt = FRotationMatrix(YawRot).GetUnitAxis(EAxis::Y);
 
-		// add movement 
-		AddMovementInput(ForwardDirection, Forward);
-		AddMovementInput(RightDirection, Right);
-	}
+	AddMovementInput(Fwd, Forward);
+	AddMovementInput(Rgt, Right);
 }
 
 void APrototypeCharacter::DoLook(float Yaw, float Pitch)
 {
-	if (GetController() != nullptr)
-	{
-		// add yaw and pitch input to controller
-		AddControllerYawInput(Yaw);
-		AddControllerPitchInput(Pitch);
-	}
+	if (!Controller) return;
+
+	AddControllerYawInput(Yaw);
+	AddControllerPitchInput(Pitch);
 }
 
 void APrototypeCharacter::DoJumpStart()
 {
-	// signal the character to jump
 	Jump();
 }
 
 void APrototypeCharacter::DoJumpEnd()
 {
-	// signal the character to stop jumping
 	StopJumping();
+}
+
+void APrototypeCharacter::SetupDebugEnhancedInput()
+{
+	if (bDebugInputSetupDone) return;
+	bDebugInputSetupDone = true;
+
+	if (!DebugIMC || !IA_DebugEnterFP || !IA_DebugExitFP || !IA_DebugTrace) return;
+
+	DebugIMC->MapKey(IA_DebugEnterFP, EKeys::Q);
+	DebugIMC->MapKey(IA_DebugExitFP, EKeys::E);
+	DebugIMC->MapKey(IA_DebugTrace, EKeys::LeftMouseButton);
+}
+
+void APrototypeCharacter::AddDebugMappingContext()
+{
+	APlayerController* PC = Cast<APlayerController>(Controller);
+	if (!PC) return;
+
+	ULocalPlayer* LP = PC->GetLocalPlayer();
+	if (!LP) return;
+
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
+	if (!Subsystem) return;
+
+	if (DebugIMC)
+	{
+		Subsystem->AddMappingContext(DebugIMC, 100);
+	}
+}
+
+// ------------------------
+// Debug handlers
+// ------------------------
+
+void APrototypeCharacter::DbgEnterFP()
+{
+	if (ClimbDebugComp) ClimbDebugComp->EnterDebugFP();
+}
+
+void APrototypeCharacter::DbgExitFP()
+{
+	if (ClimbDebugComp) ClimbDebugComp->ExitDebugFP();
+}
+
+void APrototypeCharacter::DbgTrace()
+{
+	if (ClimbDebugComp) ClimbDebugComp->TraceAndPrintAngle();
 }

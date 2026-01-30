@@ -15,6 +15,14 @@
 	"IsExperimentalVersion": false,
 	"Installed": false,
 	"EnabledByDefault": true,
+
+	"Plugins": [
+    {
+      "Name": "ProceduralMeshComponent",
+      "Enabled": true
+    }
+  ],
+
 	"Modules": [
 		{
 			"Name": "MountainGen",
