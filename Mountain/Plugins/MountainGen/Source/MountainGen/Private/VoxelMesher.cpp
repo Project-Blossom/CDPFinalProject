@@ -10,36 +10,38 @@
 // ------------------------------------------------------------
 // Helpers
 // ------------------------------------------------------------
-static FORCEINLINE int32 Idx3(int32 X, int32 Y, int32 Z, int32 SX, int32 SY)
+namespace
 {
-    return X + Y * SX + Z * SX * SY;
+    static FORCEINLINE int32 Idx3(int32 X, int32 Y, int32 Z, int32 SX, int32 SY)
+    {
+        return X + Y * SX + Z * SX * SY;
+    }
+
+    static FORCEINLINE FVector LerpVertex(const FVector& P1, const FVector& P2, float V1, float V2, float Iso)
+    {
+        const float Den = (V2 - V1);
+        if (FMath::IsNearlyZero(Den)) return P1;
+
+        const float T = (Iso - V1) / Den;
+        return P1 + T * (P2 - P1);
+    }
+
+    static FORCEINLINE FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
+    {
+        const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
+        const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
+        const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
+        return FVector(dx, dy, dz).GetSafeNormal();
+    }
+
+    static FORCEINLINE FProcMeshTangent MakeTangentFromNormal(const FVector& N)
+    {
+        const FVector Ref = (FMath::Abs(N.Z) < 0.999f) ? FVector::UpVector : FVector::ForwardVector;
+        FVector T = (Ref - (Ref | N) * N).GetSafeNormal();
+        if (!T.IsNormalized()) T = FVector::RightVector;
+        return FProcMeshTangent(T, false);
+    }
 }
-
-static FORCEINLINE FVector LerpVertex(const FVector& P1, const FVector& P2, float V1, float V2, float Iso)
-{
-    const float Den = (V2 - V1);
-    if (FMath::IsNearlyZero(Den)) return P1;
-
-    const float T = (Iso - V1) / Den;
-    return P1 + T * (P2 - P1);
-}
-
-static FORCEINLINE FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
-{
-    const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
-    const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
-    const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
-    return FVector(dx, dy, dz).GetSafeNormal();
-}
-
-static FORCEINLINE FProcMeshTangent MakeTangentFromNormal(const FVector& N)
-{
-    const FVector Ref = (FMath::Abs(N.Z) < 0.999f) ? FVector::UpVector : FVector::ForwardVector;
-    FVector T = (Ref - (Ref | N) * N).GetSafeNormal();
-    if (!T.IsNormalized()) T = FVector::RightVector;
-    return FProcMeshTangent(T, false);
-}
-
 // ------------------------------------------------------------
 // FVoxelMesher
 // ------------------------------------------------------------
