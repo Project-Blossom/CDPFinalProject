@@ -7,9 +7,6 @@
 
 #include "ProceduralMeshComponent.h"
 
-// ------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------
 namespace
 {
     static FORCEINLINE int32 Idx3(int32 X, int32 Y, int32 Z, int32 SX, int32 SY)
@@ -26,14 +23,6 @@ namespace
         return P1 + T * (P2 - P1);
     }
 
-    static FORCEINLINE FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
-    {
-        const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
-        const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
-        const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
-        return FVector(dx, dy, dz).GetSafeNormal();
-    }
-
     static FORCEINLINE FProcMeshTangent MakeTangentFromNormal(const FVector& N)
     {
         const FVector Ref = (FMath::Abs(N.Z) < 0.999f) ? FVector::UpVector : FVector::ForwardVector;
@@ -41,10 +30,17 @@ namespace
         if (!T.IsNormalized()) T = FVector::RightVector;
         return FProcMeshTangent(T, false);
     }
+} // namespace
+
+// EstimateNormalFromDensity는 람다에서 접근해야 하므로 namespace 밖에 정의
+static FORCEINLINE FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
+{
+    const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
+    const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
+    const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
+    return FVector(dx, dy, dz).GetSafeNormal();
 }
-// ------------------------------------------------------------
-// FVoxelMesher
-// ------------------------------------------------------------
+
 void FVoxelMesher::BuildMarchingCubes(
     const FVoxelChunk& Chunk,
     float VoxelSizeCm,
@@ -79,9 +75,6 @@ void FVoxelMesher::BuildMarchingCubes(
             return ChunkOriginWorld + FVector(x * VoxelSizeCm, y * VoxelSizeCm, z * VoxelSizeCm);
         };
 
-    // ============================================================
-    // Edge caches
-    // ============================================================
     const int32 XW = SX - 1;
     const int32 YW = SY - 1;
     const int32 ZW = SZ - 1;
@@ -160,9 +153,6 @@ void FVoxelMesher::BuildMarchingCubes(
             }
         };
 
-    // ============================================================
-    // Triangulation
-    // ============================================================
     Out.Vertices.Reserve(NumXEdges + NumYEdges + NumZEdges);
     Out.Normals.Reserve(NumXEdges + NumYEdges + NumZEdges);
     Out.UV0.Reserve(NumXEdges + NumYEdges + NumZEdges);
@@ -208,7 +198,6 @@ void FVoxelMesher::BuildMarchingCubes(
                 P[6] = WorldP(x + 1, y + 1, z + 1);
                 P[7] = WorldP(x, y + 1, z + 1);
 
-                // 삼각형 생성
                 for (int32 i = 0; TriTable[CubeIndex][i] != -1; i += 3)
                 {
                     const int32 eA = TriTable[CubeIndex][i];
