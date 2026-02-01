@@ -209,4 +209,38 @@ struct FMountainGenSettings
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Safety", meta = (AdvancedDisplay))
     bool bCaveHeightsAreAbsoluteWorldZ = false;
+
+    // ---------------- Cliff ----------------
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cliff", meta = (ClampMin = "100.0", AdvancedDisplay))
+    float CliffDepthCm = 18000.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cliff", meta = (ClampMin = "100.0", AdvancedDisplay))
+    float CliffSurfaceBandCm = 2500.f;
+
+    // ============================================================
+    // Cliff Base (NEW) : "직육면체 절벽"을 기본으로 생성
+    // ============================================================
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff")
+    bool bUseCliffBase = true;
+
+    // 절벽 폭
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "1000.0"))
+    float CliffHalfWidthCm = 30000.f;   // 좌우 600m
+
+    // 절벽 높이
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "1000.0"))
+    float CliffHeightCm = 35000.f;      // 350m
+
+    // 절벽 두께
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "500.0"))
+    float CliffThicknessCm = 20000.f;   // 200m
+
+    // 절벽 표면 노이즈가 파고/튀어나오는 최대 깊이
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "0.0"))
+    float CliffSurfaceAmpCm = 2500.f;
+
+    // 절벽 표면 노이즈 스케일
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "300.0"))
+    float CliffSurfaceScaleCm = 7000.f;
 };

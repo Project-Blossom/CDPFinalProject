@@ -14,20 +14,42 @@ namespace
         return t * t * (3.f - 2.f * t);
     }
 
-    // UE 기본 Perlin ( -1..1 )
     static FORCEINLINE float Noise3D(const FVector& p)
     {
         return FMath::PerlinNoise3D(p);
     }
-    
+
     static FORCEINLINE float Ridged01(float n)
     {
-        // 1 - abs(noise) : ridged (0..1)
         float r = 1.f - FMath::Abs(n);
         r = FMath::Clamp(r, 0.f, 1.f);
         return r * r;
     }
+
+    static FORCEINLINE float SdBox(const FVector& p, const FVector& b)
+    {
+        const FVector q(FMath::Abs(p.X), FMath::Abs(p.Y), FMath::Abs(p.Z));
+        const FVector d = q - b;
+
+        const float outside = FVector(
+            FMath::Max(d.X, 0.f),
+            FMath::Max(d.Y, 0.f),
+            FMath::Max(d.Z, 0.f)
+        ).Size();
+
+        const float inside = FMath::Min(FMath::Max(d.X, FMath::Max(d.Y, d.Z)), 0.f);
+        return outside + inside;
+    }
+
+    static FORCEINLINE float Remap01(float x, float a, float b)
+    {
+        const float den = (b - a);
+        if (FMath::IsNearlyZero(den)) return (x >= b) ? 1.f : 0.f;
+        return Clamp01((x - a) / den);
+    }
+
 }
+
 float FVoxelDensityGenerator::FBM3D(const FVector& p, int32 Octaves, float Lacunarity, float Gain) const
 {
     Octaves = FMath::Clamp(Octaves, 1, 12);
@@ -82,117 +104,115 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
 {
     const float Iso = S.IsoLevel;
 
+    // =========================
+    // 0) Local 좌표
+    // =========================
     const FVector Local = WorldPosCm - TerrainOriginWorld;
 
-    // ============================================================
-    // 1) 상단 캡 / 하단 솔리드
-    // ============================================================
-    const float BaseZWorld = TerrainOriginWorld.Z + S.BaseHeightCm;
-    const float TopZWorld = BaseZWorld + FMath::Max(1000.f, S.HeightAmpCm);
+    // =========================
+    // 1) 베이스
+    // =========================
+    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
 
-    if (WorldPosCm.Z > TopZWorld)          return Iso - 1.0f;
-    if (WorldPosCm.Z < BaseZWorld - 2000.f) return Iso + 1.0f;
+    const float HalfX = (S.ChunkX * Voxel) * 0.5f;
+    const float HalfY = (S.ChunkY * Voxel) * 0.5f;
+    const float Height = (S.ChunkZ * Voxel);
 
-    // ============================================================
-    // 2) Envelope
-    // ============================================================
-    const FVector2D d2(Local.X, Local.Y);
-    const float r = d2.Size();
+    const FVector BoxCenter(0.f, 0.f, (Height * 0.5f) + S.BaseHeightCm);
+    const FVector P = Local - BoxCenter;
 
-    const float RadiusCm = FMath::Max(1000.f, S.EnvelopeRadiusCm);
-    const float EdgeFadeCm = FMath::Max(100.f, S.EnvelopeEdgeFadeCm);
+    const FVector HalfExtents(
+        FMath::Max(100.f, HalfX),
+        FMath::Max(100.f, HalfY),
+        FMath::Max(100.f, Height * 0.5f)
+    );
 
-    const float edge01 = SmoothStep(RadiusCm - EdgeFadeCm, RadiusCm, r); // 0..1
-    const float edgeCut = -edge01 * FMath::Max(5000.f, S.EnvelopeEdgeCutCm);
+    float density = -SdBox(P, HalfExtents);
 
-    // ============================================================
-    // 3) 도메인 워프 + 3D 프랙탈 필드
-    // ============================================================
-    FVector p = Local;
-    const FVector so = SeedOffset();
-    p += so;
+    if (density < -Voxel * 2.f)
+        return Iso - 1.0f;
 
-    if (S.WarpStrength > 0.f && S.WarpAmpCm > 0.f && S.WarpPatchCm > 1.f)
+    // =========================
+    // 2) 절벽
+    // =========================
+    const float FaceDist = (HalfExtents.X - P.X);
+
+    const float FaceFade = FMath::Max(800.f, S.OverhangFadeCm * 0.35f);
+    const float faceMask = 1.f - SmoothStep(0.f, FaceFade, FMath::Max(0.f, FaceDist));
+
+    const float z01 = Remap01(Local.Z, S.BaseHeightCm + 500.f, S.BaseHeightCm + Height - 800.f);
+
+    // =========================
+    // 3) 도메인 워프
+    // =========================
+    FVector pp = Local;
+    pp += SeedOffset();
+
+    const float WarpStrength = FMath::Clamp(S.WarpStrength, 0.f, 1.2f);
+    if (WarpStrength > 0.f && S.WarpAmpCm > 0.f && S.WarpPatchCm > 1.f)
     {
-        const float WarpAmp = S.WarpAmpCm * S.WarpStrength;
-        p = Warp3D(p, S.WarpPatchCm, WarpAmp);
+        const float WarpAmp = FMath::Clamp(S.WarpAmpCm, 0.f, 6000.f) * WarpStrength;
+        pp = Warp3D(pp, FMath::Max(2000.f, S.WarpPatchCm), WarpAmp);
     }
 
-    const float BaseScale = FMath::Max(100.f, S.BaseField3DScaleCm);
-    const FVector bp = p / BaseScale;
+    // =========================
+    // 4) 표면 굴곡
+    // =========================
+    const float DetailScale = FMath::Max(800.f, S.DetailScaleCm);
+    const FVector dp = pp / DetailScale;
 
-    float rid01 = RidgedFBM01(bp, FMath::Clamp(S.BaseField3DOctaves, 1, 8), 2.0f, 0.55f);
-    rid01 = FMath::Pow(Clamp01(rid01), FMath::Max(1.f, S.BaseField3DRidgedPower));
-    const float ridSigned = rid01 * 2.f - 1.f;
+    const float n = FBM3D(dp, 4, 2.0f, 0.52f);
 
-    const float DetailScale = FMath::Max(300.f, S.DetailScaleCm);
-    const FVector dp = p / DetailScale;
-    const float mid = FBM3D(dp, 4, 2.15f, 0.52f);
+    const float RoughAmp = FMath::Clamp(S.BaseField3DStrengthCm, 1500.f, 9000.f);
 
-    const float MassAmp = FMath::Max(1000.f, S.BaseField3DStrengthCm);
-    float field = ridSigned * MassAmp + mid * (0.35f * MassAmp);
+    density += n * RoughAmp * faceMask * z01;
 
-    // ============================================================
-    // 4) Z 게이팅
-    // ============================================================
-    const float Gravity = FMath::Max(0.01f, S.GravityStrength) * FMath::Max(0.1f, S.GravityScale);
-
-    const float h01 = Clamp01((WorldPosCm.Z - BaseZWorld) / FMath::Max(1.f, (TopZWorld - BaseZWorld)));
-
-    const float bulkSolid = (1.0f - h01) * (MassAmp * 0.90f);
-
-    const float softCap01 = SmoothStep(TopZWorld - 4000.f, TopZWorld + 2000.f, WorldPosCm.Z);
-    const float capCut = -softCap01 * (MassAmp * 2.0f);
-
-    const float vertical = (BaseZWorld - WorldPosCm.Z) * Gravity;
-
-    field *= FMath::Lerp(1.0f, 0.35f, h01);
-
-    float density = vertical + bulkSolid + field + edgeCut + capCut;
-
-    // ============================================================
-    // 5) Overhang
-    // ============================================================
-    if (S.VolumeStrength > 0.f && S.OverhangScaleCm > 1.f)
+    // =========================
+    // 5) 오버행
+    // =========================
+    const float VolumeStrength = FMath::Clamp(S.VolumeStrength, 0.f, 1.8f);
+    if (VolumeStrength > 0.f)
     {
-        const float OverScale = FMath::Max(1.f, S.OverhangScaleCm);
-        const FVector op = (p / OverScale);
+        const float OverScale = FMath::Max(1200.f, S.OverhangScaleCm);
+        const FVector op = pp / OverScale;
 
-        float n01 = RidgedFBM01(op, 4, 2.0f, 0.55f);
+        float r01 = RidgedFBM01(op, 4, 2.0f, 0.55f);
 
-        float mask = (n01 - S.OverhangBias) / FMath::Max(0.0001f, (1.f - S.OverhangBias));
-        mask = Clamp01(mask);
-        mask = FMath::Pow(mask, 2.2f);
+        const float bias = FMath::Clamp(S.OverhangBias, 0.50f, 0.72f);
 
-        const float oh01 = SmoothStep(BaseZWorld + 2000.f, BaseZWorld + FMath::Max(1.f, S.OverhangFadeCm), WorldPosCm.Z);
-        density += mask * oh01 * S.VolumeStrength * S.OverhangDepthCm;
+        float m = (r01 - bias) / FMath::Max(0.0001f, (1.f - bias));
+        m = Clamp01(m);
+        m = FMath::Pow(m, 2.0f);
+
+        const float depth = FMath::Clamp(S.OverhangDepthCm, 300.f, 6000.f);
+
+        density += m * depth * VolumeStrength * faceMask * z01;
     }
 
-    // ============================================================
-    // 6) Caves
-    // ============================================================
-    if (S.CaveStrength > 0.f && S.CaveScaleCm > 1.f)
+    // =========================
+    // 6) 동굴
+    // =========================
+    const float CaveStrength = FMath::Clamp(S.CaveStrength, 0.f, 1.4f);
+    if (CaveStrength > 0.f)
     {
-        const float zForCave = (S.bCaveHeightsAreAbsoluteWorldZ ? WorldPosCm.Z : Local.Z);
+        const float CaveScale = FMath::Max(1500.f, S.CaveScaleCm);
+        const FVector cp = pp / CaveScale;
 
-        const float hUp = SmoothStep(S.CaveMinHeightCm, S.CaveMinHeightCm + 4000.f, zForCave);
-        const float hDown = 1.f - SmoothStep(S.CaveMaxHeightCm, S.CaveMaxHeightCm + 4000.f, zForCave);
-        const float HeightBand = hUp * hDown;
+        const float c = FBM3D(cp, 5, 2.0f, 0.5f);      // -1..1
+        const float c01 = c * 0.5f + 0.5f;             // 0..1
 
-        if (HeightBand > 0.001f)
-        {
-            const float CaveScale = FMath::Max(1.f, S.CaveScaleCm);
-            const FVector cp = p / CaveScale;
+        const float thr = FMath::Clamp(S.CaveThreshold, 0.55f, 0.75f);
+        const float band = FMath::Clamp(S.CaveBand, 0.06f, 0.22f);
 
-            const float c = FBM3D(cp, 5, 2.0f, 0.5f);
-            const float c01 = c * 0.5f + 0.5f;
+        float pocket = (c01 - thr) / FMath::Max(0.0001f, band);
+        pocket = Clamp01(pocket);
+        pocket = FMath::Pow(pocket, 1.8f);
 
-            float m = (c01 - S.CaveThreshold) / FMath::Max(0.0001f, S.CaveBand);
-            m = Clamp01(m);
-            m = FMath::Pow(m, 1.8f);
+        const float pocketDepth = FMath::Clamp(S.CaveDepthCm, 200.f, 2500.f);
 
-            density -= m * S.CaveStrength * HeightBand * S.CaveDepthCm;
-        }
+        const float midBand = SmoothStep(0.25f, 0.55f, z01) * (1.f - SmoothStep(0.70f, 0.95f, z01));
+
+        density -= pocket * pocketDepth * CaveStrength * faceMask * midBand;
     }
 
     return density;

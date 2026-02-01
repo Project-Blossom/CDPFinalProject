@@ -23,6 +23,14 @@ namespace
         return P1 + T * (P2 - P1);
     }
 
+    static FORCEINLINE FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
+    {
+        const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
+        const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
+        const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
+        return FVector(dx, dy, dz).GetSafeNormal();
+    }
+
     static FORCEINLINE FProcMeshTangent MakeTangentFromNormal(const FVector& N)
     {
         const FVector Ref = (FMath::Abs(N.Z) < 0.999f) ? FVector::UpVector : FVector::ForwardVector;
@@ -30,15 +38,6 @@ namespace
         if (!T.IsNormalized()) T = FVector::RightVector;
         return FProcMeshTangent(T, false);
     }
-} // namespace
-
-// EstimateNormalFromDensity는 람다에서 접근해야 하므로 namespace 밖에 정의
-static FORCEINLINE FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
-{
-    const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
-    const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
-    const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
-    return FVector(dx, dy, dz).GetSafeNormal();
 }
 
 void FVoxelMesher::BuildMarchingCubes(
@@ -78,7 +77,6 @@ void FVoxelMesher::BuildMarchingCubes(
     const int32 XW = SX - 1;
     const int32 YW = SY - 1;
     const int32 ZW = SZ - 1;
-
     if (XW <= 0 || YW <= 0 || ZW <= 0) return;
 
     const int32 NumXEdges = XW * SY * SZ;
@@ -109,10 +107,8 @@ void FVoxelMesher::BuildMarchingCubes(
             Out.Vertices.Add(PWorld - ActorWorld);
 
             const float Step = FMath::Max(2.0f * VoxelSizeCm, 40.0f);
-
             FVector N = -EstimateNormalFromDensity(Gen, PWorld, Step);
             if (!N.IsNormalized()) N = FVector::UpVector;
-
             Out.Normals.Add(N);
 
             const FVector PLocal = (PWorld - ActorWorld);
