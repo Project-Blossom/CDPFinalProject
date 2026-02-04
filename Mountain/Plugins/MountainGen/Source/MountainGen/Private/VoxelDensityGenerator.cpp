@@ -109,38 +109,107 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     // =========================
     const FVector Local = WorldPosCm - TerrainOriginWorld;
 
+    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
+
+    // ============================================================
+    // Cliff
+    // ============================================================
+    if (S.bUseCliffBase)
+    {
+        const float CliffHalfW = FMath::Max(500.f, S.CliffHalfWidthCm);
+        const float CliffH = FMath::Max(500.f, S.CliffHeightCm);
+        const float CliffT = FMath::Max(200.f, S.CliffThicknessCm);
+
+        const FVector CliffCenter(CliffT * 0.5f, 0.f, S.BaseHeightCm + CliffH * 0.5f);
+        const FVector HalfExtents(CliffT * 0.5f, CliffHalfW, CliffH * 0.5f);
+
+        const float Influence =
+            FMath::Max3(
+                FMath::Max(S.CliffSurfaceAmpCm, 0.f),
+                FMath::Max(S.OverhangDepthCm, 0.f),
+                FMath::Max(S.CaveDepthCm, 0.f)
+            )
+            + FMath::Max(S.WarpAmpCm, 0.f)
+            + FMath::Max(S.BaseField3DStrengthCm, 0.f)
+            + Voxel * 6.f;
+
+        const FVector P = Local - CliffCenter;
+
+        // AABB 밖이면 = 무조건 공기
+        if (FMath::Abs(P.X) > (HalfExtents.X + Influence) ||
+            FMath::Abs(P.Y) > (HalfExtents.Y + Influence) ||
+            FMath::Abs(P.Z) > (HalfExtents.Z + Influence))
+        {
+            return Iso + 1.0f;
+        }
+    }
+
     // =========================
     // 1) 베이스
     // =========================
-    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
+    float density = 0.0f;
 
-    const float HalfX = (S.ChunkX * Voxel) * 0.5f;
-    const float HalfY = (S.ChunkY * Voxel) * 0.5f;
-    const float Height = (S.ChunkZ * Voxel);
+    FVector P = FVector::ZeroVector;
+    FVector HalfExtents = FVector::ZeroVector;
 
-    const FVector BoxCenter(0.f, 0.f, (Height * 0.5f) + S.BaseHeightCm);
-    const FVector P = Local - BoxCenter;
+    if (S.bUseCliffBase)
+    {
+        const float CliffHalfW = FMath::Max(500.f, S.CliffHalfWidthCm);
+        const float CliffH = FMath::Max(500.f, S.CliffHeightCm);
+        const float CliffT = FMath::Max(200.f, S.CliffThicknessCm);
 
-    const FVector HalfExtents(
-        FMath::Max(100.f, HalfX),
-        FMath::Max(100.f, HalfY),
-        FMath::Max(100.f, Height * 0.5f)
-    );
+        const FVector CliffCenter(CliffT * 0.5f, 0.f, S.BaseHeightCm + CliffH * 0.5f);
+        P = Local - CliffCenter;
+        HalfExtents = FVector(CliffT * 0.5f, CliffHalfW, CliffH * 0.5f);
 
-    float density = -SdBox(P, HalfExtents);
+        density = SdBox(P, HalfExtents);
 
-    if (density < -Voxel * 2.f)
-        return Iso - 1.0f;
+        // 절벽 표면 울퉁불퉁
+        if (S.CliffSurfaceAmpCm > 0.f)
+        {
+            FVector pp = Local + SeedOffset();
+            const float Scale = FMath::Max(300.f, S.CliffSurfaceScaleCm);
+            const float n = FBM3D(pp / Scale, 4, 2.0f, 0.55f);
+            density += n * S.CliffSurfaceAmpCm;
+        }
+    }
+    else
+    {
+        const float HalfX = (S.ChunkX * Voxel) * 0.5f;
+        const float HalfY = (S.ChunkY * Voxel) * 0.5f;
+        const float Height = (S.ChunkZ * Voxel);
+
+        const FVector BoxCenter(0.f, 0.f, (Height * 0.5f) + S.BaseHeightCm);
+        P = Local - BoxCenter;
+
+        HalfExtents = FVector(
+            FMath::Max(100.f, HalfX),
+            FMath::Max(100.f, HalfY),
+            FMath::Max(100.f, Height * 0.5f)
+        );
+
+        density = -SdBox(P, HalfExtents);
+    }
 
     // =========================
     // 2) 절벽
     // =========================
     const float FaceDist = (HalfExtents.X - P.X);
-
     const float FaceFade = FMath::Max(800.f, S.OverhangFadeCm * 0.35f);
-    const float faceMask = 1.f - SmoothStep(0.f, FaceFade, FMath::Max(0.f, FaceDist));
 
-    const float z01 = Remap01(Local.Z, S.BaseHeightCm + 500.f, S.BaseHeightCm + Height - 800.f);
+    float faceMask = 0.f;
+    if (FaceDist > 0.f)
+    {
+        faceMask = 1.f - SmoothStep(0.f, FaceFade, FaceDist);
+    }
+
+    // z01: 높이
+    float z01 = 1.f;
+    {
+        float zMin = S.BaseHeightCm + 500.f;
+        float zMax = S.BaseHeightCm + (S.bUseCliffBase ? FMath::Max(1000.f, S.CliffHeightCm) : FMath::Max(1000.f, (S.ChunkZ * Voxel))) - 800.f;
+        z01 = Remap01(Local.Z, zMin, zMax);
+    }
 
     // =========================
     // 3) 도메인 워프

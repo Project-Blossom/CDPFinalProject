@@ -51,8 +51,6 @@ ADownfallCharacter::ADownfallCharacter()
     bUseControllerRotationYaw = false;
 
     // Capsule Physics (초기에는 비활성화)
-    GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
-    GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
     GetCapsuleComponent()->SetSimulatePhysics(false);
     GetCapsuleComponent()->SetEnableGravity(true);
     GetCapsuleComponent()->SetLinearDamping(0.5f);
@@ -92,17 +90,6 @@ void ADownfallCharacter::Tick(float DeltaTime)
 
     UpdateStamina(DeltaTime);
     UpdateClimbingState();
-
-    // 착지 후 Physics Velocity 초기화
-    if (GetCharacterMovement()->IsMovingOnGround() && GetCapsuleComponent()->IsSimulatingPhysics())
-    {
-        GetCapsuleComponent()->SetSimulatePhysics(false);
-        GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
-        GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
-        GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-        
-        UE_LOG(LogDownFall, Log, TEXT("Landed - Physics disabled, Velocity reset"));
-    }
 
 #if !UE_BUILD_SHIPPING
     DrawDebugInfo();
@@ -196,7 +183,7 @@ void ADownfallCharacter::OnMove(const FInputActionValue& Value)
         UCapsuleComponent* Capsule = GetCapsuleComponent();
         if (!IsValid(Capsule)) return;
 
-        const float ClimbSpeed = 500.0f; // 부드러운 속도 (조정 가능: 400-600)
+        const float ClimbImpulse = 800.0f; // Impulse 크기
 
         // 현재 잡고 있는 손의 벽면 Normal 가져오기
         FVector SurfaceNormal = FVector::UpVector;
@@ -217,30 +204,32 @@ void ADownfallCharacter::OnMove(const FInputActionValue& Value)
         FVector SurfaceRight = FVector::CrossProduct(SurfaceNormal, SurfaceUp);
         SurfaceRight.Normalize();
 
-        FVector TargetVelocity = FVector::ZeroVector;
+        FVector FinalDirection = FVector::ZeroVector;
 
-        // 전후 이동 (W/S)
+        // 전후 이동 (W/S) - 벽면을 따라 위/아래
         if (MovementVector.Y != 0.0f)
         {
-            TargetVelocity += SurfaceUp * MovementVector.Y * ClimbSpeed;
+            FinalDirection += SurfaceUp * MovementVector.Y;
+            UE_LOG(LogDownFall, Log, TEXT("Climb W/S: Input=%.2f, SurfaceUp=%s"), 
+                MovementVector.Y, *SurfaceUp.ToString());
         }
 
-        // 좌우 이동 (A/D)
+        // 좌우 이동 (A/D) - 벽면을 따라 좌/우
         if (MovementVector.X != 0.0f)
         {
-            TargetVelocity += SurfaceRight * MovementVector.X * ClimbSpeed;
+            FinalDirection += SurfaceRight * MovementVector.X;
+            UE_LOG(LogDownFall, Log, TEXT("Climb A/D: Input=%.2f, SurfaceRight=%s"), 
+                MovementVector.X, *SurfaceRight.ToString());
         }
 
-        // 현재 Velocity 가져오기
-        FVector CurrentVelocity = Capsule->GetPhysicsLinearVelocity();
-    
-        // 부드러운 보간
-        FVector NewVelocity = FMath::VInterpTo(CurrentVelocity, TargetVelocity, GetWorld()->GetDeltaSeconds(), 5.0f);
-    
-        // Velocity 설정
-        Capsule->SetPhysicsLinearVelocity(NewVelocity);
+        // Impulse 적용 (매 프레임)
+        if (!FinalDirection.IsNearlyZero())
+        {
+            Capsule->AddImpulse(FinalDirection * ClimbImpulse, NAME_None, true);
+            UE_LOG(LogDownFall, Log, TEXT("Applied Impulse: %s (magnitude: %.1f)"), 
+                *FinalDirection.ToString(), ClimbImpulse);
+        }
     }
-    
     // 지상: 일반 이동
     else
     {
@@ -379,10 +368,13 @@ void ADownfallCharacter::ReleaseGrip(bool bIsLeftHand)
 
     // Constraint 해제
     BreakConstraint(Constraint);
-
+    
     // 상태 업데이트
     Hand.State = EHandState::Free;
     Hand.CurrentGrip = FGripPointInfo();
+
+    // 이벤트 발생
+    OnHandReleased(bIsLeftHand);
 
     UE_LOG(LogDownFall, Log, TEXT("%s hand released"), bIsLeftHand ? TEXT("Left") : TEXT("Right"));
 }
