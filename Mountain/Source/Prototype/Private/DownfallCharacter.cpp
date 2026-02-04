@@ -92,19 +92,59 @@ void ADownfallCharacter::Tick(float DeltaTime)
 
     UpdateStamina(DeltaTime);
     UpdateClimbingState();
-    
-    // 착지 후 Physics Velocity 초기화
-    if (GetCharacterMovement()->IsMovingOnGround() && GetCapsuleComponent()->IsSimulatingPhysics())
+
+    // 착지 감지 및 Physics → Walking 모드 전환
+    // Physics ON 중 OR Falling 중에 체크
+    if (GetCapsuleComponent()->IsSimulatingPhysics() || 
+        GetCharacterMovement()->MovementMode == MOVE_Falling)
     {
-        GetCapsuleComponent()->SetSimulatePhysics(false);
-        GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
-        GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
-        GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+        // 바닥과의 충돌 체크
+        FHitResult Hit;
+        FVector Start = GetActorLocation();
+        FVector End = Start - FVector(0, 0, 10.0f); // 바닥 감지 거리
         
-        UE_LOG(LogDownFall, Log, TEXT("Landed - Physics disabled, Velocity reset"));
+        FCollisionQueryParams QueryParams;
+        QueryParams.AddIgnoredActor(this);
+        
+        bool bHitGround = GetWorld()->SweepSingleByChannel(
+            Hit,
+            Start,
+            End,
+            FQuat::Identity,
+            ECC_WorldStatic,
+            FCollisionShape::MakeSphere(GetCapsuleComponent()->GetScaledCapsuleRadius()),
+            QueryParams
+        );
+        
+        if (bHitGround)
+        {
+            // 경사 체크: 걸을 수 있는 경사인지
+            float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(Hit.ImpactNormal.Z));
+            float WalkableSlope = GetCharacterMovement()->GetWalkableFloorAngle();
+            
+            if (SlopeAngle <= WalkableSlope)
+            {
+                // 걸을 수 있는 경사 → Physics OFF, 운동량 초기화
+                GetCapsuleComponent()->SetSimulatePhysics(false);
+                GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
+                GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+                
+                // Rotation 초기화 (중요!)
+                FRotator CurrentRotation = GetActorRotation();
+                FRotator UpRightRotation = FRotator(0.0f, CurrentRotation.Yaw, 0.0f);
+                SetActorRotation(UpRightRotation);
+                
+                GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+                
+                UE_LOG(LogDownFall, Log, TEXT("Landed on walkable surface (%.1f°) - Physics disabled"), SlopeAngle);
+            }
+            else
+            {
+                UE_LOG(LogDownFall, Log, TEXT("Hit steep slope (%.1f°) - Physics continues"), SlopeAngle);
+            }
+        }
     }
 
-    
 #if !UE_BUILD_SHIPPING
     DrawDebugInfo();
 #endif
@@ -403,17 +443,15 @@ void ADownfallCharacter::SetupConstraint(UPhysicsConstraintComponent* Constraint
         NAME_None
     );
 
-    // Linear Constraint (거리 제한) - Free로 변경하여 이동 허용
-    Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Free, 0.0f);
-    Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Free, 0.0f);
-    Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Free, 0.0f);
+    // ✅ Linear Constraint: 최대 거리 제한만 (팔 길이)
+    Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
+    Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
+    Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
 
-    // Linear Drive - 잡은 지점으로 부드럽게 당김
-    Constraint->SetLinearPositionDrive(true, true, true);
-    Constraint->SetLinearDriveParams(GripStrength, GripDamping, 0.0f);
-    Constraint->SetLinearPositionTarget(FVector::ZeroVector); // 잡은 지점 = 원점
+    // Drive 제거
+    Constraint->SetLinearPositionDrive(false, false, false);
 
-    // Angular Constraint (회전 제한)
+    // Angular Constraint
     Constraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
     Constraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
     Constraint->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Limited, 30.0f);
@@ -488,9 +526,60 @@ void ADownfallCharacter::UpdateClimbingState()
     if (bWasClimbing && !bIsClimbing)
     {
         GetCapsuleComponent()->SetSimulatePhysics(false);
-        GetCharacterMovement()->SetMovementMode(MOVE_Falling);
         
-        UE_LOG(LogDownFall, Log, TEXT("Both hands released - falling"));
+        // 바닥에 서있는지 체크
+        FHitResult Hit;
+        FVector Start = GetActorLocation();
+        FVector End = Start - FVector(0, 0, 100.0f); // 100cm 아래 체크 (Velocity 고려)
+        
+        FCollisionQueryParams QueryParams;
+        QueryParams.AddIgnoredActor(this);
+        
+        bool bHitGround = GetWorld()->SweepSingleByChannel(
+            Hit,
+            Start,
+            End,
+            FQuat::Identity,
+            ECC_WorldStatic,
+            FCollisionShape::MakeSphere(GetCapsuleComponent()->GetScaledCapsuleRadius()),
+            QueryParams
+        );
+        
+        if (bHitGround)
+        {
+            // 경사 체크
+            float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(Hit.ImpactNormal.Z));
+            float WalkableSlope = GetCharacterMovement()->GetWalkableFloorAngle();
+            
+            if (SlopeAngle <= WalkableSlope)
+            {
+                // 걸을 수 있는 바닥 → 즉시 Walking 모드
+                // Velocity 초기화
+                GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
+                GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+                GetCharacterMovement()->Velocity = FVector::ZeroVector;
+                
+                // Rotation 초기화 (중요!)
+                FRotator CurrentRotation = GetActorRotation();
+                FRotator UpRightRotation = FRotator(0.0f, CurrentRotation.Yaw, 0.0f); // Pitch, Roll = 0
+                SetActorRotation(UpRightRotation);
+                
+                GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+                UE_LOG(LogDownFall, Log, TEXT("Released on ground - Walking mode"));
+            }
+            else
+            {
+                // 가파른 경사 → Falling
+                GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+                UE_LOG(LogDownFall, Log, TEXT("Released on steep slope - Falling"));
+            }
+        }
+        else
+        {
+            // 공중 → Falling
+            GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+            UE_LOG(LogDownFall, Log, TEXT("Released in air - Falling"));
+        }
     }
 }
 
@@ -503,100 +592,99 @@ bool ADownfallCharacter::AreBothHandsFree() const
 #if !UE_BUILD_SHIPPING
 void ADownfallCharacter::DrawDebugInfo()
 {
-    if (!IsValid(GetWorld()))
-    {
-        return;
-    }
+    if (!GEngine) return;
 
-    // 1. Grip 지점 및 Constraint 선
+    int32 LineIndex = 1;
     
-    // 왼손
-    if (LeftHand.State == EHandState::Gripping && LeftHand.CurrentGrip.bIsValid)
+    // 등반 상태
+    FString ClimbingStatus = bIsClimbing ? TEXT("Climbing") : TEXT("Not Climbing");
+    GEngine->AddOnScreenDebugMessage(
+        LineIndex++, 0.0f, FColor::Cyan,
+        FString::Printf(TEXT("Status: %s"), *ClimbingStatus)
+    );
+
+    // Left Hand 정보
+    if (LeftHand.State == EHandState::Gripping)
     {
-        // Grip 지점 (녹색 구)
-        DrawDebugSphere(
-            GetWorld(), 
-            LeftHand.CurrentGrip.WorldLocation, 
-            15.0f, 
-            8, 
-            FColor::Green, 
-            false, 
-            -1.0f, 
-            0, 
-            2.0f
+        // 경사각
+        float SlopeAngle = LeftHand.CurrentGrip.SurfaceAngleDegrees;
+        GEngine->AddOnScreenDebugMessage(
+            LineIndex++, 0.0f, FColor::Green,
+            FString::Printf(TEXT("Left Slope: %.1f°"), SlopeAngle)
         );
         
-        // Constraint 연결선 (청록색)
-        DrawDebugLine(
-            GetWorld(), 
-            GetCapsuleComponent()->GetComponentLocation(), 
-            LeftHand.CurrentGrip.WorldLocation, 
-            FColor::Cyan, 
-            false, 
-            -1.0f, 
-            0, 
-            2.0f
-        );
-    }
-
-    // 오른손
-    if (RightHand.State == EHandState::Gripping && RightHand.CurrentGrip.bIsValid)
-    {
-        // Grip 지점 (녹색 구)
-        DrawDebugSphere(
-            GetWorld(), 
-            RightHand.CurrentGrip.WorldLocation, 
-            15.0f, 
-            8, 
-            FColor::Blue, 
-            false, 
-            -1.0f, 
-            0, 
-            2.0f
+        // 스태미나 소모량
+        float DrainRate = GetStaminaDrainRate(LeftHand);
+        GEngine->AddOnScreenDebugMessage(
+            LineIndex++, 0.0f, FColor::Green,
+            FString::Printf(TEXT("Left Drain: %.2f/s"), DrainRate)
         );
         
-        // Constraint 연결선 (자홍색)
-        DrawDebugLine(
-            GetWorld(), 
-            GetCapsuleComponent()->GetComponentLocation(), 
-            RightHand.CurrentGrip.WorldLocation, 
-            FColor::Magenta, 
-            false, 
-            -1.0f, 
-            0, 
-            2.0f
+        // 현재 스태미나
+        GEngine->AddOnScreenDebugMessage(
+            LineIndex++, 0.0f, FColor::Green,
+            FString::Printf(TEXT("Left Stamina: %.1f"), LeftHand.Stamina)
         );
     }
-
-    // 2. 화면 상단 스태미나 표시
-    if (GEngine)
+    else
     {
-        // 왼손 스태미나
-        FString LeftStaminaText = FString::Printf(TEXT("Left Hand: %.1f / %.1f"), LeftHand.Stamina, MaxStamina);
         GEngine->AddOnScreenDebugMessage(
-            1, 
-            0.0f, 
-            LeftHand.Stamina > 30.0f ? FColor::Green : FColor::Red, 
-            LeftStaminaText
-        );
-
-        // 오른손 스태미나
-        FString RightStaminaText = FString::Printf(TEXT("Right Hand: %.1f / %.1f"), RightHand.Stamina, MaxStamina);
-        GEngine->AddOnScreenDebugMessage(
-            2, 
-            0.0f, 
-            RightHand.Stamina > 30.0f ? FColor::Green : FColor::Red, 
-            RightStaminaText
-        );
-
-        // 상태 표시
-        FString StateText = bIsClimbing ? TEXT("CLIMBING") : TEXT("FREE");
-        GEngine->AddOnScreenDebugMessage(
-            3, 
-            0.0f, 
-            bIsClimbing ? FColor::Yellow : FColor::White, 
-            StateText
+            LineIndex++, 0.0f, FColor::Red,
+            TEXT("Left Hand: Free")
         );
     }
+
+    // Right Hand 정보
+    if (RightHand.State == EHandState::Gripping)
+    {
+        // 경사각
+        float SlopeAngle = RightHand.CurrentGrip.SurfaceAngleDegrees;
+        GEngine->AddOnScreenDebugMessage(
+            LineIndex++, 0.0f, FColor::Blue,
+            FString::Printf(TEXT("Right Slope: %.1f°"), SlopeAngle)
+        );
+        
+        // 스태미나 소모량
+        float DrainRate = GetStaminaDrainRate(RightHand);
+        GEngine->AddOnScreenDebugMessage(
+            LineIndex++, 0.0f, FColor::Blue,
+            FString::Printf(TEXT("Right Drain: %.2f/s"), DrainRate)
+        );
+        
+        // 현재 스태미나
+        GEngine->AddOnScreenDebugMessage(
+            LineIndex++, 0.0f, FColor::Blue,
+            FString::Printf(TEXT("Right Stamina: %.1f"), RightHand.Stamina)
+        );
+    }
+    else
+    {
+        GEngine->AddOnScreenDebugMessage(
+            LineIndex++, 0.0f, FColor::Red,
+            TEXT("Right Hand: Free")
+        );
+    }
+
+    // Physics 상태
+    bool bPhysicsOn = GetCapsuleComponent()->IsSimulatingPhysics();
+    FString PhysicsStatus = bPhysicsOn ? TEXT("Physics ON") : TEXT("Physics OFF");
+    GEngine->AddOnScreenDebugMessage(
+        LineIndex++, 0.0f, FColor::Yellow,
+        FString::Printf(TEXT("Physics: %s"), *PhysicsStatus)
+    );
+
+    // Movement 모드
+    FString MovementMode;
+    switch (GetCharacterMovement()->MovementMode)
+    {
+        case MOVE_Walking: MovementMode = TEXT("Walking"); break;
+        case MOVE_Falling: MovementMode = TEXT("Falling"); break;
+        case MOVE_Flying: MovementMode = TEXT("Flying"); break;
+        default: MovementMode = TEXT("Other"); break;
+    }
+    GEngine->AddOnScreenDebugMessage(
+        LineIndex++, 0.0f, FColor::Yellow,
+        FString::Printf(TEXT("Movement: %s"), *MovementMode)
+    );
 }
 #endif
