@@ -326,3 +326,81 @@ bool MGFindFinalSeedByFeedback(
 
     return false;
 }
+
+bool MGIsSatisfiedToTargets(const FMountainGenSettings& S, const FMGMetrics& M)
+{
+    const bool bCaveOK = InRange(M.CaveVoidRatio, S.Targets.CaveMin, S.Targets.CaveMax);
+    const bool bOverOK = InRange(M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax);
+    const bool bSteepOK = InRange(M.SteepRatio, S.Targets.SteepMin, S.Targets.SteepMax);
+    return (bCaveOK && bOverOK && bSteepOK);
+}
+
+FMGMetrics MGComputeMetricsFullGrid(
+    const FMountainGenSettings& S,
+    const FVector& TerrainOriginWorld,
+    const FVector& WorldMinCm,
+    const FVector& WorldMaxCm)
+{
+    FMGMetrics M;
+    const float Iso = S.IsoLevel;
+
+    FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
+
+    const float StepCm = (S.MetricsStepCm > 0.0f)
+        ? S.MetricsStepCm
+        : FMath::Max(100.f, S.VoxelSizeCm * 2.0f);
+
+    float Z0 = WorldMinCm.Z + S.CaveMinHeightCm;
+    float Z1 = WorldMinCm.Z + S.CaveMaxHeightCm;
+    Z0 = FMath::Clamp(Z0, WorldMinCm.Z, WorldMaxCm.Z);
+    Z1 = FMath::Clamp(Z1, WorldMinCm.Z, WorldMaxCm.Z);
+
+    const float SurfaceEps = FMath::Max(10.f, S.VoxelSizeCm * 0.75f);
+    const float NormalStep = FMath::Max(2.f * S.VoxelSizeCm, 40.f);
+
+    int32 CaveTotal = 0;
+    int32 CaveAir = 0;
+
+    int32 Near = 0;
+    int32 Over = 0;
+    int32 Steep = 0;
+
+    for (float z = WorldMinCm.Z; z <= WorldMaxCm.Z + KINDA_SMALL_NUMBER; z += StepCm)
+    {
+        for (float y = WorldMinCm.Y; y <= WorldMaxCm.Y + KINDA_SMALL_NUMBER; y += StepCm)
+        {
+            for (float x = WorldMinCm.X; x <= WorldMaxCm.X + KINDA_SMALL_NUMBER; x += StepCm)
+            {
+                const FVector P(x, y, z);
+                const float d = Gen.SampleDensity(P);
+
+                // Cave void ratio
+                if (z >= Z0 && z <= Z1)
+                {
+                    CaveTotal++;
+                    if (d < Iso) CaveAir++;
+                }
+
+                // surface-derived
+                if (FMath::Abs(d - Iso) <= SurfaceEps)
+                {
+                    const FVector N = EstimateNormalFromDensity(Gen, P, NormalStep);
+                    const float UpDot = FVector::DotProduct(N, FVector::UpVector);
+
+                    Near++;
+                    if (UpDot < 0.f) Over++;
+                    if (FMath::Abs(UpDot) <= S.SteepDotThreshold) Steep++;
+                }
+            }
+        }
+    }
+
+    M.CaveSamples = CaveTotal;
+    M.CaveVoidRatio = (CaveTotal > 0) ? (float)CaveAir / (float)CaveTotal : 0.f;
+
+    M.SurfaceNearSamples = Near;
+    M.OverhangRatio = (Near > 0) ? (float)Over / (float)Near : 0.f;
+    M.SteepRatio = (Near > 0) ? (float)Steep / (float)Near : 0.f;
+
+    return M;
+}

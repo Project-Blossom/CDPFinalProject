@@ -41,3 +41,11 @@ bool MGFindFinalSeedByFeedback(
     const FVector& WorldMaxCm,
     int32 StartSeed,
     int32 Tries);
+
+bool MGIsSatisfiedToTargets(const FMountainGenSettings& S, const FMGMetrics& M);
+
+FMGMetrics MGComputeMetricsFullGrid(
+    const FMountainGenSettings& S,
+    const FVector& TerrainOriginWorld,
+    const FVector& WorldMinCm,
+    const FVector& WorldMaxCm);

@@ -109,6 +109,18 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune", meta = (ClampMin = "1", ClampMax = "2000"))
     int32 SeedSearchTries = 5;
 
+    //메시/콜리전 생성 전에 FullGrid 검사로 Seed 재시도할지
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune")
+    bool bRetrySeedUntilSatisfied = true;
+
+    //최대 재시도 횟수
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune", meta = (ClampMin = "1", ClampMax = "2000"))
+    int32 MaxSeedAttempts = 50;
+
+    // FullGrid 검사 간격(cm)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune", meta = (ClampMin = "0.0", ClampMax = "5000.0"))
+    float MetricsStepCm = 0.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune")
     FMGTargets Targets;
 
@@ -218,7 +230,7 @@ struct FMountainGenSettings
     float CliffSurfaceBandCm = 2500.f;
 
     // ============================================================
-    // Cliff Base (NEW) : "직육면체 절벽"을 기본으로 생성
+    // Cliff Base
     // ============================================================
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff")
