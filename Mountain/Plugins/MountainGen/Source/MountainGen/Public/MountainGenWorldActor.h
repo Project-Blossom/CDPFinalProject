@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "HAL/ThreadSafeBool.h"
 #include "GameFramework/Actor.h"
 #include "MountainGenSettings.h"
 #include "MountainGenMeshData.h"
@@ -20,7 +19,6 @@ public:
 
     virtual void OnConstruction(const FTransform& Transform) override;
     virtual void BeginPlay() override;
-    virtual void Tick(float DeltaSeconds) override;
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen")
     void Regenerate();
@@ -48,12 +46,7 @@ public:
     int32 SeedSearchTries = 300;
 
 private:
-    void BuildChunkAndMesh();
-
-    static void ApplyDifficultyPresetTo(FMountainGenSettings& S);
-    void ApplyDifficultyPreset();
-
-    // ---------------- async state ----------------
+    // ---- Async result ----
     struct FMGAsyncResult
     {
         bool bValid = false;
@@ -62,13 +55,19 @@ private:
         FChunkMeshData MeshData;
     };
 
-    FThreadSafeBool bAsyncWorking = false;
-    int32 CurrentBuildSerial = 0;
-    bool bRegenQueued = false;
+private:
+    void BuildChunkAndMesh();
 
-    FMGAsyncResult PendingResult;
+    static void ApplyDifficultyPresetTo(FMountainGenSettings& S);
+    void ApplyDifficultyPreset();
 
     void ApplyBuiltResult_GameThread(FMGAsyncResult&& Result);
+
+private:
+    FMGAsyncResult PendingResult;
+    bool bAsyncWorking = false;
+    bool bRegenQueued = false;
+    int32 CurrentBuildSerial = 0;
 
 #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;

@@ -7,7 +7,7 @@ static FORCEINLINE float Clamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
 static FORCEINLINE bool InRange(float v, float mn, float mx) { return (v >= mn && v <= mx); }
 static FORCEINLINE float Center(float mn, float mx) { return 0.5f * (mn + mx); }
 
-static FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
+static FVector MG_EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
 {
     const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
     const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
@@ -74,7 +74,7 @@ FMGMetrics MGComputeMetricsQuick(
         if (FMath::Abs(d - Iso) > SurfaceEps)
             continue;
 
-        const FVector N = EstimateNormalFromDensity(Gen, P, NormalStep);
+        const FVector N = MG_EstimateNormalFromDensity(Gen, P, NormalStep);
         const float UpDot = FVector::DotProduct(N, FVector::UpVector);
 
         Near++;
@@ -381,7 +381,7 @@ FMGMetrics MGComputeMetricsFullGrid(
                 // surface-derived
                 if (FMath::Abs(d - Iso) <= SurfaceEps)
                 {
-                    const FVector N = EstimateNormalFromDensity(Gen, P, NormalStep);
+                    const FVector N = MG_EstimateNormalFromDensity(Gen, P, NormalStep);
                     const float UpDot = FVector::DotProduct(N, FVector::UpVector);
 
                     Near++;

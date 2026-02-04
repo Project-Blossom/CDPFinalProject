@@ -31,7 +31,6 @@ namespace
         return FProcMeshTangent(T, false);
     }
 
-    // EstimateNormalFromDensity도 namespace 안으로 (람다에서 접근 가능)
     static FORCEINLINE FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
     {
         const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
@@ -104,11 +103,13 @@ void FVoxelMesher::BuildMarchingCubes(
     auto AddSharedVertex = [&](const FVector& PWorld) -> int32
         {
             const int32 Idx = Out.Vertices.Num();
-
             Out.Vertices.Add(PWorld - ActorWorld);
 
             const float Step = FMath::Max(2.0f * VoxelSizeCm, 40.0f);
-            FVector N = -EstimateNormalFromDensity(Gen, PWorld, Step);
+
+            FVector N = EstimateNormalFromDensity(Gen, PWorld, Step);
+            N *= -1.f;
+
             if (!N.IsNormalized()) N = FVector::UpVector;
             Out.Normals.Add(N);
 
