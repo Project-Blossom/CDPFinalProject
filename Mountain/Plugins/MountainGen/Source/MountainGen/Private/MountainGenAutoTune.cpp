@@ -3,17 +3,20 @@
 #include "Math/UnrealMathUtility.h"
 #include "Math/RandomStream.h"
 
-static FORCEINLINE float Clamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
-static FORCEINLINE bool InRange(float v, float mn, float mx) { return (v >= mn && v <= mx); }
-static FORCEINLINE float Center(float mn, float mx) { return 0.5f * (mn + mx); }
-
-static FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
+namespace
 {
-    const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
-    const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
-    const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
-    return FVector(dx, dy, dz).GetSafeNormal();
-}
+    static FORCEINLINE float Clamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
+    static FORCEINLINE bool InRange(float v, float mn, float mx) { return (v >= mn && v <= mx); }
+    static FORCEINLINE float Center(float mn, float mx) { return 0.5f * (mn + mx); }
+
+    static FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
+    {
+        const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
+        const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
+        const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
+        return FVector(dx, dy, dz).GetSafeNormal();
+    }
+} // namespace
 
 FMGMetrics MGComputeMetricsQuick(
     const FMountainGenSettings& S,
