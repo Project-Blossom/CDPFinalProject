@@ -15,9 +15,7 @@ class UGripPointFinderComponent;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
 
-/**
- * 손 상태
- */
+// 손 상태
 UENUM(BlueprintType)
 enum class EHandState : uint8
 {
@@ -25,9 +23,7 @@ enum class EHandState : uint8
     Gripping   UMETA(DisplayName = "Gripping")
 };
 
-/**
- * 손 데이터
- */
+// 손 데이터
 USTRUCT(BlueprintType)
 struct FHandData
 {
@@ -58,10 +54,8 @@ public:
     virtual void Tick(float DeltaTime) override;
     virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-    // ========================================
+
     // Components
-    // ========================================
-    
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
     TObjectPtr<UCameraComponent> FirstPersonCamera;
 
@@ -80,10 +74,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Climbing|Physics")
     TObjectPtr<UPhysicsConstraintComponent> RightHandConstraint;
 
-    // ========================================
+
     // Enhanced Input
-    // ========================================
-    
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputMappingContext> ClimbingMappingContext;
 
@@ -102,12 +94,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> JumpAction;
 
-    // ========================================
+
     // Settings
-    // ========================================
-    
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physics")
-    float GripStrength = 8000.0f;
+    float GripStrength = 3000.0f; // Constraint 당기는 힘 
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physics")
     float GripDamping = 800.0f;
@@ -124,10 +114,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float StaminaRecoverPerSecond = 15.0f;
 
-    // ========================================
+
     // State
-    // ========================================
-    
     UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
     FHandData LeftHand;
 
@@ -137,10 +125,8 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
     bool bIsClimbing = false;
 
-    // ========================================
+
     // Events
-    // ========================================
-    
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
     void OnHandGripped(bool bIsLeftHand, const FGripPointInfo& GripInfo);
 
@@ -148,10 +134,8 @@ public:
     void OnHandReleased(bool bIsLeftHand);
 
 protected:
-    // ========================================
+
     // Input Handlers
-    // ========================================
-    
     void OnGrabLeftStarted(const FInputActionValue& Value);
     void OnGrabLeftCompleted(const FInputActionValue& Value);
     void OnGrabRightStarted(const FInputActionValue& Value);
@@ -160,34 +144,23 @@ protected:
     void OnMove(const FInputActionValue& Value);
     void OnJumpStarted(const FInputActionValue& Value); 
     void OnJumpCompleted(const FInputActionValue& Value);
-
-    // ========================================
-    // Grip Logic
-    // ========================================
     
+    // Grip Logic
     void TryGrip(bool bIsLeftHand);
     void ReleaseGrip(bool bIsLeftHand);
     void SetupConstraint(UPhysicsConstraintComponent* Constraint, const FVector& TargetLocation);
     void BreakConstraint(UPhysicsConstraintComponent* Constraint);
     
-    // ========================================
     // Stamina
-    // ========================================
-    
     void UpdateStamina(float DeltaTime);
     float GetStaminaDrainRate(const FHandData& Hand) const;
     
-    // ========================================
     // State
-    // ========================================
-    
     void UpdateClimbingState();
     bool AreBothHandsFree() const;
 
-    // ========================================
+
     // Debug
-    // ========================================
-    
 #if !UE_BUILD_SHIPPING
     void DrawDebugInfo();
 #endif

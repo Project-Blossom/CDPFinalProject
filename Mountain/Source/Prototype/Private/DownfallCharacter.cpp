@@ -171,19 +171,79 @@ void ADownfallCharacter::OnMove(const FInputActionValue& Value)
 {
     FVector2D MovementVector = Value.Get<FVector2D>();
 
-    if (Controller)
+    if (!Controller) return;
+
+    // 카메라(컨트롤러) 회전 기준으로 방향 계산
+    const FRotator ControlRotation = Controller->GetControlRotation();
+    const FRotator YawRotation(0.0f, ControlRotation.Yaw, 0.0f);
+    
+    // 등반 중: Physics Impulse 적용
+    if (bIsClimbing)
+    {
+        UCapsuleComponent* Capsule = GetCapsuleComponent();
+        if (!IsValid(Capsule)) return;
+
+        const float ClimbImpulse = 800.0f; // Impulse 크기
+
+        // 현재 잡고 있는 손의 벽면 Normal 가져오기
+        FVector SurfaceNormal = FVector::UpVector;
+        if (LeftHand.State == EHandState::Gripping)
+        {
+            SurfaceNormal = LeftHand.CurrentGrip.SurfaceNormal;
+        }
+        else if (RightHand.State == EHandState::Gripping)
+        {
+            SurfaceNormal = RightHand.CurrentGrip.SurfaceNormal;
+        }
+
+        // 벽면에 평행한 "위" 방향 계산
+        FVector SurfaceUp = FVector::UpVector - SurfaceNormal * (FVector::UpVector | SurfaceNormal);
+        SurfaceUp.Normalize();
+
+        // 벽면에 평행한 "오른쪽" 방향 계산
+        FVector SurfaceRight = FVector::CrossProduct(SurfaceNormal, SurfaceUp);
+        SurfaceRight.Normalize();
+
+        FVector FinalDirection = FVector::ZeroVector;
+
+        // 전후 이동 (W/S) - 벽면을 따라 위/아래
+        if (MovementVector.Y != 0.0f)
+        {
+            FinalDirection += SurfaceUp * MovementVector.Y;
+            UE_LOG(LogDownFall, Log, TEXT("Climb W/S: Input=%.2f, SurfaceUp=%s"), 
+                MovementVector.Y, *SurfaceUp.ToString());
+        }
+
+        // 좌우 이동 (A/D) - 벽면을 따라 좌/우
+        if (MovementVector.X != 0.0f)
+        {
+            FinalDirection += SurfaceRight * MovementVector.X;
+            UE_LOG(LogDownFall, Log, TEXT("Climb A/D: Input=%.2f, SurfaceRight=%s"), 
+                MovementVector.X, *SurfaceRight.ToString());
+        }
+
+        // Impulse 적용 (매 프레임)
+        if (!FinalDirection.IsNearlyZero())
+        {
+            Capsule->AddImpulse(FinalDirection * ClimbImpulse, NAME_None, true);
+            UE_LOG(LogDownFall, Log, TEXT("Applied Impulse: %s (magnitude: %.1f)"), 
+                *FinalDirection.ToString(), ClimbImpulse);
+        }
+    }
+    // 지상: 일반 이동
+    else
     {
         // 전후 이동
         if (MovementVector.Y != 0.0f)
         {
-            const FVector Direction = GetActorForwardVector();
+            const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
             AddMovementInput(Direction, MovementVector.Y);
         }
 
         // 좌우 이동
         if (MovementVector.X != 0.0f)
         {
-            const FVector Direction = GetActorRightVector();
+            const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
             AddMovementInput(Direction, MovementVector.X);
         }
     }
@@ -223,18 +283,14 @@ void ADownfallCharacter::OnJumpCompleted(const FInputActionValue& Value)
     StopJumping();
 }
 
-// ========================================
 // Grip Logic
-// ========================================
-
 void ADownfallCharacter::TryGrip(bool bIsLeftHand)
 {
     FHandData& Hand = bIsLeftHand ? LeftHand : RightHand;
     UPhysicsConstraintComponent* Constraint = bIsLeftHand ? LeftHandConstraint : RightHandConstraint;
 
-    // ========================================
+
     // 1. 상태 확인
-    // ========================================
     if (Hand.State == EHandState::Gripping)
     {
         return;
@@ -251,16 +307,12 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
         UE_LOG(LogDownFall, Error, TEXT("Missing components"));
         return;
     }
-
-    // ========================================
+    
     // 2. 카메라 정보 가져오기
-    // ========================================
     FVector CameraLocation = FirstPersonCamera->GetComponentLocation();
     FVector CameraForward = FirstPersonCamera->GetForwardVector();
-
-    // ========================================
+    
     // 3. 그립 포인트 찾기
-    // ========================================
     FGripPointInfo GripInfo;
     bool bFound = GripFinder->FindGripPoint(CameraLocation, CameraForward, GripInfo);
 
@@ -269,24 +321,24 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
         UE_LOG(LogDownFall, Log, TEXT("%s hand: Grip failed"), bIsLeftHand ? TEXT("Left") : TEXT("Right"));
         return;
     }
+    
+    // 4. 물리 모드 전환 체크 (상태 업데이트 전)
+    bool bWasBothHandsFree = AreBothHandsFree();
 
-    // ========================================
-    // 4. Constraint 설정
-    // ========================================
+    // 5. Constraint 설정
     SetupConstraint(Constraint, GripInfo.WorldLocation);
+    
+    UE_LOG(LogDownFall, Log, TEXT("%s hand gripped: Angle=%.1f°, Quality=%.2f"), 
+        bIsLeftHand ? TEXT("Left") : TEXT("Right"),
+        GripInfo.SurfaceAngleDegrees, 
+        GripInfo.GripQuality);
 
-    // ========================================
-    // 5. 상태 업데이트
-    // ========================================
+    // 6. 상태 업데이트
     Hand.State = EHandState::Gripping;
     Hand.CurrentGrip = GripInfo;
     Hand.GripStartTime = GetWorld()->GetTimeSeconds();
 
-    // ========================================
-    // 6. 물리 모드 전환 (첫 Grip인 경우)
-    // ========================================
-    bool bWasBothHandsFree = AreBothHandsFree();
-    
+    // 7. 물리 모드 전환 (첫 Grip인 경우)
     if (bWasBothHandsFree)
     {
         GetCapsuleComponent()->SetSimulatePhysics(true);
@@ -295,9 +347,7 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
         UE_LOG(LogDownFall, Log, TEXT("Physics mode activated"));
     }
 
-    // ========================================
     // 7. 이벤트 발생
-    // ========================================
     OnHandGripped(bIsLeftHand, GripInfo);
 
     UE_LOG(LogDownFall, Log, TEXT("%s hand gripped: Angle=%.1f°, Quality=%.2f"), 
@@ -345,14 +395,15 @@ void ADownfallCharacter::SetupConstraint(UPhysicsConstraintComponent* Constraint
         NAME_None
     );
 
-    // Linear Constraint (거리 제한)
-    Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
-    Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
-    Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
+    // Linear Constraint (거리 제한) - Free로 변경하여 이동 허용
+    Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Free, 0.0f);
+    Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Free, 0.0f);
+    Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Free, 0.0f);
 
-    // Linear Drive (부드러운 당김)
+    // Linear Drive - 잡은 지점으로 부드럽게 당김
     Constraint->SetLinearPositionDrive(true, true, true);
     Constraint->SetLinearDriveParams(GripStrength, GripDamping, 0.0f);
+    Constraint->SetLinearPositionTarget(FVector::ZeroVector); // 잡은 지점 = 원점
 
     // Angular Constraint (회전 제한)
     Constraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
@@ -368,10 +419,7 @@ void ADownfallCharacter::BreakConstraint(UPhysicsConstraintComponent* Constraint
     }
 }
 
-// ========================================
 // Stamina
-// ========================================
-
 void ADownfallCharacter::UpdateStamina(float DeltaTime)
 {
     // 왼손
@@ -422,10 +470,7 @@ float ADownfallCharacter::GetStaminaDrainRate(const FHandData& Hand) const
     return BaseDrain;
 }
 
-// ========================================
 // State
-// ========================================
-
 void ADownfallCharacter::UpdateClimbingState()
 {
     bool bWasClimbing = bIsClimbing;
@@ -446,10 +491,7 @@ bool ADownfallCharacter::AreBothHandsFree() const
     return (LeftHand.State != EHandState::Gripping && RightHand.State != EHandState::Gripping);
 }
 
-// ========================================
 // Debug
-// ========================================
-
 #if !UE_BUILD_SHIPPING
 void ADownfallCharacter::DrawDebugInfo()
 {
@@ -458,9 +500,7 @@ void ADownfallCharacter::DrawDebugInfo()
         return;
     }
 
-    // ========================================
     // 1. Grip 지점 및 Constraint 선
-    // ========================================
     
     // 왼손
     if (LeftHand.State == EHandState::Gripping && LeftHand.CurrentGrip.bIsValid)
@@ -520,10 +560,7 @@ void ADownfallCharacter::DrawDebugInfo()
         );
     }
 
-    // ========================================
     // 2. 화면 상단 스태미나 표시
-    // ========================================
-    
     if (GEngine)
     {
         // 왼손 스태미나
