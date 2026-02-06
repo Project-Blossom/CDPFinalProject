@@ -302,9 +302,11 @@ void ADownfallCharacter::OnMove(const FInputActionValue& Value)
 
 void ADownfallCharacter::OnJumpStarted(const FInputActionValue& Value)
 {
-    // Grip 중이면 양손 놓고 점프
+    // 등반 중이면 양손 놓고 점프
     if (bIsClimbing)
     {
+        UE_LOG(LogDownFall, Log, TEXT("Jump from climbing - releasing grips"));
+        
         // 양손 모두 놓기
         if (LeftHand.State == EHandState::Gripping)
         {
@@ -315,11 +317,28 @@ void ADownfallCharacter::OnJumpStarted(const FInputActionValue& Value)
             ReleaseGrip(false);
         }
 
-        // 점프 임펄스 적용
-        FVector JumpDirection = GetActorUpVector();
-        GetCapsuleComponent()->AddImpulse(JumpDirection * 50000.0f, NAME_None, true);
+        // Physics OFF (ReleaseGrip에서 이미 했지만 명시적으로)
+        GetCapsuleComponent()->SetSimulatePhysics(false);
         
-        UE_LOG(LogDownFall, Log, TEXT("Jump from climbing"));
+        // 카메라 반대 방향으로 밀기 (벽에서 멀어지기)
+        FVector PushDirection = FVector::ZeroVector;
+        
+        if (FirstPersonCamera)
+        {
+            FVector CameraForward = FirstPersonCamera->GetForwardVector();
+            PushDirection = CameraForward; // 카메라 방향 (벽 쪽으로)
+            PushDirection.Z = 0; // 수평으로만
+            PushDirection.Normalize();
+        }
+        
+        // 밀어내기 (수평) + 점프 (수직)
+        FVector JumpVelocity = PushDirection * 300.0f + FVector::UpVector * 400.0f;
+        
+        // Velocity 직접 설정
+        GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+        GetCharacterMovement()->Velocity = JumpVelocity;
+        
+        UE_LOG(LogDownFall, Log, TEXT("Jump velocity: %s"), *JumpVelocity.ToString());
     }
     else
     {
