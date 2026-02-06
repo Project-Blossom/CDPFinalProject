@@ -16,11 +16,11 @@
 
 #include "Async/Async.h"
 #include "Math/RandomStream.h"
-#include <cfloat>
+#include "Engine/Engine.h"
 
 AMountainGenWorldActor::AMountainGenWorldActor()
 {
-    PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = true;
 
     ProcMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProcMesh"));
     SetRootComponent(ProcMesh);
@@ -31,6 +31,15 @@ AMountainGenWorldActor::AMountainGenWorldActor()
     ProcMesh->bUseAsyncCooking = false;
 
     AutoReceiveInput = EAutoReceiveInput::Player0;
+}
+
+void AMountainGenWorldActor::UI_Status(const FString& Msg, float Seconds, FColor Color) const
+{
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, Seconds, Color, Msg);
+    }
+    UE_LOG(LogTemp, Log, TEXT("%s"), *Msg);
 }
 
 void AMountainGenWorldActor::OnConstruction(const FTransform& Transform)
@@ -50,96 +59,51 @@ void AMountainGenWorldActor::BeginPlay()
         if (PC)
         {
             EnableInput(PC);
-            if (InputComponent)
+
+            if (!InputComponent)
             {
-                InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
-                InputComponent->BindKey(EKeys::NumPadOne, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
+                InputComponent = NewObject<UInputComponent>(this, TEXT("MGInputComponent"));
+                InputComponent->RegisterComponent();
             }
+
+            InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
+            InputComponent->BindKey(EKeys::NumPadOne, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
+
+            UI_Status(TEXT("[MountainGen] 1 키: 시드 랜덤 변경"), 2.0f, FColor::Green);
         }
     }
 }
 
-void AMountainGenWorldActor::Regenerate()
+void AMountainGenWorldActor::Tick(float DeltaSeconds)
 {
-    BuildChunkAndMesh();
-}
+    Super::Tick(DeltaSeconds);
 
-void AMountainGenWorldActor::SetSeed(int32 NewSeed)
-{
-    if (Settings.Seed == NewSeed) return;
-    Settings.Seed = NewSeed;
-    BuildChunkAndMesh();
-}
+    if (!PendingResult.bValid)
+        return;
 
-void AMountainGenWorldActor::RandomizeSeed()
-{
-    Settings.Seed = -1;
-    BuildChunkAndMesh();
-}
+    FMGAsyncResult Result = MoveTemp(PendingResult);
+    PendingResult.bValid = false;
 
-void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
-{
-    switch (S.Difficulty)
+    if (Result.BuildSerial != CurrentBuildSerial)
     {
-    case EMountainGenDifficulty::Easy:
-        S.Targets.CaveMin = 0.00f;   S.Targets.CaveMax = 0.04f;
-        S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
-        S.Targets.SteepMin = 0.05f;  S.Targets.SteepMax = 0.20f;
-        break;
-
-    case EMountainGenDifficulty::Normal:
-        S.Targets.CaveMin = 0.01f;   S.Targets.CaveMax = 0.07f;
-        S.Targets.OverhangMin = 0.02f; S.Targets.OverhangMax = 0.10f;
-        S.Targets.SteepMin = 0.15f;  S.Targets.SteepMax = 0.35f;
-        break;
-
-    case EMountainGenDifficulty::Hard:
-        S.Targets.CaveMin = 0.03f;   S.Targets.CaveMax = 0.12f;
-        S.Targets.OverhangMin = 0.06f; S.Targets.OverhangMax = 0.18f;
-        S.Targets.SteepMin = 0.25f;  S.Targets.SteepMax = 0.55f;
-        break;
-
-    case EMountainGenDifficulty::Extreme:
-        S.Targets.CaveMin = 0.06f;   S.Targets.CaveMax = 0.20f;
-        S.Targets.OverhangMin = 0.12f; S.Targets.OverhangMax = 0.30f;
-        S.Targets.SteepMin = 0.40f;  S.Targets.SteepMax = 0.80f;
-        break;
-
-    default:
-        S.Targets.CaveMin = 0.00f;   S.Targets.CaveMax = 0.04f;
-        S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
-        S.Targets.SteepMin = 0.05f;  S.Targets.SteepMax = 0.20f;
-        break;
+        bAsyncWorking = false;
+        return;
     }
-}
 
-void AMountainGenWorldActor::ApplyDifficultyPreset()
-{
-    ApplyDifficultyPresetTo(Settings);
-}
-
-void AMountainGenWorldActor::ApplyBuiltResult_GameThread(FMGAsyncResult&& Result)
-{
+    // ---- 메시/콜리전 적용 ----
     if (!ProcMesh)
     {
         bAsyncWorking = false;
         return;
     }
 
-    Settings.Seed = Result.FinalSettings.Seed;
-
     ProcMesh->ClearAllMeshSections();
     ProcMesh->ClearCollisionConvexMeshes();
 
     if (Result.MeshData.Vertices.Num() == 0 || Result.MeshData.Triangles.Num() == 0)
     {
+        UI_Status(TEXT("[MountainGen] 생성 실패: MeshData 비어있음"), 2.0f, FColor::Red);
         bAsyncWorking = false;
-
-        if (bRegenQueued)
-        {
-            bRegenQueued = false;
-            BuildChunkAndMesh();
-        }
         return;
     }
 
@@ -163,8 +127,14 @@ void AMountainGenWorldActor::ApplyBuiltResult_GameThread(FMGAsyncResult&& Result
         : ECollisionEnabled::NoCollision
     );
 
+    // 머티리얼
     if (VoxelMaterial)
         ProcMesh->SetMaterial(0, VoxelMaterial);
+
+    // 최종 seed 반영
+    Settings.Seed = Result.FinalSettings.Seed;
+
+    UI_Status(FString::Printf(TEXT("[MountainGen] 시드 변경 완료: %d"), Settings.Seed), 2.5f, FColor::Yellow);
 
     bAsyncWorking = false;
 
@@ -175,23 +145,89 @@ void AMountainGenWorldActor::ApplyBuiltResult_GameThread(FMGAsyncResult&& Result
     }
 }
 
+void AMountainGenWorldActor::Regenerate()
+{
+    BuildChunkAndMesh();
+}
+
+void AMountainGenWorldActor::SetSeed(int32 NewSeed)
+{
+    if (Settings.Seed == NewSeed) return;
+    Settings.Seed = NewSeed;
+    UI_Status(FString::Printf(TEXT("[MountainGen] 시드 변경 요청: %d"), Settings.Seed), 1.5f, FColor::Cyan);
+    BuildChunkAndMesh();
+}
+
+void AMountainGenWorldActor::RandomizeSeed()
+{
+    UI_Status(TEXT("[MountainGen] 시드 변경(랜덤) 요청..."), 1.2f, FColor::Cyan);
+
+    Settings.Seed = -1;
+    BuildChunkAndMesh();
+}
+
+void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
+{
+    switch (S.Difficulty)
+    {
+    case EMountainGenDifficulty::Easy:
+        S.Targets.CaveMin = 0.00f;   S.Targets.CaveMax = 0.04f;
+        S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
+        S.Targets.SteepMin = 0.05f;  S.Targets.SteepMax = 0.20f;
+        break;
+    case EMountainGenDifficulty::Normal:
+        S.Targets.CaveMin = 0.01f;   S.Targets.CaveMax = 0.07f;
+        S.Targets.OverhangMin = 0.02f; S.Targets.OverhangMax = 0.10f;
+        S.Targets.SteepMin = 0.15f;  S.Targets.SteepMax = 0.35f;
+        break;
+    case EMountainGenDifficulty::Hard:
+        S.Targets.CaveMin = 0.03f;   S.Targets.CaveMax = 0.12f;
+        S.Targets.OverhangMin = 0.06f; S.Targets.OverhangMax = 0.18f;
+        S.Targets.SteepMin = 0.25f;  S.Targets.SteepMax = 0.55f;
+        break;
+    case EMountainGenDifficulty::Extreme:
+        S.Targets.CaveMin = 0.06f;   S.Targets.CaveMax = 0.20f;
+        S.Targets.OverhangMin = 0.12f; S.Targets.OverhangMax = 0.30f;
+        S.Targets.SteepMin = 0.40f;  S.Targets.SteepMax = 0.80f;
+        break;
+    default:
+        S.Targets.CaveMin = 0.00f;   S.Targets.CaveMax = 0.04f;
+        S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
+        S.Targets.SteepMin = 0.05f;  S.Targets.SteepMax = 0.20f;
+        break;
+    }
+}
+
+void AMountainGenWorldActor::ApplyDifficultyPreset()
+{
+    ApplyDifficultyPresetTo(Settings);
+}
+
 void AMountainGenWorldActor::BuildChunkAndMesh()
 {
     if (!ProcMesh) return;
 
-    // =========================
-    // 공통: 난이도 프리셋 반영
-    // =========================
+    if (bAsyncWorking)
+    {
+        bRegenQueued = true;
+        return;
+    }
+
     ApplyDifficultyPreset();
 
     const FMountainGenSettings SettingsSnapshot = Settings;
+    const int32 LocalBuildSerial = ++CurrentBuildSerial;
 
+    bAsyncWorking = true;
+
+    UI_Status(TEXT("[MountainGen] 시드 탐색 중)"), 2.0f, FColor::Cyan);
+
+    // 범위/샘플링 그리드
     const int32 SampleX = SettingsSnapshot.ChunkX + 1;
     const int32 SampleY = SettingsSnapshot.ChunkY + 1;
     const int32 SampleZ = SettingsSnapshot.ChunkZ + 1;
 
     const float Voxel = SettingsSnapshot.VoxelSizeCm;
-
     const float HalfX = (SettingsSnapshot.ChunkX * Voxel) * 0.5f;
     const float HalfY = (SettingsSnapshot.ChunkY * Voxel) * 0.5f;
 
@@ -202,34 +238,27 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     const FVector ChunkOriginWorld = SampleOriginWorld;
 
     const FVector WorldMin = SampleOriginWorld;
-    const FVector WorldMax = SampleOriginWorld + FVector(
-        SettingsSnapshot.ChunkX * Voxel,
-        SettingsSnapshot.ChunkY * Voxel,
-        SettingsSnapshot.ChunkZ * Voxel
-    );
+    const FVector WorldMax = SampleOriginWorld + FVector(SettingsSnapshot.ChunkX * Voxel, SettingsSnapshot.ChunkY * Voxel, SettingsSnapshot.ChunkZ * Voxel);
 
     const int32 InputSeed = SettingsSnapshot.Seed;
     const int32 TriesForSeedSearch = FMath::Max(1, SeedSearchTries);
 
-    // =====================================================================
-    // (A) 에디터 배치/Construction 경로
-    // =====================================================================
-#if WITH_EDITOR
-    if (GetWorld())
-    {
-        const EWorldType::Type WT = GetWorld()->WorldType;
-        const bool bIsEditorBuild = (WT == EWorldType::Editor || WT == EWorldType::EditorPreview);
+    TWeakObjectPtr<AMountainGenWorldActor> WeakThis(this);
 
-        if (bIsEditorBuild)
+    Async(EAsyncExecution::ThreadPool,
+        [WeakThis,
+        SettingsSnapshot, TerrainOriginWorld, WorldMin, WorldMax,
+        ChunkOriginWorld, ActorWorld, SampleOriginWorld,
+        SampleX, SampleY, SampleZ, Voxel,
+        InputSeed, TriesForSeedSearch, LocalBuildSerial]()
         {
-            ProcMesh->ClearAllMeshSections();
-            ProcMesh->ClearCollisionConvexMeshes();
+            if (!WeakThis.IsValid()) return;
 
-            // -------------------------
-            // (1) FinalS 구성 + AutoTune
-            // -------------------------
+            // ------------------------------------------------------------
+            // (A) FinalS 결정
+            // ------------------------------------------------------------
             FMountainGenSettings FinalS = SettingsSnapshot;
-            ApplyDifficultyPresetTo(FinalS);
+            AMountainGenWorldActor::ApplyDifficultyPresetTo(FinalS);
 
             const float FixedHeightAmp = FinalS.HeightAmpCm;
             const float FixedRadius = FinalS.EnvelopeRadiusCm;
@@ -249,7 +278,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 }
                 else
                 {
-                    FRandomStream SeedRng((int32)((PTRINT)this) ^ 0x19D3A7F1);
+                    FRandomStream SeedRng((int32)((PTRINT)WeakThis.Get()) ^ 0x19D3A7F1);
                     const int32 StartSeed = SeedRng.RandRange(1, INT32_MAX);
 
                     FinalS.HeightAmpCm = FixedHeightAmp;
@@ -257,12 +286,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     FinalS.BaseHeightCm = FixedBaseH;
 
                     const bool bFound = MGFindFinalSeedByFeedback(
-                        FinalS,
-                        TerrainOriginWorld,
-                        WorldMin,
-                        WorldMax,
-                        StartSeed,
-                        TriesForSeedSearch
+                        FinalS, TerrainOriginWorld, WorldMin, WorldMax, StartSeed, TriesForSeedSearch
                     );
 
                     if (!bFound)
@@ -277,7 +301,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             {
                 if (InputSeed <= 0)
                 {
-                    FRandomStream SeedRng((int32)((PTRINT)this) ^ 0x51A3B9D1);
+                    FRandomStream SeedRng((int32)((PTRINT)WeakThis.Get()) ^ 0x51A3B9D1);
                     FinalS.Seed = SeedRng.RandRange(1, INT32_MAX);
                 }
                 else
@@ -286,11 +310,9 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 }
             }
 
-            Settings.Seed = FinalS.Seed;
-
-            // -------------------------
-            // (2) Density 샘플링
-            // -------------------------
+            // ------------------------------------------------------------
+            // (B) Mesh Build
+            // ------------------------------------------------------------
             FVoxelChunk Chunk;
             Chunk.Init(SampleX, SampleY, SampleZ);
 
@@ -304,9 +326,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                         Chunk.Set(x, y, z, Gen.SampleDensity(WorldPos));
                     }
 
-            // -------------------------
-            // (3) Marching Cubes
-            // -------------------------
             FChunkMeshData MeshData;
             FVoxelMesher::BuildMarchingCubes(
                 Chunk,
@@ -318,156 +337,9 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 MeshData
             );
 
-            if (MeshData.Vertices.Num() == 0 || MeshData.Triangles.Num() == 0)
-            {
-                return;
-            }
-
-            // -------------------------
-            // (4) Apply Mesh + Collision + Material
-            // -------------------------
-            TArray<FLinearColor> Colors;
-            Colors.SetNumZeroed(MeshData.Vertices.Num());
-
-            ProcMesh->CreateMeshSection_LinearColor(
-                0,
-                MeshData.Vertices,
-                MeshData.Triangles,
-                MeshData.Normals,
-                MeshData.UV0,
-                Colors,
-                MeshData.Tangents,
-                FinalS.bCreateCollision
-            );
-
-            ProcMesh->SetCollisionEnabled(
-                FinalS.bCreateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision
-            );
-
-            if (VoxelMaterial)
-                ProcMesh->SetMaterial(0, VoxelMaterial);
-
-            return;
-        }
-    }
-#endif // WITH_EDITOR
-
-    // =====================================================================
-    // (B) PIE/런타임 경로
-    // =====================================================================
-    if (bAsyncWorking)
-    {
-        bRegenQueued = true;
-        return;
-    }
-
-    const int32 LocalBuildSerial = ++CurrentBuildSerial;
-    bAsyncWorking = true;
-
-    if (Settings.Seed <= 0)
-    {
-        FRandomStream SeedRng((int32)((PTRINT)this) ^ 0x7F4A1C2D ^ LocalBuildSerial);
-        Settings.Seed = SeedRng.RandRange(1, INT32_MAX);
-    }
-
-    const int32 SeedSnapshotForAsync = Settings.Seed;
-
-    TWeakObjectPtr<AMountainGenWorldActor> WeakThis(this);
-
-    Async(EAsyncExecution::ThreadPool,
-        [WeakThis, SettingsSnapshot, TerrainOriginWorld, WorldMin, WorldMax, ChunkOriginWorld, ActorWorld, SampleOriginWorld,
-        SampleX, SampleY, SampleZ, Voxel, SeedSnapshotForAsync, TriesForSeedSearch, LocalBuildSerial]()
-        {
-            if (!WeakThis.IsValid()) return;
-
-            // -------------------------
-            // (1) FinalS 구성 + AutoTune
-            // -------------------------
-            FMountainGenSettings FinalS = SettingsSnapshot;
-            AMountainGenWorldActor::ApplyDifficultyPresetTo(FinalS);
-
-            const float FixedHeightAmp = FinalS.HeightAmpCm;
-            const float FixedRadius = FinalS.EnvelopeRadiusCm;
-            const float FixedBaseH = FinalS.BaseHeightCm;
-
-            const int32 InputSeedRT = SeedSnapshotForAsync;
-
-            if (FinalS.bAutoTune)
-            {
-                if (InputSeedRT > 0)
-                {
-                    FinalS.HeightAmpCm = FixedHeightAmp;
-                    FinalS.EnvelopeRadiusCm = FixedRadius;
-                    FinalS.BaseHeightCm = FixedBaseH;
-
-                    MGDeriveParamsFromSeed(FinalS, InputSeedRT);
-                    (void)MGFinalizeSettingsFromSeed(FinalS, TerrainOriginWorld, WorldMin, WorldMax);
-                    FinalS.Seed = InputSeedRT;
-                }
-                else
-                {
-                    FRandomStream SeedRng((InputSeedRT ^ 0x19D3A7F1) + LocalBuildSerial);
-                    const int32 StartSeed = SeedRng.RandRange(1, INT32_MAX);
-
-                    FinalS.HeightAmpCm = FixedHeightAmp;
-                    FinalS.EnvelopeRadiusCm = FixedRadius;
-                    FinalS.BaseHeightCm = FixedBaseH;
-
-                    const bool bFound = MGFindFinalSeedByFeedback(
-                        FinalS,
-                        TerrainOriginWorld,
-                        WorldMin,
-                        WorldMax,
-                        StartSeed,
-                        TriesForSeedSearch
-                    );
-
-                    if (!bFound)
-                    {
-                        MGDeriveParamsFromSeed(FinalS, StartSeed);
-                        (void)MGFinalizeSettingsFromSeed(FinalS, TerrainOriginWorld, WorldMin, WorldMax);
-                        FinalS.Seed = StartSeed;
-                    }
-                }
-            }
-            else
-            {
-                FinalS.Seed = (InputSeedRT <= 0) ? 1337 : InputSeedRT;
-            }
-
-            // -------------------------
-            // (2) Density 샘플링
-            // -------------------------
-            FVoxelChunk Chunk;
-            Chunk.Init(SampleX, SampleY, SampleZ);
-
-            FVoxelDensityGenerator Gen(FinalS, TerrainOriginWorld);
-
-            for (int32 z = 0; z < SampleZ; ++z)
-                for (int32 y = 0; y < SampleY; ++y)
-                    for (int32 x = 0; x < SampleX; ++x)
-                    {
-                        const FVector WorldPos = SampleOriginWorld + FVector(x * Voxel, y * Voxel, z * Voxel);
-                        Chunk.Set(x, y, z, Gen.SampleDensity(WorldPos));
-                    }
-
-            // -------------------------
-            // (3) Marching Cubes
-            // -------------------------
-            FChunkMeshData MeshData;
-            FVoxelMesher::BuildMarchingCubes(
-                Chunk,
-                FinalS.VoxelSizeCm,
-                FinalS.IsoLevel,
-                ChunkOriginWorld,
-                ActorWorld,
-                Gen,
-                MeshData
-            );
-
-            // -------------------------
-            // (4) GameThread로 결과 전달
-            // -------------------------
+            // ------------------------------------------------------------
+            // (C) 결과 전달
+            // ------------------------------------------------------------
             AsyncTask(ENamedThreads::GameThread,
                 [WeakThis, FinalS, MeshData = MoveTemp(MeshData), LocalBuildSerial]() mutable
                 {
@@ -478,6 +350,11 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     WeakThis->PendingResult.BuildSerial = LocalBuildSerial;
                     WeakThis->PendingResult.FinalSettings = FinalS;
                     WeakThis->PendingResult.MeshData = MoveTemp(MeshData);
+
+                    WeakThis->UI_Status(
+                        FString::Printf(TEXT("[MountainGen] 시드 확정: %d"), FinalS.Seed),
+                        1.8f, FColor::Green
+                    );
                 });
         }
     );

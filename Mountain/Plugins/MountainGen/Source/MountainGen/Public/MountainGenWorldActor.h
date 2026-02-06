@@ -9,6 +9,18 @@
 class UProceduralMeshComponent;
 class UMaterialInterface;
 
+USTRUCT()
+struct FMGAsyncResult
+{
+    GENERATED_BODY()
+
+    bool bValid = false;
+    int32 BuildSerial = 0;
+
+    FMountainGenSettings FinalSettings;
+    FChunkMeshData MeshData;
+};
+
 UCLASS()
 class MOUNTAINGEN_API AMountainGenWorldActor : public AActor
 {
@@ -19,6 +31,7 @@ public:
 
     virtual void OnConstruction(const FTransform& Transform) override;
     virtual void BeginPlay() override;
+    virtual void Tick(float DeltaSeconds) override;
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen")
     void Regenerate();
@@ -46,28 +59,20 @@ public:
     int32 SeedSearchTries = 300;
 
 private:
-    // ---- Async result ----
-    struct FMGAsyncResult
-    {
-        bool bValid = false;
-        int32 BuildSerial = 0;
-        FMountainGenSettings FinalSettings;
-        FChunkMeshData MeshData;
-    };
-
-private:
     void BuildChunkAndMesh();
 
     static void ApplyDifficultyPresetTo(FMountainGenSettings& S);
     void ApplyDifficultyPreset();
 
-    void ApplyBuiltResult_GameThread(FMGAsyncResult&& Result);
+    // --- 1¹ø ±â´É ---
+    void UI_Status(const FString& Msg, float Seconds = 2.0f, FColor Color = FColor::Cyan) const;
 
 private:
-    FMGAsyncResult PendingResult;
+    // --- async state ---
     bool bAsyncWorking = false;
     bool bRegenQueued = false;
     int32 CurrentBuildSerial = 0;
+    FMGAsyncResult PendingResult;
 
 #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
