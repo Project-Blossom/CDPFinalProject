@@ -64,14 +64,17 @@ private:
     static void ApplyDifficultyPresetTo(FMountainGenSettings& S);
     void ApplyDifficultyPreset();
 
-    // --- 1¹ø ±â´É ---
     void UI_Status(const FString& Msg, float Seconds = 2.0f, FColor Color = FColor::Cyan) const;
 
 private:
     // --- async state ---
     bool bAsyncWorking = false;
     bool bRegenQueued = false;
+
     int32 CurrentBuildSerial = 0;
+
+    int32 InFlightBuildSerial = 0;
+
     FMGAsyncResult PendingResult;
 
 #if WITH_EDITOR

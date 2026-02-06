@@ -47,7 +47,6 @@ namespace
         if (FMath::IsNearlyZero(den)) return (x >= b) ? 1.f : 0.f;
         return Clamp01((x - a) / den);
     }
-
 }
 
 float FVoxelDensityGenerator::FBM3D(const FVector& p, int32 Octaves, float Lacunarity, float Gain) const
@@ -90,12 +89,13 @@ FVector FVoxelDensityGenerator::Warp3D(const FVector& p, float PatchCm, float Am
     PatchCm = FMath::Max(1.f, PatchCm);
     AmpCm = FMath::Max(0.f, AmpCm);
 
-    const FVector so = SeedOffset();
     const float inv = 1.f / PatchCm;
 
-    const float nx = Noise3D((p + so) * inv);
-    const float ny = Noise3D((p + FVector(so.Y, so.Z, so.X)) * inv);
-    const float nz = Noise3D((p + FVector(so.Z, so.X, so.Y)) * inv);
+    const FVector sp = SeededDomain(p);
+
+    const float nx = Noise3D(sp * inv);
+    const float ny = Noise3D(FVector(sp.Y, sp.Z, sp.X) * inv);
+    const float nz = Noise3D(FVector(sp.Z, sp.X, sp.Y) * inv);
 
     return p + FVector(nx, ny, nz) * AmpCm;
 }
@@ -104,11 +104,12 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
 {
     const float Iso = S.IsoLevel;
 
+    // Local (cm)
     const FVector Local = WorldPosCm - TerrainOriginWorld;
     const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
 
     // -------------------------
-    // 1) Cliff Base params
+    // 1) Cliff Base
     // -------------------------
     const float CliffHalfW = FMath::Max(500.f, S.CliffHalfWidthCm);
     const float CliffH = FMath::Max(500.f, S.CliffHeightCm);
@@ -138,7 +139,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
             FMath::Abs(Pc.Y) > (CliffHalfExtents.Y + Influence) ||
             FMath::Abs(Pc.Z) > (CliffHalfExtents.Z + Influence))
         {
-            return Iso - 1.0f;
+            return Iso - 1.0f; // air
         }
     }
 
@@ -153,9 +154,9 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
 
         if (S.CliffSurfaceAmpCm > 0.f)
         {
-            FVector pp = Local + SeedOffset();
             const float Scale = FMath::Max(300.f, S.CliffSurfaceScaleCm);
-            const float n = FBM3D(pp / Scale, 4, 2.0f, 0.55f);
+            const FVector pp = SeededDomain(Local) / Scale;
+            const float n = FBM3D(pp, 4, 2.0f, 0.55f);
             density += n * S.CliffSurfaceAmpCm;
         }
     }
@@ -177,7 +178,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
         density = -SdBox(P, HalfExtents);
 
         if (density < -Voxel * 6.f)
-            return Iso - 1.0f;
+            return Iso - 1.0f; // air
     }
 
     // -------------------------
@@ -205,7 +206,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     // -------------------------
     // 5) 도메인 워프
     // -------------------------
-    FVector pp = Local + SeedOffset();
+    FVector pp = SeededDomain(Local);
 
     const float WarpStrength = FMath::Clamp(S.WarpStrength, 0.f, 1.2f);
     if (WarpStrength > 0.f && S.WarpAmpCm > 0.f && S.WarpPatchCm > 1.f)
@@ -230,7 +231,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     if (VolumeStrength > 0.f)
     {
         const float OverScale = FMath::Max(1200.f, S.OverhangScaleCm);
-        float r01 = RidgedFBM01(pp / OverScale, 4, 2.0f, 0.55f);
+        const float r01 = RidgedFBM01(pp / OverScale, 4, 2.0f, 0.55f);
 
         const float bias = FMath::Clamp(S.OverhangBias, 0.50f, 0.72f);
 
