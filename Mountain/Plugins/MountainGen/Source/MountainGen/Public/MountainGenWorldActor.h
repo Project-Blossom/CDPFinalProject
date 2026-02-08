@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -8,6 +8,8 @@
 
 class UProceduralMeshComponent;
 class UMaterialInterface;
+
+struct FMGMetrics;
 
 USTRUCT()
 struct FMGAsyncResult
@@ -55,8 +57,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Runtime")
     bool bEnableRandomSeedKey = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune", meta = (ClampMin = "1", ClampMax = "2000"))
-    int32 SeedSearchTries = 300;
+    // Seed 탐색 디버그
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug")
+    bool bDebugSeedSearch = true;
+
+    // "몇 번마다 출력할지"
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug", meta = (ClampMin = "1", ClampMax = "200"))
+    int32 DebugPrintEveryNAttempt = 10;
 
 private:
     void BuildChunkAndMesh();
@@ -66,13 +73,19 @@ private:
 
     void UI_Status(const FString& Msg, float Seconds = 2.0f, FColor Color = FColor::Cyan) const;
 
+    static FString MakeMetricsLine(
+        const FMountainGenSettings& S,
+        const FMGMetrics& M,
+        bool& bOutCaveOK,
+        bool& bOutOverhangOK,
+        bool& bOutSteepOK);
+
 private:
     // --- async state ---
     bool bAsyncWorking = false;
     bool bRegenQueued = false;
 
     int32 CurrentBuildSerial = 0;
-
     int32 InFlightBuildSerial = 0;
 
     FMGAsyncResult PendingResult;

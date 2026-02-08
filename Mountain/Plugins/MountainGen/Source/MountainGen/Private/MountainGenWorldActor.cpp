@@ -39,7 +39,32 @@ void AMountainGenWorldActor::UI_Status(const FString& Msg, float Seconds, FColor
     {
         GEngine->AddOnScreenDebugMessage(-1, Seconds, Color, Msg);
     }
-    UE_LOG(LogTemp, Log, TEXT("%s"), *Msg);
+}
+
+static bool MG_InRange(float V, float Min, float Max)
+{
+    return (V >= Min && V <= Max);
+}
+
+FString AMountainGenWorldActor::MakeMetricsLine(
+    const FMountainGenSettings& S,
+    const FMGMetrics& M,
+    bool& bOutCaveOK,
+    bool& bOutOverhangOK,
+    bool& bOutSteepOK)
+{
+    bOutCaveOK = MG_InRange(M.CaveVoidRatio, S.Targets.CaveMin, S.Targets.CaveMax);
+    bOutOverhangOK = MG_InRange(M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax);
+    bOutSteepOK = MG_InRange(M.SteepRatio, S.Targets.SteepMin, S.Targets.SteepMax);
+
+    return FString::Format(
+        TEXT("Cave {0} [{1}~{2}] {3} | Overhang {4} [{5}~{6}] {7} | Steep {8} [{9}~{10}] {11}"),
+        {
+            M.CaveVoidRatio,  S.Targets.CaveMin,     S.Targets.CaveMax,     bOutCaveOK ? TEXT("OK") : TEXT("FAIL"),
+            M.OverhangRatio,  S.Targets.OverhangMin, S.Targets.OverhangMax, bOutOverhangOK ? TEXT("OK") : TEXT("FAIL"),
+            M.SteepRatio,     S.Targets.SteepMin,    S.Targets.SteepMax,    bOutSteepOK ? TEXT("OK") : TEXT("FAIL")
+        }
+    );
 }
 
 void AMountainGenWorldActor::OnConstruction(const FTransform& Transform)
@@ -90,7 +115,6 @@ void AMountainGenWorldActor::Tick(float DeltaSeconds)
         return;
     }
 
-    // ---- 메시/콜리전 적용 ----
     if (!ProcMesh)
     {
         bAsyncWorking = false;
@@ -132,10 +156,9 @@ void AMountainGenWorldActor::Tick(float DeltaSeconds)
     if (VoxelMaterial)
         ProcMesh->SetMaterial(0, VoxelMaterial);
 
-    // 최종 seed 반영
     Settings.Seed = Result.FinalSettings.Seed;
 
-    UI_Status(FString::Printf(TEXT("[MountainGen] 시드 변경 완료: %d"), Settings.Seed), 2.5f, FColor::Yellow);
+    UI_Status(FString::Format(TEXT("[MountainGen] 시드 변경 완료: {0}"), { Settings.Seed }), 2.5f, FColor::Yellow);
 
     bAsyncWorking = false;
     InFlightBuildSerial = 0;
@@ -163,7 +186,7 @@ void AMountainGenWorldActor::SetSeed(int32 NewSeed)
     if (Settings.Seed == NewSeed) return;
 
     Settings.Seed = NewSeed;
-    UI_Status(FString::Printf(TEXT("[MountainGen] 시드 변경 요청: %d"), Settings.Seed), 1.5f, FColor::Cyan);
+    UI_Status(FString::Format(TEXT("[MountainGen] 시드 변경 요청: {0}"), { Settings.Seed }), 1.5f, FColor::Cyan);
 
     BuildChunkAndMesh();
 }
@@ -224,9 +247,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     if (!ProcMesh) return;
 
     UWorld* W = GetWorld();
-
-    // ✅ 에디터(배치/프로퍼티 변경)에서는 비동기 금지: Tick이 안정적으로 결과 적용을 안 해줌
-    const bool bEditorLike = (!W || !W->IsGameWorld()); // Editor / EditorPreview / Inactive 등 포함
+    const bool bEditorLike = (!W || !W->IsGameWorld());
 
     // ---------------------------------------
     // 공통: 난이도 프리셋 적용 + 스냅샷
@@ -254,7 +275,14 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     const int32 SampleZ = S.ChunkZ + 1;
 
     const int32 InputSeed = S.Seed;
-    const int32 TriesForSeedSearch = FMath::Max(1, SeedSearchTries);
+    const int32 TriesForSeedSearch = FMath::Max(1, S.SeedSearchTries);
+
+    UI_Status(
+        FString::Format(TEXT("[MountainGen] PATH={0}  SeedSearchTries={1}  DebugEveryN={2}  DebugOn={3}"),
+            { bEditorLike ? TEXT("EditorLike") : TEXT("RuntimeAsync"), TriesForSeedSearch, DebugPrintEveryNAttempt, bDebugSeedSearch ? 1 : 0 }),
+        4.0f,
+        bEditorLike ? FColor::Yellow : FColor::Green
+    );
 
     // ---------------------------------------
     // (A) 에디터: 동기 생성 + 즉시 적용
@@ -273,7 +301,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             S.Seed = Rng.RandRange(1, INT32_MAX);
         }
 
-        // AutoTune이면 최종 파라미터 확정 (너 기존 구조 유지)
+        // AutoTune이면 최종 파라미터 확정
         if (S.bAutoTune)
         {
             const float FixedHeightAmp = S.HeightAmpCm;
@@ -289,6 +317,18 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         }
 
         Settings.Seed = S.Seed;
+
+        {
+            const FMGMetrics EM = MGComputeMetricsQuick(S, TerrainOriginWorld, WorldMin, WorldMax);
+            bool bC = false, bO = false, bSt = false;
+            const FString Line = MakeMetricsLine(S, EM, bC, bO, bSt);
+
+            UI_Status(
+                FString::Format(TEXT("[MountainGen][EditorMetrics] seed={0} | {1}"), { S.Seed, Line }),
+                6.0f,
+                (bC && bO && bSt) ? FColor::Green : FColor::Orange
+            );
+        }
 
         // 2) 샘플링
         FVoxelChunk Chunk;
@@ -346,7 +386,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         if (VoxelMaterial)
             ProcMesh->SetMaterial(0, VoxelMaterial);
 
-        UI_Status(FString::Printf(TEXT("[MountainGen][Editor] Seed=%d (즉시 생성)"), Settings.Seed), 1.5f, FColor::Green);
+        UI_Status(FString::Format(TEXT("[MountainGen][Editor] Seed={0} (즉시 생성)"), { Settings.Seed }), 2.0f, FColor::Green);
         return;
     }
 
@@ -356,7 +396,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     if (bAsyncWorking)
     {
         bRegenQueued = true;
-        UI_Status(TEXT("[MountainGen] 작업 중 → 재생성 큐"), 1.0f, FColor::Orange);
+        UI_Status(TEXT("[MountainGen] 작업 중 → 재생성 큐"), 1.5f, FColor::Orange);
         return;
     }
 
@@ -364,7 +404,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     bAsyncWorking = true;
     InFlightBuildSerial = LocalBuildSerial;
 
-    UI_Status(TEXT("[MountainGen] 시드 탐색/생성 시작"), 1.2f, FColor::Cyan);
+    UI_Status(TEXT("[MountainGen] 시드 탐색/생성 시작"), 2.0f, FColor::Cyan);
 
     TWeakObjectPtr<AMountainGenWorldActor> WeakThis(this);
 
@@ -377,7 +417,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         {
             if (!WeakThis.IsValid()) return;
 
-            // (1) Seed 후보 탐색
             FMountainGenSettings BaseS = S;
 
             FRandomStream SeedRng;
@@ -397,7 +436,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             float BestScore = FLT_MAX;
             bool bSatisfied = false;
 
-            const int32 MaxSeedTries = (BaseS.bAutoTune ? TriesForSeedSearch : 1);
+            const int32 MaxSeedTries = TriesForSeedSearch;
 
             for (int32 Attempt = 1; Attempt <= MaxSeedTries; ++Attempt)
             {
@@ -412,6 +451,23 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
                 if (MGIsSatisfiedToTargets(Cand, M))
                 {
+                    if (WeakThis->bDebugSeedSearch)
+                    {
+                        bool bC = false, bO = false, bSt = false;
+                        const FString Line = AMountainGenWorldActor::MakeMetricsLine(Cand, M, bC, bO, bSt);
+
+                        AsyncTask(ENamedThreads::GameThread, [WeakThis, Attempt, CandSeed, Line, MaxSeedTries]()
+                            {
+                                if (!WeakThis.IsValid()) return;
+                                WeakThis->UI_Status(
+                                    FString::Format(TEXT("[MountainGen][SeedSearch] SATISFIED {0}/{1} seed={2} | {3}"),
+                                        { Attempt, MaxSeedTries, CandSeed, Line }),
+                                    6.0f,
+                                    FColor::Green
+                                );
+                            });
+                    }
+
                     FinalSeed = CandSeed;
                     bSatisfied = true;
                     break;
@@ -428,16 +484,34 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     BestSeed = CandSeed;
                 }
 
-                if ((Attempt % 10) == 0)
+                if (WeakThis->bDebugSeedSearch)
                 {
-                    AsyncTask(ENamedThreads::GameThread, [WeakThis, Attempt, CandSeed]()
-                        {
-                            if (!WeakThis.IsValid()) return;
-                            WeakThis->UI_Status(
-                                FString::Printf(TEXT("[MountainGen] 조건 불만족 → 다음 시드 (%d회, seed=%d)"), Attempt, CandSeed),
-                                0.8f, FColor::Orange
-                            );
-                        });
+                    const int32 EveryN = FMath::Max(1, WeakThis->DebugPrintEveryNAttempt);
+
+                    const bool bShouldPrint =
+                        (Attempt == 1) ||
+                        (Attempt == MaxSeedTries) ||
+                        ((Attempt % EveryN) == 0);
+
+                    if (bShouldPrint)
+                    {
+                        bool bC = false, bO = false, bSt = false;
+                        const FString Line = AMountainGenWorldActor::MakeMetricsLine(Cand, M, bC, bO, bSt);
+                        const bool bOK = (bC && bO && bSt);
+
+                        AsyncTask(ENamedThreads::GameThread, [WeakThis, Attempt, CandSeed, Line, bOK, MaxSeedTries]()
+                            {
+                                if (!WeakThis.IsValid()) return;
+                                const FColor Color = bOK ? FColor::Green : FColor::Orange;
+
+                                WeakThis->UI_Status(
+                                    FString::Format(TEXT("[MountainGen][SeedSearch] Try {0}/{1} seed={2} | {3}"),
+                                        { Attempt, MaxSeedTries, CandSeed, Line }),
+                                    6.0f,
+                                    Color
+                                );
+                            });
+                    }
                 }
             }
 
@@ -448,8 +522,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     {
                         if (!WeakThis.IsValid()) return;
                         WeakThis->UI_Status(
-                            FString::Printf(TEXT("[MountainGen] 만족 실패 → 근접 후보 확정 (seed=%d)"), FinalSeed),
-                            1.2f, FColor::Red
+                            FString::Format(TEXT("[MountainGen] 만족 실패 → 근접 후보 확정 (seed={0})"), { FinalSeed }),
+                            6.0f, FColor::Red
                         );
                     });
             }
@@ -512,8 +586,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     WeakThis->PendingResult.MeshData = MoveTemp(MeshData);
 
                     WeakThis->UI_Status(
-                        FString::Printf(TEXT("[MountainGen] 시드 확정: %d"), FinalS.Seed),
-                        1.0f, FColor::Green
+                        FString::Format(TEXT("[MountainGen] 시드 확정: {0}"), { FinalS.Seed }),
+                        3.0f, FColor::Green
                     );
                 });
         }

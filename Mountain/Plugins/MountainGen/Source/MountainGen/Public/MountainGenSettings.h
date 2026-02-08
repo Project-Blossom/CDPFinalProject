@@ -107,7 +107,7 @@ struct FMountainGenSettings
 
     // Seed 후보를 몇 번 찾아볼지
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune", meta = (ClampMin = "1", ClampMax = "2000"))
-    int32 SeedSearchTries = 5;
+    int32 SeedSearchTries = 100;
 
     //메시/콜리전 생성 전에 FullGrid 검사로 Seed 재시도할지
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|AutoTune")
