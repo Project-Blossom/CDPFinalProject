@@ -186,10 +186,7 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
     }
 }
 
-// ========================================
 // Input Handlers
-// ========================================
-
 void ADownfallCharacter::OnGrabLeftStarted(const FInputActionValue& Value)
 {
     TryGrip(true);
@@ -546,10 +543,15 @@ void ADownfallCharacter::UpdateClimbingState()
     {
         GetCapsuleComponent()->SetSimulatePhysics(false);
         
+        // Rotation 초기화
+        FRotator CurrentRotation = GetActorRotation();
+        FRotator UpRightRotation = FRotator(0.0f, CurrentRotation.Yaw, 0.0f);
+        SetActorRotation(UpRightRotation);
+        
         // 바닥에 서있는지 체크
         FHitResult Hit;
         FVector Start = GetActorLocation();
-        FVector End = Start - FVector(0, 0, 100.0f); // 100cm 아래 체크 (Velocity 고려)
+        FVector End = Start - FVector(0, 0, 100.0f); // 100cm 아래 체크
         
         FCollisionQueryParams QueryParams;
         QueryParams.AddIgnoredActor(this);
@@ -577,11 +579,6 @@ void ADownfallCharacter::UpdateClimbingState()
                 GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
                 GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
                 GetCharacterMovement()->Velocity = FVector::ZeroVector;
-                
-                // Rotation 초기화 (중요!)
-                FRotator CurrentRotation = GetActorRotation();
-                FRotator UpRightRotation = FRotator(0.0f, CurrentRotation.Yaw, 0.0f); // Pitch, Roll = 0
-                SetActorRotation(UpRightRotation);
                 
                 GetCharacterMovement()->SetMovementMode(MOVE_Walking);
                 UE_LOG(LogDownFall, Log, TEXT("Released on ground - Walking mode"));
