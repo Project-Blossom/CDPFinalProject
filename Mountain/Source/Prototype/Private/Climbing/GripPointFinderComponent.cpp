@@ -231,64 +231,69 @@ bool UGripPointFinderComponent::CalculateAverageSurfaceAngle(const FVector& HitP
         return false;
     }
 
-    // ========================================
-    // Sphere Sweep으로 인근 표면 샘플링
-    // ========================================
-    TArray<FHitResult> SphereHits;
+    // Multi-direction sampling for stable angle calculation
+    TArray<FVector> SampledNormals;
+    SampledNormals.Add(HitNormal);  // 중심 Normal
+    
     FCollisionQueryParams QueryParams;
     QueryParams.AddIgnoredActor(GetOwner());
-
-    bool bHit = GetWorld()->SweepMultiByChannel(
-        SphereHits,
-        HitPoint,
-        HitPoint, // Start == End (제자리 Sweep)
-        FQuat::Identity,
-        ECC_Visibility,
-        FCollisionShape::MakeSphere(SurfaceSampleRadius),
-        QueryParams
-    );
-
-    if (!bHit || SphereHits.Num() == 0)
+    
+    // 8방향 샘플링 (원형)
+    const int32 NumDirections = 8;
+    const float AngleStep = 360.0f / NumDirections;
+    
+    for (int32 i = 0; i < NumDirections; i++)
     {
-        // Sweep 실패 시 원본 Normal 사용
-        OutAverageNormal = HitNormal;
-        OutAngleDegrees = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(HitNormal, FVector::UpVector)));
-        return true;
-    }
-
-    // ========================================
-    // Normal 평균 계산
-    // ========================================
-    FVector SumNormal = FVector::ZeroVector;
-    int32 ValidCount = 0;
-
-    for (const FHitResult& Hit : SphereHits)
-    {
-        if (Hit.bBlockingHit)
+        float Angle = i * AngleStep;
+        float Radians = FMath::DegreesToRadians(Angle);
+        
+        // HitNormal에 수직인 평면에서 방향 계산
+        FVector Right = FVector::CrossProduct(HitNormal, FVector::UpVector).GetSafeNormal();
+        if (Right.IsNearlyZero())
         {
-            SumNormal += Hit.Normal;
-            ValidCount++;
+            Right = FVector::CrossProduct(HitNormal, FVector::ForwardVector).GetSafeNormal();
+        }
+        FVector Up = FVector::CrossProduct(Right, HitNormal).GetSafeNormal();
+        
+        // 원형 샘플링 방향
+        FVector SampleDir = (Right * FMath::Cos(Radians) + Up * FMath::Sin(Radians)).GetSafeNormal();
+        FVector SampleOffset = SampleDir * SurfaceSampleRadius;
+        
+        // HitPoint에서 약간 띄워서 시작 (벽 안쪽에 파묻히지 않도록)
+        FVector Start = HitPoint + HitNormal * 5.0f;
+        FVector End = HitPoint + SampleOffset;
+        
+        FHitResult Hit;
+        bool bHit = GetWorld()->LineTraceSingleByChannel(
+            Hit,
+            Start,
+            End,
+            ECC_Visibility,
+            QueryParams
+        );
+        
+        if (bHit && Hit.bBlockingHit)
+        {
+            SampledNormals.Add(Hit.Normal);
         }
     }
-
-    if (ValidCount == 0)
+    
+    // Normal 평균 계산 (중심에 가중치)
+    FVector SumNormal = HitNormal * 2.0f;  // 중심 2배 가중치
+    for (int32 i = 1; i < SampledNormals.Num(); i++)
     {
-        OutAverageNormal = HitNormal;
-        OutAngleDegrees = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(HitNormal, FVector::UpVector)));
-        return true;
+        SumNormal += SampledNormals[i];
     }
-
-    OutAverageNormal = (SumNormal / ValidCount).GetSafeNormal();
-
-    // ========================================
-    // 경사각 계산: UpVector와의 각도
-    // ========================================
+    
+    OutAverageNormal = (SumNormal / (SampledNormals.Num() + 1.0f)).GetSafeNormal();
+    
+    // 경사각 계산
     float DotProduct = FVector::DotProduct(OutAverageNormal, FVector::UpVector);
-    DotProduct = FMath::Clamp(DotProduct, -1.0f, 1.0f); // 부동소수점 오차 방지
+    DotProduct = FMath::Clamp(DotProduct, -1.0f, 1.0f);
     OutAngleDegrees = FMath::RadiansToDegrees(FMath::Acos(DotProduct));
-
-    UE_LOG(LogGripFinder, Verbose, TEXT("Sampled %d normals, Avg Angle: %.1f°"), ValidCount, OutAngleDegrees);
-
+    
+    UE_LOG(LogGripFinder, Verbose, TEXT("Sampled %d normals, Avg Angle: %.1f°"), SampledNormals.Num(), OutAngleDegrees);
+    
     return true;
 }
 
