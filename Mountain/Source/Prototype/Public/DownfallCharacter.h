@@ -94,6 +94,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> JumpAction;
 
+    // Debug Test
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr<UInputAction> DebugInsanityAction;
+
 
     // Settings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physics")
@@ -107,7 +111,24 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float MaxStamina = 100.0f;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
+    float Insanity = 0.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
+    float MaxInsanity = 100.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
+    float InsanityDecayRate = 0.1f;  // 초당 자연 감소 (1초에 0.1씩)
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
+    float InsanityGrowthRate = 0.1f; // 혼란 상태일 때 초당 증가 (1초에 0.1씩)
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
+    float InsanityThreshold = 70.0f; // 혼란 효과 시작 지점
+
+    UPROPERTY(BlueprintReadOnly, Category = "Insanity")
+    bool bIsConfused = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float StaminaDrainPerSecond = 5.0f;
 
@@ -144,6 +165,9 @@ protected:
     void OnMove(const FInputActionValue& Value);
     void OnJumpStarted(const FInputActionValue& Value); 
     void OnJumpCompleted(const FInputActionValue& Value);
+
+    // Debug
+    void OnDebugInsanity(const FInputActionValue& Value);
     
     // Grip Logic
     void TryGrip(bool bIsLeftHand);
@@ -154,6 +178,16 @@ protected:
     // Stamina
     void UpdateStamina(float DeltaTime);
     float GetStaminaDrainRate(const FHandData& Hand) const;
+    
+    // Insanity
+    UFUNCTION(BlueprintCallable, Category = "Insanity")
+    void AddInsanity(float Amount);
+
+    UFUNCTION(BlueprintCallable, Category = "Insanity")
+    void UpdateInsanity(float DeltaTime);
+
+    UFUNCTION(BlueprintCallable, Category = "Insanity")
+    void UpdateInsanityEffects();
     
     // State
     void UpdateClimbingState();

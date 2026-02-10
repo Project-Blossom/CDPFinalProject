@@ -91,6 +91,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
 
     UpdateStamina(DeltaTime);
+    UpdateInsanity(DeltaTime);
     UpdateClimbingState();
 
     // 착지 감지 및 Physics → Walking 모드 전환
@@ -182,6 +183,12 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         {
             EIC->BindAction(JumpAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnJumpStarted);
             EIC->BindAction(JumpAction, ETriggerEvent::Completed, this, &ADownfallCharacter::OnJumpCompleted);
+
+            // Debug: Insanity Test
+            if (DebugInsanityAction)
+            {
+                EIC->BindAction(DebugInsanityAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnDebugInsanity);
+            }
         }
     }
 }
@@ -348,6 +355,13 @@ void ADownfallCharacter::OnJumpCompleted(const FInputActionValue& Value)
 {
     // 일반 점프 종료
     StopJumping();
+}
+
+// Debug: Insanity Test
+void ADownfallCharacter::OnDebugInsanity(const FInputActionValue& Value)
+{
+    AddInsanity(10.0f);
+    UE_LOG(LogDownFall, Warning, TEXT("Debug: Added 10 Insanity (Test key pressed)"));
 }
 
 // Grip Logic
@@ -532,6 +546,54 @@ float ADownfallCharacter::GetStaminaDrainRate(const FHandData& Hand) const
     return BaseDrain;
 }
 
+void ADownfallCharacter::AddInsanity(float Amount)
+{
+    Insanity = FMath::Clamp(Insanity + Amount, 0.0f, MaxInsanity);
+    UpdateInsanityEffects();
+    
+    UE_LOG(LogDownFall, Log, TEXT("Insanity increased by %.1f, now: %.1f"), Amount, Insanity);
+}
+
+void ADownfallCharacter::UpdateInsanity(float DeltaTime)
+{
+    if (Insanity > 0.0f)
+    {
+        // 혼란 상태일 때 (70 이상)
+        if (Insanity >= InsanityThreshold)
+        {
+            // 자가 증폭: 초당 0.1씩 증가
+            Insanity = FMath::Min(MaxInsanity, Insanity + InsanityGrowthRate * DeltaTime);
+        }
+        else
+        {
+            // 정상 상태: 초당 0.1씩 감소
+            Insanity = FMath::Max(0.0f, Insanity - InsanityDecayRate * DeltaTime);
+        }
+        
+        UpdateInsanityEffects();
+    }
+}
+
+void ADownfallCharacter::UpdateInsanityEffects()
+{
+    bool bShouldBeConfused = Insanity >= InsanityThreshold;
+    
+    if (bShouldBeConfused != bIsConfused)
+    {
+        bIsConfused = bShouldBeConfused;
+        
+        if (bIsConfused)
+        {
+            UE_LOG(LogDownFall, Warning, TEXT("Insanity confusion effect enabled! (%.1f >= %.1f)"), 
+                Insanity, InsanityThreshold);
+        }
+        else
+        {
+            UE_LOG(LogDownFall, Log, TEXT("Insanity confusion effect disabled"));
+        }
+    }
+}
+
 // State
 void ADownfallCharacter::UpdateClimbingState()
 {
@@ -701,6 +763,14 @@ void ADownfallCharacter::DrawDebugInfo()
     GEngine->AddOnScreenDebugMessage(
         LineIndex++, 0.0f, FColor::Yellow,
         FString::Printf(TEXT("Movement: %s"), *MovementMode)
+    );
+
+    // Insanity 표시
+    FColor InsanityColor = bIsConfused ? FColor::Red : FColor::Magenta;
+    GEngine->AddOnScreenDebugMessage(
+        LineIndex++, 0.0f, InsanityColor,
+        FString::Printf(TEXT("Insanity: %.1f / %.1f %s"), 
+            Insanity, MaxInsanity, bIsConfused ? TEXT("[CONFUSED]") : TEXT(""))
     );
 }
 #endif
