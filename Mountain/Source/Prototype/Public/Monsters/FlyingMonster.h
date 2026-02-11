@@ -29,6 +29,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Flight")
 	float PatrolRadius = 500.0f;        // 배회 반경
+	
+	UPROPERTY(EditAnywhere, Category = "Flight")
+	float VerticalPatrolRange = 1000.0f;  // 수직 배회 범위
 
 	// ============================================
 	// Idle Location (암벽 근처 "둥지")

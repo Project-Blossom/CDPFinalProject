@@ -1,6 +1,7 @@
 #include "Monsters/FlyingPlatform.h"
 #include "DownfallCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "DrawDebugHelpers.h"
 
 AFlyingPlatform::AFlyingPlatform()
 {
@@ -16,6 +17,42 @@ void AFlyingPlatform::BeginPlay()
 void AFlyingPlatform::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+
+#if !UE_BUILD_SHIPPING
+    // ===== 디버그 시각화 =====
+    FVector GrabLoc = GetGrabLocation();
+    
+    // 1. 잡기 가능 범위 (녹색 구체)
+    DrawDebugSphere(
+        GetWorld(),
+        GrabLoc,
+        500.0f,  // GripFinder 감지 범위
+        16,
+        bPlayerAttached ? FColor::Yellow : FColor::Green,
+        false,
+        0.1f,
+        0,
+        3.0f
+    );
+    
+    // 2. GrabPoint 위치 (빨간 십자)
+    DrawDebugLine(GetWorld(), GrabLoc - FVector(50, 0, 0), GrabLoc + FVector(50, 0, 0), FColor::Red, false, 0.1f, 0, 5.0f);
+    DrawDebugLine(GetWorld(), GrabLoc - FVector(0, 50, 0), GrabLoc + FVector(0, 50, 0), FColor::Red, false, 0.1f, 0, 5.0f);
+    DrawDebugLine(GetWorld(), GrabLoc - FVector(0, 0, 50), GrabLoc + FVector(0, 0, 50), FColor::Red, false, 0.1f, 0, 5.0f);
+    
+    // 3. Sweep 범위 (시안 구체)
+    DrawDebugSphere(
+        GetWorld(),
+        GrabLoc,
+        300.0f,  // TryGrip Sweep 범위
+        12,
+        FColor::Cyan,
+        false,
+        0.1f,
+        0,
+        2.0f
+    );
+#endif
 
     if (bPlayerAttached)
     {
@@ -125,10 +162,24 @@ bool AFlyingPlatform::FindNearestGripPoint_Implementation(const FVector& SearchO
 
 FVector AFlyingPlatform::GetGrabLocation() const
 {
+    // Blueprint에서 추가한 SceneComponent들 중에서 "GrabPoint" 찾기
+    TArray<USceneComponent*> SceneComponents;
+    GetComponents<USceneComponent>(SceneComponents);
+    
+    for (USceneComponent* Comp : SceneComponents)
+    {
+        if (Comp && Comp->GetName().Contains(TEXT("GrabPoint")))
+        {
+            return Comp->GetComponentLocation();
+        }
+    }
+
+    // Mesh Socket 체크 (Skeletal Mesh 사용 시)
     if (GetMesh() && GetMesh()->DoesSocketExist(GrabSocketName))
     {
         return GetMesh()->GetSocketLocation(GrabSocketName);
     }
 
-    return GetActorLocation();
+    // 없으면 중심 위치 + 위쪽 오프셋 (50cm)
+    return GetActorLocation() + FVector(0, 0, 50.0f);
 }

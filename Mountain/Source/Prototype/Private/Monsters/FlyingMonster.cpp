@@ -56,12 +56,20 @@ void AFlyingMonster::ReturnToIdle()
 
 FVector AFlyingMonster::GetRandomPatrolLocation() const
 {
-	// IdleLocation 주변 PatrolRadius 내 랜덤 위치
+	// IdleLocation 주변 3D 구형 범위 내 랜덤 위치
+	// 수평: PatrolRadius 범위
+	// 수직: IdleLocation.Z 기준 +1000 범위
+    
 	FVector RandomOffset = FVector(
 		FMath::RandRange(-PatrolRadius, PatrolRadius),
 		FMath::RandRange(-PatrolRadius, PatrolRadius),
-		FMath::RandRange(-FlightHeight * 0.5f, FlightHeight * 0.5f)
+		FMath::RandRange(0.0f, VerticalPatrolRange)
 	);
 
-	return IdleLocation + RandomOffset;
+	FVector TargetLocation = IdleLocation + RandomOffset;
+    
+	// 최소 높이 제한 (지면 아래로 안 가게)
+	TargetLocation.Z = FMath::Max(TargetLocation.Z, 100.0f);
+
+	return TargetLocation;
 }

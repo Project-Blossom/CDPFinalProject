@@ -40,6 +40,9 @@ struct FHandData
 
     UPROPERTY(BlueprintReadOnly)
     float Stamina = 100.0f;
+    
+    UPROPERTY()
+    AActor* GrippedActor = nullptr;
 };
 
 UCLASS()
@@ -173,6 +176,7 @@ protected:
     void TryGrip(bool bIsLeftHand);
     void ReleaseGrip(bool bIsLeftHand);
     void SetupConstraint(UPhysicsConstraintComponent* Constraint, const FVector& TargetLocation);
+    void SetupConstraintToActor(UPhysicsConstraintComponent* Constraint, AActor* TargetActor, const FVector& GripLocation);
     void BreakConstraint(UPhysicsConstraintComponent* Constraint);
     
     // Stamina

@@ -11,6 +11,7 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
+#include "Monsters/FlyingPlatform.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -405,21 +406,56 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
     
     // 4. 물리 모드 전환 체크 (상태 업데이트 전)
     bool bWasBothHandsFree = AreBothHandsFree();
-
-    // 5. Constraint 설정
-    SetupConstraint(Constraint, GripInfo.WorldLocation);
     
-    UE_LOG(LogDownFall, Log, TEXT("%s hand gripped: Angle=%.1f°, Quality=%.2f"), 
-        bIsLeftHand ? TEXT("Left") : TEXT("Right"),
-        GripInfo.SurfaceAngleDegrees, 
-        GripInfo.GripQuality);
-
-    // 6. 상태 업데이트
+    // 5. 상태 업데이트
     Hand.State = EHandState::Gripping;
     Hand.CurrentGrip = GripInfo;
+    
+    // 6. FlyingPlatform 체크 (Constraint 설정 전!)
+    bool bGrippedMonster = false;
+    
+    TArray<FHitResult> Hits;
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);
+
+    GetWorld()->SweepMultiByChannel(
+        Hits,
+        GripInfo.WorldLocation,
+        GripInfo.WorldLocation + FVector(0, 0, 1),
+        FQuat::Identity,
+        ECC_Pawn,
+        FCollisionShape::MakeSphere(300.0f),  // 몬스터 잡기 판정 범위 (3m)
+        Params
+    );
+
+    for (const FHitResult& Hit : Hits)
+    {
+        if (Hit.GetActor() && Hit.GetActor()->Implements<UClimbableSurface>())
+        {
+            Hand.GrippedActor = Hit.GetActor();
+        
+            if (AFlyingPlatform* Platform = Cast<AFlyingPlatform>(Hit.GetActor()))
+            {
+                Platform->OnPlayerGrab(this);
+                UE_LOG(LogDownFall, Log, TEXT("Grabbed Flying Platform: %s"), *Platform->GetName());
+                
+                // 동적 Constraint 설정
+                SetupConstraintToActor(Constraint, Platform, GripInfo.WorldLocation);
+                bGrippedMonster = true;
+            }
+            break;
+        }
+    }
+    
+    // 7. 일반 지형 Constraint 설정 (몬스터가 아닌 경우만)
+    if (!bGrippedMonster)
+    {
+        SetupConstraint(Constraint, GripInfo.WorldLocation);
+    }
+    
     Hand.GripStartTime = GetWorld()->GetTimeSeconds();
 
-    // 7. 물리 모드 전환 (첫 Grip인 경우)
+    // 8. 물리 모드 전환 (첫 Grip인 경우)
     if (bWasBothHandsFree)
     {
         GetCapsuleComponent()->SetSimulatePhysics(true);
@@ -428,7 +464,7 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
         UE_LOG(LogDownFall, Log, TEXT("Physics mode activated"));
     }
 
-    // 7. 이벤트 발생
+    // 9. 이벤트 발생
     OnHandGripped(bIsLeftHand, GripInfo);
 
     UE_LOG(LogDownFall, Log, TEXT("%s hand gripped: Angle=%.1f°, Quality=%.2f"), 
@@ -447,6 +483,16 @@ void ADownfallCharacter::ReleaseGrip(bool bIsLeftHand)
         return;
     }
 
+    if (Hand.GrippedActor)
+    {
+        if (AFlyingPlatform* Platform = Cast<AFlyingPlatform>(Hand.GrippedActor))
+        {
+            Platform->OnPlayerRelease();
+            UE_LOG(LogDownFall, Log, TEXT("Released Flying Platform: %s"), *Platform->GetName());
+        }
+        Hand.GrippedActor = nullptr;
+    }
+    
     // Constraint 해제
     BreakConstraint(Constraint);
     
@@ -485,6 +531,48 @@ void ADownfallCharacter::SetupConstraint(UPhysicsConstraintComponent* Constraint
     Constraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
     Constraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
     Constraint->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Limited, 30.0f);
+}
+
+void ADownfallCharacter::SetupConstraintToActor(UPhysicsConstraintComponent* Constraint, AActor* TargetActor, const FVector& GripLocation)
+{
+    if (!Constraint || !TargetActor) return;
+
+    // 타겟의 Primitive Component 찾기
+    UPrimitiveComponent* TargetComp = Cast<UPrimitiveComponent>(TargetActor->GetRootComponent());
+    if (!TargetComp)
+    {
+        TargetComp = TargetActor->FindComponentByClass<UPrimitiveComponent>();
+    }
+
+    if (!TargetComp)
+    {
+        UE_LOG(LogDownFall, Error, TEXT("Target actor has no primitive component"));
+        return;
+    }
+
+    // Constraint 연결
+    Constraint->SetConstrainedComponents(
+        GetCapsuleComponent(),
+        NAME_None,
+        TargetComp,
+        NAME_None
+    );
+
+    // 로컬 오프셋 계산 (타겟의 로컬 좌표로 변환)
+    FVector LocalOffset = TargetActor->GetActorTransform().InverseTransformPosition(GripLocation);
+    Constraint->SetConstraintReferencePosition(EConstraintFrame::Frame2, LocalOffset);
+
+    // Linear Limits
+    Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Limited, 100.0f);
+    Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Limited, 100.0f);
+    Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Limited, 100.0f);
+
+    // Angular Limits
+    Constraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
+    Constraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
+    Constraint->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Limited, 30.0f);
+
+    UE_LOG(LogDownFall, Log, TEXT("Constraint set to dynamic actor: %s"), *TargetActor->GetName());
 }
 
 void ADownfallCharacter::BreakConstraint(UPhysicsConstraintComponent* Constraint)

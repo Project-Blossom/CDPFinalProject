@@ -41,7 +41,7 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Platform")
     FName GrabSocketName = "GrabSocket";
-
+    
     // ============================================
     // Patrol State
     // ============================================
