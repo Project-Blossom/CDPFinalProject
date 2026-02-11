@@ -55,6 +55,64 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
     }
 
     // ========================================
+    // 우선순위 1: IClimbableSurface (몬스터 등)
+    // ========================================
+    for (const TScriptInterface<IClimbableSurface>& Surface : CachedClimbableSurfaces)
+    {
+        if (!Surface.GetObject() || !IsValid(Surface.GetObject()))
+            continue;
+
+        // 몬스터에게 직접 물어봄
+        FGripPointInfo MonsterGripInfo;
+        if (IClimbableSurface::Execute_FindNearestGripPoint(
+            Surface.GetObject(),
+            CameraLocation,
+            SurfaceSampleRadius * 10.0f,  // 몬스터 감지 범위 (500cm)
+            MonsterGripInfo))
+        {
+            // 거리 체크
+            float Distance = FVector::Dist(CameraLocation, MonsterGripInfo.WorldLocation);
+            if (Distance <= MaxReachDistance)
+            {
+                OutGripInfo = MonsterGripInfo;
+                
+#if !UE_BUILD_SHIPPING
+                // 디버그: 몬스터 감지 시각화
+                DrawDebugLine(
+                    GetWorld(),
+                    CameraLocation,
+                    MonsterGripInfo.WorldLocation,
+                    FColor::Magenta,
+                    false,
+                    0.5f,
+                    0,
+                    3.0f
+                );
+                DrawDebugSphere(
+                    GetWorld(),
+                    MonsterGripInfo.WorldLocation,
+                    30.0f,
+                    8,
+                    FColor::Magenta,
+                    false,
+                    0.5f,
+                    0,
+                    2.0f
+                );
+#endif
+                
+                UE_LOG(LogGripFinder, Log, TEXT("Found monster grip point: %s at distance %.1f"), 
+                    *Surface.GetObject()->GetName(), Distance);
+                return true;
+            }
+        }
+    }
+
+    // ========================================
+    // 우선순위 2: 일반 지형 (기존 로직)
+    // ========================================
+
+    // ========================================
     // 1단계: 카메라 Ray로 첫 Hit 찾기
     // ========================================
     FHitResult InitialHit;
