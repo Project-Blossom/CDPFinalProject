@@ -77,7 +77,7 @@ struct FMountainGenSettings
     int32 ChunkY = 128;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Chunk", meta = (ClampMin = "8", ClampMax = "512"))
-    int32 ChunkZ = 256;
+    int32 ChunkZ = 128;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Chunk", meta = (ClampMin = "1.0"))
     float VoxelSizeCm = 100.f;
