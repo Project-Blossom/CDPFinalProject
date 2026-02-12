@@ -16,13 +16,6 @@ struct FMGTargets
 {
     GENERATED_BODY()
 
-    // 0..1 : Cave void ratio target
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Targets", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float CaveMin = 0.00f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Targets", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float CaveMax = 0.04f;
-
     // 0..1 : Overhang ratio target
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Targets", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float OverhangMin = 0.00f;
@@ -129,7 +122,38 @@ struct FMountainGenSettings
     float SteepDotThreshold = 0.309f;
 
     // ============================================================
-    // 5) Advanced 
+    // 5) Caves (Post-process Carving)
+    // ============================================================
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves")
+    bool bEnableCaves = true;
+
+    // 타일 크기 128m
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves", meta = (ClampMin = "1000.0"))
+    float CaveTileSizeCm = 12800.f;
+
+    // 동굴 지름 200cm
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves", meta = (ClampMin = "10.0"))
+    float CaveDiameterCm = 200.f;
+
+    // 타일(128m)당 동굴 개수 - 난이도별
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves", meta = (ClampMin = "0", ClampMax = "64"))
+    int32 CavesPerTile_Easy = 1;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves", meta = (ClampMin = "0", ClampMax = "64"))
+    int32 CavesPerTile_Normal = 2;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves", meta = (ClampMin = "0", ClampMax = "64"))
+    int32 CavesPerTile_Hard = 4;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves", meta = (ClampMin = "0", ClampMax = "64"))
+    int32 CavesPerTile_Extreme = 8;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves", meta = (ClampMin = "0", ClampMax = "16"))
+    int32 CaveMinSolidNeighbors = 6;
+
+    // ============================================================
+    // 6) Advanced
     // ============================================================
 
     // ---------------- Envelope shaping ----------------
@@ -189,38 +213,9 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Overhang", meta = (ClampMin = "0.0", AdvancedDisplay))
     float OverhangDepthCm = 2500.f;
 
-    // ---------------- Caves ----------------
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cave", meta = (ClampMin = "0.0", AdvancedDisplay))
-    float CaveStrength = 1.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cave", meta = (ClampMin = "1.0", AdvancedDisplay))
-    float CaveScaleCm = 8000.f;
-
-    // Cave height band
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cave", meta = (ClampMin = "0.0", AdvancedDisplay))
-    float CaveMinHeightCm = 6000.f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cave", meta = (ClampMin = "0.0", AdvancedDisplay))
-    float CaveMaxHeightCm = 22000.f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cave", meta = (ClampMin = "0.0", ClampMax = "1.0", AdvancedDisplay))
-    float CaveThreshold = 0.62f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cave", meta = (ClampMin = "0.0", ClampMax = "1.0", AdvancedDisplay))
-    float CaveBand = 0.12f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cave", meta = (ClampMin = "0.0", AdvancedDisplay))
-    float CaveDepthCm = 1500.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cave", meta = (ClampMin = "0.0", AdvancedDisplay))
-    float CaveNearSurfaceCm = 8000.0f;
-
     // ---------------- switches ----------------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Safety", meta = (AdvancedDisplay))
     bool bOverhangBiasIncreaseWhenValueIncreases = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Safety", meta = (AdvancedDisplay))
-    bool bCaveHeightsAreAbsoluteWorldZ = false;
 
     // ---------------- Cliff ----------------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Advanced|Cliff", meta = (ClampMin = "100.0", AdvancedDisplay))

@@ -76,26 +76,22 @@ float FVoxelDensityGenerator::RidgedFBM01(const FVector& p, int32 Octaves, float
 
     for (int32 i = 0; i < Octaves; ++i)
     {
-        const float n = Noise3D(p * freq); // -1..1
+        const float n = Noise3D(p * freq);
         sum += Ridged01(n) * amp;
         freq *= Lacunarity;
         amp *= Gain;
     }
-    return FMath::Clamp(sum, 0.f, 1.f);
+    return Clamp01(sum);
 }
 
 FVector FVoxelDensityGenerator::Warp3D(const FVector& p, float PatchCm, float AmpCm) const
 {
-    PatchCm = FMath::Max(1.f, PatchCm);
-    AmpCm = FMath::Max(0.f, AmpCm);
+    const float inv = 1.f / FMath::Max(1.f, PatchCm);
+    const FVector q = p * inv;
 
-    const float inv = 1.f / PatchCm;
-
-    const FVector sp = SeededDomain(p);
-
-    const float nx = Noise3D(sp * inv);
-    const float ny = Noise3D(FVector(sp.Y, sp.Z, sp.X) * inv);
-    const float nz = Noise3D(FVector(sp.Z, sp.X, sp.Y) * inv);
+    const float nx = FBM3D(q + FVector(13,  7,  5), 3, 2.f, 0.5f);
+    const float ny = FBM3D(q + FVector( 5, 11, 17), 3, 2.f, 0.5f);
+    const float nz = FBM3D(q + FVector(19,  3, 29), 3, 2.f, 0.5f);
 
     return p + FVector(nx, ny, nz) * AmpCm;
 }
@@ -124,10 +120,9 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     // 2) 빈 공간 마킹
     // -------------------------
     const float Influence =
-        FMath::Max3(
+        FMath::Max(
             FMath::Max(S.CliffSurfaceAmpCm, 0.f),
-            FMath::Max(S.OverhangDepthCm, 0.f),
-            FMath::Max(S.CaveDepthCm, 0.f)
+            FMath::Max(S.OverhangDepthCm, 0.f)
         )
         + FMath::Max(S.WarpAmpCm, 0.f)
         + FMath::Max(S.BaseField3DStrengthCm, 0.f)
@@ -139,7 +134,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
             FMath::Abs(Pc.Y) > (CliffHalfExtents.Y + Influence) ||
             FMath::Abs(Pc.Z) > (CliffHalfExtents.Z + Influence))
         {
-            return Iso - 1.0f; // air
+            return Iso - 1.0f;
         }
     }
 
@@ -241,29 +236,6 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
 
         const float depth = FMath::Clamp(S.OverhangDepthCm, 300.f, 6000.f);
         density += m * depth * VolumeStrength * faceMask * z01;
-    }
-
-    // -------------------------
-    // 8) 동굴
-    // -------------------------
-    const float CaveStrength = FMath::Clamp(S.CaveStrength, 0.f, 1.4f);
-    if (CaveStrength > 0.f)
-    {
-        const float CaveScale = FMath::Max(1500.f, S.CaveScaleCm);
-        const float c = FBM3D(pp / CaveScale, 5, 2.0f, 0.5f); // -1..1
-        const float c01 = c * 0.5f + 0.5f;
-
-        const float thr = FMath::Clamp(S.CaveThreshold, 0.55f, 0.75f);
-        const float band = FMath::Clamp(S.CaveBand, 0.06f, 0.22f);
-
-        float pocket = (c01 - thr) / FMath::Max(0.0001f, band);
-        pocket = Clamp01(pocket);
-        pocket = FMath::Pow(pocket, 1.8f);
-
-        const float pocketDepth = FMath::Clamp(S.CaveDepthCm, 200.f, 2500.f);
-        const float midBand = SmoothStep(0.25f, 0.55f, z01) * (1.f - SmoothStep(0.70f, 0.95f, z01));
-
-        density -= pocket * pocketDepth * CaveStrength * faceMask * midBand;
     }
 
     return density;

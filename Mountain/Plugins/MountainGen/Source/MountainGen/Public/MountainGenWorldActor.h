@@ -76,7 +76,6 @@ private:
     static FString MakeMetricsLine(
         const FMountainGenSettings& S,
         const FMGMetrics& M,
-        bool& bOutCaveOK,
         bool& bOutOverhangOK,
         bool& bOutSteepOK);
 

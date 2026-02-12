@@ -46,23 +46,160 @@ static bool MG_InRange(float V, float Min, float Max)
     return (V >= Min && V <= Max);
 }
 
+static int32 MG_CaveCountPerTile(const FMountainGenSettings& S)
+{
+    switch (S.Difficulty)
+    {
+    case EMountainGenDifficulty::Easy:     return S.CavesPerTile_Easy;
+    case EMountainGenDifficulty::Normal:   return S.CavesPerTile_Normal;
+    case EMountainGenDifficulty::Hard:     return S.CavesPerTile_Hard;
+    case EMountainGenDifficulty::Extreme:  return S.CavesPerTile_Extreme;
+    default:                               return S.CavesPerTile_Easy;
+    }
+}
+
+static FORCEINLINE bool MG_IsInside(int32 x, int32 y, int32 z, int32 SX, int32 SY, int32 SZ)
+{
+    return (x >= 0 && y >= 0 && z >= 0 && x < SX && y < SY && z < SZ);
+}
+
+static void MG_CarveCaves_PostProcess(
+    FVoxelChunk& Chunk,
+    const FMountainGenSettings& S,
+    const FVector& SampleOriginWorld,
+    float VoxelSizeCm)
+{
+    if (!S.bEnableCaves)
+        return;
+
+    const float Iso = S.IsoLevel;
+
+    const float TileSizeCm = FMath::Max(1000.f, S.CaveTileSizeCm);
+    const float CaveDiameterCm = FMath::Max(10.f, S.CaveDiameterCm);
+    const float CaveRadiusCm = CaveDiameterCm * 0.5f;
+
+    const int32 NPerTile = MG_CaveCountPerTile(S);
+    if (NPerTile <= 0)
+        return;
+
+    const int32 SX = Chunk.SizeX;
+    const int32 SY = Chunk.SizeY;
+    const int32 SZ = Chunk.SizeZ;
+
+    const FVector WorldMin = SampleOriginWorld;
+    const FVector WorldMax = SampleOriginWorld + FVector(
+        (SX - 1) * VoxelSizeCm,
+        (SY - 1) * VoxelSizeCm,
+        (SZ - 1) * VoxelSizeCm
+    );
+
+    const int32 TileMinX = FMath::FloorToInt(WorldMin.X / TileSizeCm);
+    const int32 TileMaxX = FMath::FloorToInt(WorldMax.X / TileSizeCm);
+    const int32 TileMinY = FMath::FloorToInt(WorldMin.Y / TileSizeCm);
+    const int32 TileMaxY = FMath::FloorToInt(WorldMax.Y / TileSizeCm);
+
+    const int32 Rv = FMath::Max(1, FMath::CeilToInt(CaveRadiusCm / VoxelSizeCm));
+    const int32 MinNeighbors = FMath::Clamp(S.CaveMinSolidNeighbors, 0, 6);
+
+    auto WorldToVoxel = [&](const FVector& W)
+        {
+            const FVector L = (W - SampleOriginWorld) / VoxelSizeCm;
+            return FIntVector(FMath::RoundToInt(L.X), FMath::RoundToInt(L.Y), FMath::RoundToInt(L.Z));
+        };
+
+    auto VoxelToWorld = [&](int32 x, int32 y, int32 z)
+        {
+            return SampleOriginWorld + FVector(x * VoxelSizeCm, y * VoxelSizeCm, z * VoxelSizeCm);
+        };
+
+    auto DensityAt = [&](int32 x, int32 y, int32 z) -> float
+        {
+            if (!MG_IsInside(x, y, z, SX, SY, SZ)) return Iso - 1.f;
+            return Chunk.Get(x, y, z);
+        };
+
+    auto CountSolidNeighbors6 = [&](int32 x, int32 y, int32 z) -> int32
+        {
+            int32 c = 0;
+            c += (DensityAt(x - 1, y, z) >= Iso) ? 1 : 0;
+            c += (DensityAt(x + 1, y, z) >= Iso) ? 1 : 0;
+            c += (DensityAt(x, y - 1, z) >= Iso) ? 1 : 0;
+            c += (DensityAt(x, y + 1, z) >= Iso) ? 1 : 0;
+            c += (DensityAt(x, y, z - 1) >= Iso) ? 1 : 0;
+            c += (DensityAt(x, y, z + 1) >= Iso) ? 1 : 0;
+            return c;
+        };
+
+    auto CarveSphereAtVoxel = [&](const FIntVector& C)
+        {
+            const FVector Cw = VoxelToWorld(C.X, C.Y, C.Z);
+
+            for (int32 z = C.Z - Rv; z <= C.Z + Rv; ++z)
+                for (int32 y = C.Y - Rv; y <= C.Y + Rv; ++y)
+                    for (int32 x = C.X - Rv; x <= C.X + Rv; ++x)
+                    {
+                        if (!MG_IsInside(x, y, z, SX, SY, SZ)) continue;
+
+                        const FVector P = VoxelToWorld(x, y, z);
+                        const float Dist = FVector::Distance(P, Cw);
+                        if (Dist > CaveRadiusCm) continue;
+
+                        Chunk.Set(x, y, z, Iso - 1.f); // air
+                    }
+        };
+
+    for (int32 Ty = TileMinY; Ty <= TileMaxY; ++Ty)
+        for (int32 Tx = TileMinX; Tx <= TileMaxX; ++Tx)
+        {
+            const uint32 TileSeed =
+                (uint32)FMath::Max(1, S.Seed) ^
+                (uint32)(Tx * 73856093) ^
+                (uint32)(Ty * 19349663) ^
+                0xA53C9E2Du;
+
+            FRandomStream Rng((int32)TileSeed);
+
+            for (int32 i = 0; i < NPerTile; ++i)
+            {
+                const int32 MaxTry = 24;
+
+                for (int32 t = 0; t < MaxTry; ++t)
+                {
+                    const float TileOriginX = (float)Tx * TileSizeCm;
+                    const float TileOriginY = (float)Ty * TileSizeCm;
+
+                    const float X = Rng.FRandRange(TileOriginX + 100.f, TileOriginX + TileSizeCm - 100.f);
+                    const float Y = Rng.FRandRange(TileOriginY + 100.f, TileOriginY + TileSizeCm - 100.f);
+                    const float Z = Rng.FRandRange(WorldMin.Z + VoxelSizeCm * 2.f, WorldMax.Z - VoxelSizeCm * 2.f);
+
+                    const FIntVector C = WorldToVoxel(FVector(X, Y, Z));
+                    if (!MG_IsInside(C.X, C.Y, C.Z, SX, SY, SZ)) continue;
+
+                    if (DensityAt(C.X, C.Y, C.Z) < Iso) continue;
+
+                    if (CountSolidNeighbors6(C.X, C.Y, C.Z) < MinNeighbors) continue;
+
+                    CarveSphereAtVoxel(C);
+                    break;
+                }
+            }
+        }
+}
+
 FString AMountainGenWorldActor::MakeMetricsLine(
     const FMountainGenSettings& S,
     const FMGMetrics& M,
-    bool& bOutCaveOK,
     bool& bOutOverhangOK,
     bool& bOutSteepOK)
 {
-    bOutCaveOK = MG_InRange(M.CaveVoidRatio, S.Targets.CaveMin, S.Targets.CaveMax);
     bOutOverhangOK = MG_InRange(M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax);
     bOutSteepOK = MG_InRange(M.SteepRatio, S.Targets.SteepMin, S.Targets.SteepMax);
 
     return FString::Format(
-        TEXT("Cave {0} [{1}~{2}] {3} | Overhang {4} [{5}~{6}] {7} | Steep {8} [{9}~{10}] {11}"),
+        TEXT("Overhang {0} [{1}~{2}] {3} | Steep {4} [{5}~{6}] {7}"),
         {
-            M.CaveVoidRatio,  S.Targets.CaveMin,     S.Targets.CaveMax,     bOutCaveOK ? TEXT("OK") : TEXT("FAIL"),
-            M.OverhangRatio,  S.Targets.OverhangMin, S.Targets.OverhangMax, bOutOverhangOK ? TEXT("OK") : TEXT("FAIL"),
-            M.SteepRatio,     S.Targets.SteepMin,    S.Targets.SteepMax,    bOutSteepOK ? TEXT("OK") : TEXT("FAIL")
+            M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax, bOutOverhangOK ? TEXT("OK") : TEXT("FAIL"),
+            M.SteepRatio,    S.Targets.SteepMin,    S.Targets.SteepMax,    bOutSteepOK ? TEXT("OK") : TEXT("FAIL")
         }
     );
 }
@@ -210,29 +347,23 @@ void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
     switch (S.Difficulty)
     {
     case EMountainGenDifficulty::Easy:
-        S.Targets.CaveMin = 0.00f;   S.Targets.CaveMax = 0.04f;
         S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
-        S.Targets.SteepMin = 0.05f;  S.Targets.SteepMax = 0.20f;
+        S.Targets.SteepMin = 0.05f; S.Targets.SteepMax = 0.20f;
         break;
+
     case EMountainGenDifficulty::Normal:
-        S.Targets.CaveMin = 0.01f;   S.Targets.CaveMax = 0.07f;
         S.Targets.OverhangMin = 0.02f; S.Targets.OverhangMax = 0.10f;
-        S.Targets.SteepMin = 0.15f;  S.Targets.SteepMax = 0.35f;
+        S.Targets.SteepMin = 0.15f; S.Targets.SteepMax = 0.35f;
         break;
+
     case EMountainGenDifficulty::Hard:
-        S.Targets.CaveMin = 0.03f;   S.Targets.CaveMax = 0.12f;
         S.Targets.OverhangMin = 0.06f; S.Targets.OverhangMax = 0.18f;
-        S.Targets.SteepMin = 0.25f;  S.Targets.SteepMax = 0.55f;
+        S.Targets.SteepMin = 0.25f; S.Targets.SteepMax = 0.55f;
         break;
+
     case EMountainGenDifficulty::Extreme:
-        S.Targets.CaveMin = 0.06f;   S.Targets.CaveMax = 0.20f;
         S.Targets.OverhangMin = 0.12f; S.Targets.OverhangMax = 0.30f;
-        S.Targets.SteepMin = 0.40f;  S.Targets.SteepMax = 0.80f;
-        break;
-    default:
-        S.Targets.CaveMin = 0.00f;   S.Targets.CaveMax = 0.04f;
-        S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
-        S.Targets.SteepMin = 0.05f;  S.Targets.SteepMax = 0.20f;
+        S.Targets.SteepMin = 0.40f; S.Targets.SteepMax = 0.80f;
         break;
     }
 }
@@ -321,13 +452,14 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
         {
             const FMGMetrics EM = MGComputeMetricsQuick(S, TerrainOriginWorld, WorldMin, WorldMax);
-            bool bC = false, bO = false, bSt = false;
-            const FString Line = MakeMetricsLine(S, EM, bC, bO, bSt);
+
+            bool bO = false, bSt = false;
+            const FString Line = MakeMetricsLine(S, EM, bO, bSt);
 
             UI_Status(
                 FString::Format(TEXT("[MountainGen][EditorMetrics] seed={0} | {1}"), { S.Seed, Line }),
                 6.0f,
-                (bC && bO && bSt) ? FColor::Green : FColor::Orange
+                (bO && bSt) ? FColor::Green : FColor::Orange
             );
         }
 
@@ -344,6 +476,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     const FVector WorldPos = SampleOriginWorld + FVector(x * Voxel, y * Voxel, z * Voxel);
                     Chunk.Set(x, y, z, Gen.SampleDensity(WorldPos));
                 }
+
+        MG_CarveCaves_PostProcess(Chunk, S, SampleOriginWorld, Voxel);
 
         // 3) 메시 생성 + 즉시 적용
         FChunkMeshData MeshData;
@@ -454,17 +588,20 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 {
                     if (WeakThis->bDebugSeedSearch)
                     {
-                        bool bC = false, bO = false, bSt = false;
-                        const FString Line = AMountainGenWorldActor::MakeMetricsLine(Cand, M, bC, bO, bSt);
+                        bool bO = false, bSt = false;
+                        const FString Line = MakeMetricsLine(Cand, M, bO, bSt);
 
-                        AsyncTask(ENamedThreads::GameThread, [WeakThis, Attempt, CandSeed, Line, MaxSeedTries]()
+                        AsyncTask(ENamedThreads::GameThread, [WeakThis, Attempt, CandSeed, Line, MaxSeedTries, bO, bSt]()
                             {
                                 if (!WeakThis.IsValid()) return;
+
+                                const FColor Color = (bO && bSt) ? FColor::Green : FColor::Orange;
+
                                 WeakThis->UI_Status(
                                     FString::Format(TEXT("[MountainGen][SeedSearch] SATISFIED {0}/{1} seed={2} | {3}"),
                                         { Attempt, MaxSeedTries, CandSeed, Line }),
                                     6.0f,
-                                    FColor::Green
+                                    Color
                                 );
                             });
                     }
@@ -475,7 +612,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 }
 
                 const float Score =
-                    ScoreToRange(M.CaveVoidRatio, Cand.Targets.CaveMin, Cand.Targets.CaveMax) +
                     ScoreToRange(M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax) +
                     ScoreToRange(M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax);
 
@@ -496,9 +632,9 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
                     if (bShouldPrint)
                     {
-                        bool bC = false, bO = false, bSt = false;
-                        const FString Line = AMountainGenWorldActor::MakeMetricsLine(Cand, M, bC, bO, bSt);
-                        const bool bOK = (bC && bO && bSt);
+                        bool bO = false, bSt = false;
+                        const FString Line = MakeMetricsLine(Cand, M, bO, bSt);
+                        const bool bOK = (bO && bSt);
 
                         AsyncTask(ENamedThreads::GameThread, [WeakThis, Attempt, CandSeed, Line, bOK, MaxSeedTries]()
                             {
@@ -560,6 +696,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                         const FVector WorldPos = SampleOriginWorld + FVector(x * Voxel, y * Voxel, z * Voxel);
                         Chunk.Set(x, y, z, Gen.SampleDensity(WorldPos));
                     }
+
+            MG_CarveCaves_PostProcess(Chunk, FinalS, SampleOriginWorld, Voxel);
 
             FChunkMeshData MeshData;
             FVoxelMesher::BuildMarchingCubes(

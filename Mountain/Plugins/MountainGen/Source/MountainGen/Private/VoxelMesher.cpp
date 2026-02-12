@@ -152,7 +152,6 @@ void FVoxelMesher::BuildMarchingCubes(
     EnsureEdgeCache(YEdgeCache, CachedNumYEdges, NumYEdges);
     EnsureEdgeCache(ZEdgeCache, CachedNumZEdges, NumZEdges);
 
-    // int32 -1 == 0xFFFFFFFF 이므로 0xFF로 memset 가능
     FMemory::Memset(XEdgeCache.GetData(), 0xFF, sizeof(int32) * XEdgeCache.Num());
     FMemory::Memset(YEdgeCache.GetData(), 0xFF, sizeof(int32) * YEdgeCache.Num());
     FMemory::Memset(ZEdgeCache.GetData(), 0xFF, sizeof(int32) * ZEdgeCache.Num());
