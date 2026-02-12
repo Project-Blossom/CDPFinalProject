@@ -258,6 +258,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     ApplyDifficultyPresetTo(S);
 
     const float Voxel = S.VoxelSizeCm;
+
     const float HalfX = (S.ChunkX * Voxel) * 0.5f;
     const float HalfY = (S.ChunkY * Voxel) * 0.5f;
 

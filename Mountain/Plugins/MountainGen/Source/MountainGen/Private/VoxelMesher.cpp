@@ -131,9 +131,31 @@ void FVoxelMesher::BuildMarchingCubes(
     const int32 NumYEdges = SX * YW * SZ;
     const int32 NumZEdges = SX * SY * ZW;
 
-    TArray<int32> XEdgeCache; XEdgeCache.Init(-1, NumXEdges);
-    TArray<int32> YEdgeCache; YEdgeCache.Init(-1, NumYEdges);
-    TArray<int32> ZEdgeCache; ZEdgeCache.Init(-1, NumZEdges);
+    // --- Reusable edge caches ---------------------------------
+    static thread_local TArray<int32> XEdgeCache;
+    static thread_local TArray<int32> YEdgeCache;
+    static thread_local TArray<int32> ZEdgeCache;
+    static thread_local int32 CachedNumXEdges = 0;
+    static thread_local int32 CachedNumYEdges = 0;
+    static thread_local int32 CachedNumZEdges = 0;
+
+    auto EnsureEdgeCache = [](TArray<int32>& Cache, int32& CachedNum, int32 NeededNum)
+        {
+            if (CachedNum != NeededNum)
+            {
+                Cache.SetNumUninitialized(NeededNum);
+                CachedNum = NeededNum;
+            }
+        };
+
+    EnsureEdgeCache(XEdgeCache, CachedNumXEdges, NumXEdges);
+    EnsureEdgeCache(YEdgeCache, CachedNumYEdges, NumYEdges);
+    EnsureEdgeCache(ZEdgeCache, CachedNumZEdges, NumZEdges);
+
+    // int32 -1 == 0xFFFFFFFF 이므로 0xFF로 memset 가능
+    FMemory::Memset(XEdgeCache.GetData(), 0xFF, sizeof(int32) * XEdgeCache.Num());
+    FMemory::Memset(YEdgeCache.GetData(), 0xFF, sizeof(int32) * YEdgeCache.Num());
+    FMemory::Memset(ZEdgeCache.GetData(), 0xFF, sizeof(int32) * ZEdgeCache.Num());
 
     auto XEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32
         {
