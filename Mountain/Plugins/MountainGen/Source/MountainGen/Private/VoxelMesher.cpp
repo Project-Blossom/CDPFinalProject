@@ -31,14 +31,13 @@ namespace
         return FProcMeshTangent(T, false);
     }
 
-    static FORCEINLINE FVector EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, const FVector& Pcm, float StepCm)
+    static FORCEINLINE float LerpT(float V1, float V2, float Iso)
     {
-        const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
-        const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
-        const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
-        return FVector(dx, dy, dz).GetSafeNormal();
+        const float Den = (V2 - V1);
+        if (FMath::IsNearlyZero(Den)) return 0.0f;
+        return (Iso - V1) / Den;
     }
-} // namespace
+}
 
 void FVoxelMesher::BuildMarchingCubes(
     const FVoxelChunk& Chunk,
@@ -69,6 +68,55 @@ void FVoxelMesher::BuildMarchingCubes(
             return Chunk.Density[Idx3(x, y, z, SX, SY)];
         };
 
+    // ------------------------------------------------------------
+    // Normals
+    // ------------------------------------------------------------
+    auto SampleClamped = [&](int32 x, int32 y, int32 z) -> float
+        {
+            x = FMath::Clamp(x, 0, SX - 1);
+            y = FMath::Clamp(y, 0, SY - 1);
+            z = FMath::Clamp(z, 0, SZ - 1);
+            return Sample(x, y, z);
+        };
+
+    TArray<FVector> Grad;
+    Grad.SetNumUninitialized(SX * SY * SZ);
+
+    for (int32 gz = 0; gz < SZ; ++gz)
+    {
+        for (int32 gy = 0; gy < SY; ++gy)
+        {
+            for (int32 gx = 0; gx < SX; ++gx)
+            {
+                const float dx = SampleClamped(gx + 1, gy, gz) - SampleClamped(gx - 1, gy, gz);
+                const float dy = SampleClamped(gx, gy + 1, gz) - SampleClamped(gx, gy - 1, gz);
+                const float dz = SampleClamped(gx, gy, gz + 1) - SampleClamped(gx, gy, gz - 1);
+                Grad[Idx3(gx, gy, gz, SX, SY)] = FVector(dx, dy, dz);
+            }
+        }
+    }
+
+    auto GradAt = [&](int32 x, int32 y, int32 z) -> FVector
+        {
+            x = FMath::Clamp(x, 0, SX - 1);
+            y = FMath::Clamp(y, 0, SY - 1);
+            z = FMath::Clamp(z, 0, SZ - 1);
+            return Grad[Idx3(x, y, z, SX, SY)];
+        };
+
+    static const FIntVector CornerOfs[8] =
+    {
+        FIntVector(0, 0, 0),
+        FIntVector(1, 0, 0),
+        FIntVector(1, 1, 0),
+        FIntVector(0, 1, 0),
+        FIntVector(0, 0, 1),
+        FIntVector(1, 0, 1),
+        FIntVector(1, 1, 1),
+        FIntVector(0, 1, 1),
+    };
+
+
     auto WorldP = [&](int32 x, int32 y, int32 z) -> FVector
         {
             return ChunkOriginWorld + FVector(x * VoxelSizeCm, y * VoxelSizeCm, z * VoxelSizeCm);
@@ -83,9 +131,30 @@ void FVoxelMesher::BuildMarchingCubes(
     const int32 NumYEdges = SX * YW * SZ;
     const int32 NumZEdges = SX * SY * ZW;
 
-    TArray<int32> XEdgeCache; XEdgeCache.Init(-1, NumXEdges);
-    TArray<int32> YEdgeCache; YEdgeCache.Init(-1, NumYEdges);
-    TArray<int32> ZEdgeCache; ZEdgeCache.Init(-1, NumZEdges);
+    // --- Reusable edge caches ---------------------------------
+    static thread_local TArray<int32> XEdgeCache;
+    static thread_local TArray<int32> YEdgeCache;
+    static thread_local TArray<int32> ZEdgeCache;
+    static thread_local int32 CachedNumXEdges = 0;
+    static thread_local int32 CachedNumYEdges = 0;
+    static thread_local int32 CachedNumZEdges = 0;
+
+    auto EnsureEdgeCache = [](TArray<int32>& Cache, int32& CachedNum, int32 NeededNum)
+        {
+            if (CachedNum != NeededNum)
+            {
+                Cache.SetNumUninitialized(NeededNum);
+                CachedNum = NeededNum;
+            }
+        };
+
+    EnsureEdgeCache(XEdgeCache, CachedNumXEdges, NumXEdges);
+    EnsureEdgeCache(YEdgeCache, CachedNumYEdges, NumYEdges);
+    EnsureEdgeCache(ZEdgeCache, CachedNumZEdges, NumZEdges);
+
+    FMemory::Memset(XEdgeCache.GetData(), 0xFF, sizeof(int32) * XEdgeCache.Num());
+    FMemory::Memset(YEdgeCache.GetData(), 0xFF, sizeof(int32) * YEdgeCache.Num());
+    FMemory::Memset(ZEdgeCache.GetData(), 0xFF, sizeof(int32) * ZEdgeCache.Num());
 
     auto XEdgeIdx = [&](int32 x, int32 y, int32 z) -> int32
         {
@@ -100,14 +169,12 @@ void FVoxelMesher::BuildMarchingCubes(
             return x + y * SX + z * SX * SY;
         };
 
-    auto AddSharedVertex = [&](const FVector& PWorld) -> int32
+    auto AddSharedVertex = [&](const FVector& PWorld, const FVector& NIn) -> int32
         {
             const int32 Idx = Out.Vertices.Num();
             Out.Vertices.Add(PWorld - ActorWorld);
 
-            const float Step = FMath::Max(2.0f * VoxelSizeCm, 40.0f);
-
-            FVector N = EstimateNormalFromDensity(Gen, PWorld, Step);
+            FVector N = NIn;
             N *= -1.f;
 
             if (!N.IsNormalized()) N = FVector::UpVector;
@@ -120,33 +187,46 @@ void FVoxelMesher::BuildMarchingCubes(
             return Idx;
         };
 
-    auto MakeAndCache = [&](int32& CacheSlot, int32 cA, int32 cB, const float V[8], const FVector P[8]) -> int32
+
+    auto MakeAndCache = [&](int32 x, int32 y, int32 z, int32& CacheSlot, int32 cA, int32 cB, const float V[8], const FVector P[8]) -> int32
         {
             if (CacheSlot != -1) return CacheSlot;
 
             const FVector PV = LerpVertex(P[cA], P[cB], V[cA], V[cB], IsoLevel);
-            CacheSlot = AddSharedVertex(PV);
+
+            const float t = FMath::Clamp(LerpT(V[cA], V[cB], IsoLevel), 0.0f, 1.0f);
+
+            const FIntVector OA = CornerOfs[cA];
+            const FIntVector OB = CornerOfs[cB];
+
+            const FVector GA = GradAt(x + OA.X, y + OA.Y, z + OA.Z);
+            const FVector GB = GradAt(x + OB.X, y + OB.Y, z + OB.Z);
+            const FVector G = (GA + (GB - GA) * t);
+
+            const FVector N = G.GetSafeNormal();
+            CacheSlot = AddSharedVertex(PV, N);
             return CacheSlot;
         };
+
 
     auto GetEdgeVertexIndex = [&](int32 x, int32 y, int32 z, int32 e, const float V[8], const FVector P[8]) -> int32
         {
             switch (e)
             {
-            case 0: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z)];     return MakeAndCache(slot, 0, 1, V, P); }
-            case 1: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z)];     return MakeAndCache(slot, 1, 2, V, P); }
-            case 2: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z)];     return MakeAndCache(slot, 2, 3, V, P); }
-            case 3: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z)];     return MakeAndCache(slot, 3, 0, V, P); }
+            case 0: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z)];     return MakeAndCache(x, y, z, slot, 0, 1, V, P); }
+            case 1: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z)];     return MakeAndCache(x, y, z, slot, 1, 2, V, P); }
+            case 2: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z)];     return MakeAndCache(x, y, z, slot, 2, 3, V, P); }
+            case 3: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z)];     return MakeAndCache(x, y, z, slot, 3, 0, V, P); }
 
-            case 4: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z + 1)]; return MakeAndCache(slot, 4, 5, V, P); }
-            case 5: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z + 1)]; return MakeAndCache(slot, 5, 6, V, P); }
-            case 6: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z + 1)]; return MakeAndCache(slot, 6, 7, V, P); }
-            case 7: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z + 1)]; return MakeAndCache(slot, 7, 4, V, P); }
+            case 4: { int32& slot = XEdgeCache[XEdgeIdx(x, y, z + 1)]; return MakeAndCache(x, y, z, slot, 4, 5, V, P); }
+            case 5: { int32& slot = YEdgeCache[YEdgeIdx(x + 1, y, z + 1)]; return MakeAndCache(x, y, z, slot, 5, 6, V, P); }
+            case 6: { int32& slot = XEdgeCache[XEdgeIdx(x, y + 1, z + 1)]; return MakeAndCache(x, y, z, slot, 6, 7, V, P); }
+            case 7: { int32& slot = YEdgeCache[YEdgeIdx(x, y, z + 1)]; return MakeAndCache(x, y, z, slot, 7, 4, V, P); }
 
-            case 8: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y, z)];     return MakeAndCache(slot, 0, 4, V, P); }
-            case 9: { int32& slot = ZEdgeCache[ZEdgeIdx(x + 1, y, z)];     return MakeAndCache(slot, 1, 5, V, P); }
-            case 10: { int32& slot = ZEdgeCache[ZEdgeIdx(x + 1, y + 1, z)];     return MakeAndCache(slot, 2, 6, V, P); }
-            case 11: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y + 1, z)];     return MakeAndCache(slot, 3, 7, V, P); }
+            case 8: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y, z)];     return MakeAndCache(x, y, z, slot, 0, 4, V, P); }
+            case 9: { int32& slot = ZEdgeCache[ZEdgeIdx(x + 1, y, z)];     return MakeAndCache(x, y, z, slot, 1, 5, V, P); }
+            case 10: { int32& slot = ZEdgeCache[ZEdgeIdx(x + 1, y + 1, z)];     return MakeAndCache(x, y, z, slot, 2, 6, V, P); }
+            case 11: { int32& slot = ZEdgeCache[ZEdgeIdx(x, y + 1, z)];     return MakeAndCache(x, y, z, slot, 3, 7, V, P); }
             default: return -1;
             }
         };
