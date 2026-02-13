@@ -94,6 +94,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateStamina(DeltaTime);
     UpdateInsanity(DeltaTime);
     UpdateClimbingState();
+    CheckForPlatformAbduction();  // 납치 체크 추가
 
     // 착지 감지 및 Physics → Walking 모드 전환
     // Physics ON 중 OR Falling 중에 체크
@@ -752,6 +753,94 @@ void ADownfallCharacter::UpdateClimbingState()
 bool ADownfallCharacter::AreBothHandsFree() const
 {
     return (LeftHand.State != EHandState::Gripping && RightHand.State != EHandState::Gripping);
+}
+
+// Platform Abduction (납치)
+void ADownfallCharacter::CheckForPlatformAbduction()
+{
+    // 양손 중 하나라도 Gripping 상태인지 확인
+    if (LeftHand.State != EHandState::Gripping && RightHand.State != EHandState::Gripping)
+    {
+        return;  // 아무것도 안 잡고 있음
+    }
+
+    // 플레이어 위치
+    FVector PlayerLocation = GetActorLocation();
+
+    // Sweep으로 근처 FlyingPlatform 찾기
+    TArray<FHitResult> Hits;
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);
+
+    GetWorld()->SweepMultiByChannel(
+        Hits,
+        PlayerLocation,
+        PlayerLocation + FVector(0, 0, 1),
+        FQuat::Identity,
+        ECC_Pawn,
+        FCollisionShape::MakeSphere(300.0f),  // 3m 범위
+        Params
+    );
+
+    for (const FHitResult& Hit : Hits)
+    {
+        if (!Hit.GetActor() || !Hit.GetActor()->Implements<UClimbableSurface>())
+            continue;
+
+        AFlyingPlatform* Platform = Cast<AFlyingPlatform>(Hit.GetActor());
+        if (!Platform)
+            continue;
+
+        // 양손 체크: 이미 이 Platform을 잡고 있으면 스킵
+        if (LeftHand.GrippedActor == Platform || RightHand.GrippedActor == Platform)
+            continue;
+
+        // 납치! 한 손이라도 비어있으면 그 손으로 잡음
+        bool bAbductedLeft = false;
+        bool bAbductedRight = false;
+
+        if (LeftHand.State == EHandState::Gripping && LeftHand.GrippedActor != Platform)
+        {
+            // 왼손으로 지형 잡고 있음 → 납치!
+            AbductByPlatform(true, Platform);
+            bAbductedLeft = true;
+        }
+
+        if (RightHand.State == EHandState::Gripping && RightHand.GrippedActor != Platform)
+        {
+            // 오른손으로 지형 잡고 있음 → 납치!
+            AbductByPlatform(false, Platform);
+            bAbductedRight = true;
+        }
+
+        if (bAbductedLeft || bAbductedRight)
+        {
+            UE_LOG(LogDownFall, Warning, TEXT("ABDUCTED by %s!"), *Platform->GetName());
+            break;
+        }
+    }
+}
+
+void ADownfallCharacter::AbductByPlatform(bool bIsLeftHand, AFlyingPlatform* Platform)
+{
+    if (!Platform) return;
+
+    FHandData& Hand = bIsLeftHand ? LeftHand : RightHand;
+    UPhysicsConstraintComponent* Constraint = bIsLeftHand ? LeftHandConstraint : RightHandConstraint;
+
+    // 1. 기존 Grip 정보 업데이트
+    FVector PlatformGrabLocation = Platform->GetGrabLocation();
+    Hand.CurrentGrip.WorldLocation = PlatformGrabLocation;
+    Hand.GrippedActor = Platform;
+
+    // 2. Constraint 재설정 (Platform 중앙으로)
+    SetupConstraintToActor(Constraint, Platform, PlatformGrabLocation);
+
+    // 3. Platform에게 알림
+    Platform->OnPlayerGrab(this);
+
+    UE_LOG(LogDownFall, Warning, TEXT("%s hand abducted by Platform: %s"), 
+        bIsLeftHand ? TEXT("Left") : TEXT("Right"), *Platform->GetName());
 }
 
 // Debug

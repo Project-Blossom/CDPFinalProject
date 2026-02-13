@@ -195,6 +195,8 @@ protected:
     
     // State
     void UpdateClimbingState();
+    void CheckForPlatformAbduction();  // 납치 체크
+    void AbductByPlatform(bool bIsLeftHand, class AFlyingPlatform* Platform);  // 납치 실행
     bool AreBothHandsFree() const;
 
 
