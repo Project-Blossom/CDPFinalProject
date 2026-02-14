@@ -137,8 +137,8 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float StaminaRecoverPerSecond = 15.0f;
-
-
+    
+    
     // State
     UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
     FHandData LeftHand;
@@ -148,8 +148,8 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
     bool bIsClimbing = false;
-
-
+    
+    
     // Events
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
     void OnHandGripped(bool bIsLeftHand, const FGripPointInfo& GripInfo);
@@ -157,6 +157,20 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
     void OnHandReleased(bool bIsLeftHand);
 
+    // Stamina
+    void UpdateStamina(float DeltaTime);
+    float GetStaminaDrainRate(const FHandData& Hand) const;
+    
+    // Insanity
+    UFUNCTION(BlueprintCallable, Category = "Insanity")
+    void AddInsanity(float Amount);
+
+    UFUNCTION(BlueprintCallable, Category = "Insanity")
+    void UpdateInsanity(float DeltaTime);
+
+    UFUNCTION(BlueprintCallable, Category = "Insanity")
+    void UpdateInsanityEffects();
+    
 protected:
 
     // Input Handlers
@@ -179,27 +193,13 @@ protected:
     void SetupConstraintToActor(UPhysicsConstraintComponent* Constraint, AActor* TargetActor, const FVector& GripLocation);
     void BreakConstraint(UPhysicsConstraintComponent* Constraint);
     
-    // Stamina
-    void UpdateStamina(float DeltaTime);
-    float GetStaminaDrainRate(const FHandData& Hand) const;
-    
-    // Insanity
-    UFUNCTION(BlueprintCallable, Category = "Insanity")
-    void AddInsanity(float Amount);
-
-    UFUNCTION(BlueprintCallable, Category = "Insanity")
-    void UpdateInsanity(float DeltaTime);
-
-    UFUNCTION(BlueprintCallable, Category = "Insanity")
-    void UpdateInsanityEffects();
-    
     // State
     void UpdateClimbingState();
     void CheckForPlatformAbduction();  // 납치 체크
     void AbductByPlatform(bool bIsLeftHand, class AFlyingPlatform* Platform);  // 납치 실행
     bool AreBothHandsFree() const;
-
-
+    
+    
     // Debug
 #if !UE_BUILD_SHIPPING
     void DrawDebugInfo();
