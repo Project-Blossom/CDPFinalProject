@@ -1,241 +1,143 @@
 ﻿#include "VoxelDensityGenerator.h"
 #include "Math/UnrealMathUtility.h"
 
-namespace
+static FORCEINLINE float SmoothStep01(float t)
 {
-    static FORCEINLINE float Clamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
-
-    static FORCEINLINE float SmoothStep(float edge0, float edge1, float x)
-    {
-        const float den = (edge1 - edge0);
-        if (FMath::IsNearlyZero(den)) return (x >= edge1) ? 1.f : 0.f;
-
-        const float t = FMath::Clamp((x - edge0) / den, 0.f, 1.f);
-        return t * t * (3.f - 2.f * t);
-    }
-
-    static FORCEINLINE float Noise3D(const FVector& p)
-    {
-        return FMath::PerlinNoise3D(p);
-    }
-
-    static FORCEINLINE float Ridged01(float n)
-    {
-        float r = 1.f - FMath::Abs(n);
-        r = FMath::Clamp(r, 0.f, 1.f);
-        return r * r;
-    }
-
-    static FORCEINLINE float SdBox(const FVector& p, const FVector& b)
-    {
-        const FVector q(FMath::Abs(p.X), FMath::Abs(p.Y), FMath::Abs(p.Z));
-        const FVector d = q - b;
-
-        const float outside = FVector(
-            FMath::Max(d.X, 0.f),
-            FMath::Max(d.Y, 0.f),
-            FMath::Max(d.Z, 0.f)
-        ).Size();
-
-        const float inside = FMath::Min(FMath::Max(d.X, FMath::Max(d.Y, d.Z)), 0.f);
-        return outside + inside;
-    }
-
-    static FORCEINLINE float Remap01(float x, float a, float b)
-    {
-        const float den = (b - a);
-        if (FMath::IsNearlyZero(den)) return (x >= b) ? 1.f : 0.f;
-        return Clamp01((x - a) / den);
-    }
+    t = FMath::Clamp(t, 0.f, 1.f);
+    return t * t * (3.f - 2.f * t);
 }
 
-float FVoxelDensityGenerator::FBM3D(const FVector& p, int32 Octaves, float Lacunarity, float Gain) const
+static FORCEINLINE float SmoothStep(float a, float b, float x)
 {
-    Octaves = FMath::Clamp(Octaves, 1, 12);
-
-    float sum = 0.f;
-    float amp = 1.f;
-    float freq = 1.f;
-
-    for (int32 i = 0; i < Octaves; ++i)
-    {
-        sum += Noise3D(p * freq) * amp;
-        freq *= Lacunarity;
-        amp *= Gain;
-    }
-    return sum;
+    const float den = (b - a);
+    if (FMath::IsNearlyZero(den)) return (x >= b) ? 1.f : 0.f;
+    return SmoothStep01((x - a) / den);
 }
 
-float FVoxelDensityGenerator::RidgedFBM01(const FVector& p, int32 Octaves, float Lacunarity, float Gain) const
+static FORCEINLINE float SdBox(const FVector& p, const FVector& b)
 {
-    Octaves = FMath::Clamp(Octaves, 1, 12);
+    const FVector q(FMath::Abs(p.X), FMath::Abs(p.Y), FMath::Abs(p.Z));
+    const FVector d = q - b;
 
-    float sum = 0.f;
-    float amp = 0.5f;
-    float freq = 1.f;
+    const float outside = FVector(
+        FMath::Max(d.X, 0.f),
+        FMath::Max(d.Y, 0.f),
+        FMath::Max(d.Z, 0.f)
+    ).Size();
 
-    for (int32 i = 0; i < Octaves; ++i)
-    {
-        const float n = Noise3D(p * freq);
-        sum += Ridged01(n) * amp;
-        freq *= Lacunarity;
-        amp *= Gain;
-    }
-    return Clamp01(sum);
+    const float inside = FMath::Min(FMath::Max(d.X, FMath::Max(d.Y, d.Z)), 0.f);
+    return outside + inside;
 }
 
-FVector FVoxelDensityGenerator::Warp3D(const FVector& p, float PatchCm, float AmpCm) const
+float FVoxelDensityGenerator::ComputeFrontInfluenceCm() const
 {
-    const float inv = 1.f / FMath::Max(1.f, PatchCm);
-    const FVector q = p * inv;
+    const float Warp = FMath::Max(0.f, S.WarpStrength) * FMath::Max(0.f, S.WarpAmpCm);
 
-    const float nx = FBM3D(q + FVector(13,  7,  5), 3, 2.f, 0.5f);
-    const float ny = FBM3D(q + FVector( 5, 11, 17), 3, 2.f, 0.5f);
-    const float nz = FBM3D(q + FVector(19,  3, 29), 3, 2.f, 0.5f);
+    const float Surface = FMath::Max(0.f, S.CliffSurfaceAmpCm);
 
-    return p + FVector(nx, ny, nz) * AmpCm;
+    const float Base3D = (S.BaseField3DStrengthCm > 0.f)
+        ? FMath::Clamp(S.BaseField3DStrengthCm, 0.f, 9000.f)
+        : 0.f;
+
+    const float Over = (S.VolumeStrength > 0.f)
+        ? (FMath::Max(0.f, S.VolumeStrength) * FMath::Max(0.f, S.OverhangDepthCm))
+        : 0.f;
+
+    return (Surface + Base3D + Over + Warp);
 }
 
 float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
 {
     const float Iso = S.IsoLevel;
 
-    // Local (cm)
     const FVector Local = WorldPosCm - TerrainOriginWorld;
     const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
 
-    // -------------------------
-    // 1) Cliff Base
-    // -------------------------
-    const float CliffHalfW = FMath::Max(500.f, S.CliffHalfWidthCm);
-    const float CliffH = FMath::Max(500.f, S.CliffHeightCm);
-    const float CliffT = FMath::Max(200.f, S.CliffThicknessCm);
+    // -------------------------------------------------
+    // 1) 절벽 기본 파라미터
+    // -------------------------------------------------
+    const float CliffH = FMath::Max(1000.f, S.CliffHeightCm);
+    const float FrontX = FMath::Max(200.f, S.CliffThicknessCm);
 
-    const FVector CliffCenter(CliffT * 0.5f, 0.f, S.BaseHeightCm + CliffH * 0.5f);
-    const FVector CliffHalfExtents(CliffT * 0.5f, CliffHalfW, CliffH * 0.5f);
+    const float z01 = Clamp01(
+        (Local.Z - S.BaseHeightCm) / CliffH
+    );
 
-    const FVector Pc = Local - CliffCenter;
+    // -------------------------------------------------
+    // 2) 절벽 기본 면
+    // -------------------------------------------------
+    float density = (FrontX - Local.X);
 
-    // -------------------------
-    // 2) 빈 공간 마킹
-    // -------------------------
-    const float Influence =
-        FMath::Max(
-            FMath::Max(S.CliffSurfaceAmpCm, 0.f),
-            FMath::Max(S.OverhangDepthCm, 0.f)
-        )
-        + FMath::Max(S.WarpAmpCm, 0.f)
-        + FMath::Max(S.BaseField3DStrengthCm, 0.f)
-        + Voxel * 8.f;
-
-    if (S.bUseCliffBase)
+    // -------------------------------------------------
+    // 3) 과장된 Z-오버행 프로파일
+    // -------------------------------------------------
     {
-        if (FMath::Abs(Pc.X) > (CliffHalfExtents.X + Influence) ||
-            FMath::Abs(Pc.Y) > (CliffHalfExtents.Y + Influence) ||
-            FMath::Abs(Pc.Z) > (CliffHalfExtents.Z + Influence))
-        {
-            return Iso - 1.0f;
-        }
+        const float curve = FMath::Pow(z01, 1.8f);
+
+        const float OverhangAmp =
+            FMath::Clamp(S.OverhangDepthCm, 500.f, 8000.f) *
+            FMath::Clamp(S.VolumeStrength, 0.f, 2.0f);
+
+        density += curve * OverhangAmp;
     }
 
-    // -------------------------
-    // 3) 베이스 density
-    // -------------------------
-    float density = 0.f;
-
-    if (S.bUseCliffBase)
+    // -------------------------------------------------
+    // 4) 실루엣용 메가 노이즈
+    // -------------------------------------------------
     {
-        density = -SdBox(Pc, CliffHalfExtents);
+        const float Scale = FMath::Max(6000.f, S.DetailScaleCm * 3.f);
+        const float n = FBM3D(SeededDomain(Local) / Scale, 3, 2.0f, 0.5f);
 
-        if (S.CliffSurfaceAmpCm > 0.f)
-        {
-            const float Scale = FMath::Max(300.f, S.CliffSurfaceScaleCm);
-            const FVector pp = SeededDomain(Local) / Scale;
-            const float n = FBM3D(pp, 4, 2.0f, 0.55f);
-            density += n * S.CliffSurfaceAmpCm;
-        }
-    }
-    else
-    {
-        const float HalfX = (S.ChunkX * Voxel) * 0.5f;
-        const float HalfY = (S.ChunkY * Voxel) * 0.5f;
-        const float Height = (S.ChunkZ * Voxel);
-
-        const FVector BoxCenter(0.f, 0.f, (Height * 0.5f) + S.BaseHeightCm);
-        const FVector P = Local - BoxCenter;
-
-        const FVector HalfExtents(
-            FMath::Max(100.f, HalfX),
-            FMath::Max(100.f, HalfY),
-            FMath::Max(100.f, Height * 0.5f)
+        const float Amp = FMath::Clamp(
+            S.BaseField3DStrengthCm, 1500.f, 12000.f
         );
 
-        density = -SdBox(P, HalfExtents);
-
-        if (density < -Voxel * 6.f)
-            return Iso - 1.0f; // air
+        density += n * Amp;
     }
 
-    // -------------------------
-    // 4) faceMask
-    // -------------------------
-    float faceMask = 0.f;
-
-    if (S.bUseCliffBase)
+    // -------------------------------------------------
+    // 5) 표면 거칠기
+    // -------------------------------------------------
     {
-        const float FaceDist = (CliffHalfExtents.X - Pc.X);
-        const float FaceFade = FMath::Max(800.f, S.OverhangFadeCm * 0.35f);
+        const float Band = FMath::Max(150.f, Voxel * 3.f);
+        const float surfMask =
+            1.f - SmoothStep(0.f, Band, FMath::Abs(density - Iso));
 
-        if (FaceDist > 0.f)
-            faceMask = 1.f - SmoothStep(0.f, FaceFade, FaceDist);
-    }
-    else
-    {
-        faceMask = 1.f;
-    }
+        if (surfMask > 0.f)
+        {
+            const float Scale = FMath::Max(300.f, S.CliffSurfaceScaleCm);
+            const float n = FBM3D(SeededDomain(Local) / Scale, 4, 2.0f, 0.55f);
 
-    const float zMin = S.BaseHeightCm + 500.f;
-    const float zMax = S.BaseHeightCm + (S.bUseCliffBase ? CliffH : (S.ChunkZ * Voxel)) - 800.f;
-    const float z01 = Remap01(Local.Z, zMin, zMax);
-
-    // -------------------------
-    // 5) 도메인 워프
-    // -------------------------
-    FVector pp = SeededDomain(Local);
-
-    const float WarpStrength = FMath::Clamp(S.WarpStrength, 0.f, 1.2f);
-    if (WarpStrength > 0.f && S.WarpAmpCm > 0.f && S.WarpPatchCm > 1.f)
-    {
-        const float WarpAmp = FMath::Clamp(S.WarpAmpCm, 0.f, 6000.f) * WarpStrength;
-        pp = Warp3D(pp, FMath::Max(2000.f, S.WarpPatchCm), WarpAmp);
+            density +=
+                n *
+                FMath::Clamp(S.CliffSurfaceAmpCm, 0.f, 5000.f) *
+                surfMask;
+        }
     }
 
-    // -------------------------
-    // 6) 표면 굴곡
-    // -------------------------
-    const float DetailScale = FMath::Max(800.f, S.DetailScaleCm);
-    const float n = FBM3D(pp / DetailScale, 4, 2.0f, 0.52f);
-    const float RoughAmp = FMath::Clamp(S.BaseField3DStrengthCm, 1500.f, 9000.f);
-
-    density += n * RoughAmp * faceMask * z01;
-
-    // -------------------------
-    // 7) 오버행
-    // -------------------------
-    const float VolumeStrength = FMath::Clamp(S.VolumeStrength, 0.f, 1.8f);
-    if (VolumeStrength > 0.f)
+    // -------------------------------------------------
+    // 6) 동굴
+    // -------------------------------------------------
+    if (S.CaveStrength > 0.f)
     {
-        const float OverScale = FMath::Max(1200.f, S.OverhangScaleCm);
-        const float r01 = RidgedFBM01(pp / OverScale, 4, 2.0f, 0.55f);
+        const float insideDepth = (FrontX - Local.X);
 
-        const float bias = FMath::Clamp(S.OverhangBias, 0.50f, 0.72f);
+        if (insideDepth > FMath::Max(800.f, S.CaveNearSurfaceCm))
+        {
+            const float Scale = FMath::Max(600.f, S.CaveScaleCm);
+            const float c =
+                RidgedFBM01(SeededDomain(Local) / Scale, 4, 2.0f, 0.55f);
 
-        float m = (r01 - bias) / FMath::Max(0.0001f, (1.f - bias));
-        m = Clamp01(m);
-        m = FMath::Pow(m, 2.0f);
+            const float th = FMath::Clamp(S.CaveThreshold, 0.4f, 0.75f);
+            const float band = FMath::Clamp(S.CaveBand, 0.05f, 0.25f);
 
-        const float depth = FMath::Clamp(S.OverhangDepthCm, 300.f, 6000.f);
-        density += m * depth * VolumeStrength * faceMask * z01;
+            const float hole = SmoothStep(th - band, th + band, c);
+
+            density -=
+                hole *
+                FMath::Clamp(S.CaveDepthCm, 800.f, 8000.f) *
+                FMath::Clamp(S.CaveStrength, 0.f, 2.5f);
+        }
     }
 
     return density;

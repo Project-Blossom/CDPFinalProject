@@ -2,16 +2,15 @@
 
 #include "CoreMinimal.h"
 #include "MountainGenSettings.h"
-#include "VoxelDensityGenerator.h"
 
 struct FMGMetrics
 {
-    float CaveVoidRatio = 0.f;   // 0..1
-    float OverhangRatio = 0.f;   // 0..1
-    float SteepRatio = 0.f;      // 0..1
-
     int32 CaveSamples = 0;
+    float CaveVoidRatio = 0.f;
+
     int32 SurfaceNearSamples = 0;
+    float OverhangRatio = 0.f;
+    float SteepRatio = 0.f;
 };
 
 FMGMetrics MGComputeMetricsQuick(
@@ -19,6 +18,14 @@ FMGMetrics MGComputeMetricsQuick(
     const FVector& TerrainOriginWorld,
     const FVector& WorldMinCm,
     const FVector& WorldMaxCm);
+
+FMGMetrics MGComputeMetricsFullGrid(
+    const FMountainGenSettings& S,
+    const FVector& TerrainOriginWorld,
+    const FVector& WorldMinCm,
+    const FVector& WorldMaxCm);
+
+bool MGIsSatisfiedToTargets(const FMountainGenSettings& S, const FMGMetrics& M);
 
 bool MGTuneSettingsFeedback(
     FMountainGenSettings& InOutS,
@@ -30,22 +37,6 @@ void MGDeriveParamsFromSeed(FMountainGenSettings& InOutS, int32 Seed);
 
 bool MGFinalizeSettingsFromSeed(
     FMountainGenSettings& InOutS,
-    const FVector& TerrainOriginWorld,
-    const FVector& WorldMinCm,
-    const FVector& WorldMaxCm);
-
-bool MGFindFinalSeedByFeedback(
-    FMountainGenSettings& InOutS,
-    const FVector& TerrainOriginWorld,
-    const FVector& WorldMinCm,
-    const FVector& WorldMaxCm,
-    int32 StartSeed,
-    int32 Tries);
-
-bool MGIsSatisfiedToTargets(const FMountainGenSettings& S, const FMGMetrics& M);
-
-FMGMetrics MGComputeMetricsFullGrid(
-    const FMountainGenSettings& S,
     const FVector& TerrainOriginWorld,
     const FVector& WorldMinCm,
     const FVector& WorldMaxCm);

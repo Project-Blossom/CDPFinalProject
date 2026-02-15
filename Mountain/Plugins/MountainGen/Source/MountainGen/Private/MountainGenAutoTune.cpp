@@ -1,7 +1,7 @@
 ﻿#include "MountainGenAutoTune.h"
+#include "VoxelDensityGenerator.h"
 
 #include "Math/UnrealMathUtility.h"
-#include "Math/RandomStream.h"
 
 static FORCEINLINE float Clamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
 static FORCEINLINE bool InRange(float v, float mn, float mx) { return (v >= mn && v <= mx); }
@@ -12,7 +12,58 @@ static FVector MG_EstimateNormalFromDensity(const FVoxelDensityGenerator& Gen, c
     const float dx = Gen.SampleDensity(Pcm + FVector(StepCm, 0, 0)) - Gen.SampleDensity(Pcm - FVector(StepCm, 0, 0));
     const float dy = Gen.SampleDensity(Pcm + FVector(0, StepCm, 0)) - Gen.SampleDensity(Pcm - FVector(0, StepCm, 0));
     const float dz = Gen.SampleDensity(Pcm + FVector(0, 0, StepCm)) - Gen.SampleDensity(Pcm - FVector(0, 0, StepCm));
-    return FVector(dx, dy, dz).GetSafeNormal();
+
+    return (-FVector(dx, dy, dz)).GetSafeNormal();
+}
+
+static bool MG_FindFrontSurfacePoint_AlongX(
+    const FVoxelDensityGenerator& Gen,
+    float Iso,
+    float XStart,
+    float XEnd,
+    float StepCm,
+    int32 RefineIters,
+    float Y,
+    float Z,
+    FVector& OutP)
+{
+    float x0 = XStart;
+    float f0 = Gen.SampleDensity(FVector(x0, Y, Z)) - Iso;
+
+    for (float x1 = x0 - StepCm; x1 >= XEnd; x1 -= StepCm)
+    {
+        const float f1 = Gen.SampleDensity(FVector(x1, Y, Z)) - Iso;
+
+        if ((f0 >= 0.f && f1 < 0.f) || (f0 < 0.f && f1 >= 0.f))
+        {
+            float a = x1, b = x0;
+            float fa = f1, fb = f0;
+
+            RefineIters = FMath::Clamp(RefineIters, 1, 12);
+            for (int32 i = 0; i < RefineIters; ++i)
+            {
+                const float m = 0.5f * (a + b);
+                const float fm = Gen.SampleDensity(FVector(m, Y, Z)) - Iso;
+
+                if ((fa >= 0.f && fm < 0.f) || (fa < 0.f && fm >= 0.f))
+                {
+                    b = m; fb = fm;
+                }
+                else
+                {
+                    a = m; fa = fm;
+                }
+            }
+
+            OutP = FVector(0.5f * (a + b), Y, Z);
+            return true;
+        }
+
+        x0 = x1;
+        f0 = f1;
+    }
+
+    return false;
 }
 
 FMGMetrics MGComputeMetricsQuick(
@@ -24,49 +75,84 @@ FMGMetrics MGComputeMetricsQuick(
     FMGMetrics M;
     const float Iso = S.IsoLevel;
 
-    // Seed 고정 랜덤
-    FRandomStream Rng((int32)(S.Seed ^ 0x51A3B9D1));
-    FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
-
-    // ------------------------------------------------------------
-    // (1) CaveVoidRatio
-    // ------------------------------------------------------------
     M.CaveSamples = 0;
     M.CaveVoidRatio = 0.f;
 
-    // ------------------------------------------------------------
-    // (2) OverhangRatio / SteepRatio
-    // ------------------------------------------------------------
-    const int32 SurfaceTry = 60000;
-    const float SurfaceEps = FMath::Max(10.f, S.VoxelSizeCm * 0.75f);
-    const float NormalStep = FMath::Max(2.f * S.VoxelSizeCm, 40.f);
-    const float SteepDotThreshold = S.SteepDotThreshold;
-
-    int32 Near = 0, Over = 0, Steep = 0;
-
-    for (int32 i = 0; i < SurfaceTry; ++i)
+    if (!S.bUseCliffBase)
     {
-        const FVector P(
-            Rng.FRandRange(WorldMinCm.X, WorldMaxCm.X),
-            Rng.FRandRange(WorldMinCm.Y, WorldMaxCm.Y),
-            Rng.FRandRange(WorldMinCm.Z, WorldMaxCm.Z)
-        );
-
-        const float d = Gen.SampleDensity(P);
-        if (FMath::Abs(d - Iso) > SurfaceEps)
-            continue;
-
-        const FVector N = MG_EstimateNormalFromDensity(Gen, P, NormalStep);
-        const float UpDot = FVector::DotProduct(N, FVector::UpVector);
-
-        Near++;
-        if (UpDot < 0.f) Over++;
-        if (FMath::Abs(UpDot) <= SteepDotThreshold) Steep++;
+        M.SurfaceNearSamples = 0;
+        M.OverhangRatio = 0.f;
+        M.SteepRatio = 0.f;
+        return M;
     }
 
-    M.SurfaceNearSamples = Near;
-    M.OverhangRatio = (Near > 0) ? (float)Over / (float)Near : 0.f;
-    M.SteepRatio = (Near > 0) ? (float)Steep / (float)Near : 0.f;
+    FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
+
+    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
+
+    const float HalfW = FMath::Max(1.f, S.CliffHalfWidthCm);
+    const float H = FMath::Max(1.f, S.CliffHeightCm);
+    const float FrontX = S.CliffThicknessCm;
+
+    const float z0 = S.BaseHeightCm;
+    const float z1 = S.BaseHeightCm + H;
+
+    const float Influence = Gen.ComputeFrontInfluenceCm();
+    const float NoiseMinDisp = (Influence > 0.f) ? (0.15f * Influence) : 0.f;
+
+    const float Pad = FMath::Max(20.f, Voxel * 2.f);
+    const float XStart = FrontX + Influence + Pad;
+    const float XEnd = FrontX - (Influence + Pad);
+
+    float GridStep = (S.MetricsStepCm > 0.f) ? S.MetricsStepCm : FMath::Max(20.f, Voxel * 2.0f);
+
+    const float Area = (2.f * HalfW) * (H);
+    const int32 MaxSamplesBudget = 8192;
+    {
+        const float approx = Area / FMath::Max(1.f, GridStep * GridStep);
+        if (approx > (float)MaxSamplesBudget)
+        {
+            const float k = FMath::Sqrt(approx / (float)MaxSamplesBudget);
+            GridStep *= k;
+        }
+    }
+
+    const float ScanStep = FMath::Max(Voxel * 1.0f, GridStep * 0.5f);
+    const int32 RefineIters = 7;
+    const float NormalStep = FMath::Max(40.f, Voxel * 2.0f);
+
+    const float SteepDotThreshold = S.SteepDotThreshold;
+
+    int32 Valid = 0, Over = 0, Steep = 0;
+
+    for (float Z = z0 + GridStep * 0.5f; Z <= z1 - GridStep * 0.5f; Z += GridStep)
+    {
+        for (float Y = -HalfW + GridStep * 0.5f; Y <= HalfW - GridStep * 0.5f; Y += GridStep)
+        {
+            FVector P;
+            if (!MG_FindFrontSurfacePoint_AlongX(Gen, Iso, XStart, XEnd, ScanStep, RefineIters, Y, Z, P))
+                continue;
+
+            const float Disp = FMath::Abs(P.X - FrontX);
+            if (NoiseMinDisp > 0.f && Disp < NoiseMinDisp)
+                continue;
+
+            FVector N = MG_EstimateNormalFromDensity(Gen, P, NormalStep);
+
+            if (FVector::DotProduct(N, FVector(1, 0, 0)) < 0.f)
+                N = -N;
+
+            const float UpDot = FVector::DotProduct(N, FVector::UpVector);
+
+            Valid++;
+            if (UpDot < 0.f) Over++;
+            if (FMath::Abs(UpDot) <= SteepDotThreshold) Steep++;
+        }
+    }
+
+    M.SurfaceNearSamples = Valid;
+    M.OverhangRatio = (Valid > 0) ? (float)Over / (float)Valid : 0.f;
+    M.SteepRatio = (Valid > 0) ? (float)Steep / (float)Valid : 0.f;
 
     return M;
 }
@@ -173,77 +259,6 @@ bool MGFinalizeSettingsFromSeed(
         return true;
 
     return MGTuneSettingsFeedback(InOutS, TerrainOriginWorld, WorldMinCm, WorldMaxCm);
-}
-
-bool MGFindFinalSeedByFeedback(
-    FMountainGenSettings& InOutS,
-    const FVector& TerrainOriginWorld,
-    const FVector& WorldMinCm,
-    const FVector& WorldMaxCm,
-    int32 StartSeed,
-    int32 Tries)
-{
-    if (Tries <= 0) Tries = 1;
-
-    const float FixedHeightAmp = InOutS.HeightAmpCm;
-    const float FixedRadius = InOutS.EnvelopeRadiusCm;
-    const float FixedBaseH = InOutS.BaseHeightCm;
-
-    FRandomStream Rng(StartSeed ^ 0x17C0E9B5);
-
-    float BestScore = FLT_MAX;
-    int32 BestSeed = StartSeed;
-    FMountainGenSettings BestS = InOutS;
-
-    auto ScoreToRange = [](float v, float mn, float mx)
-        {
-            if (v < mn) return (mn - v);
-            if (v > mx) return (v - mx);
-            return 0.f;
-        };
-
-    for (int32 i = 0; i < Tries; ++i)
-    {
-        const int32 Seed = (i == 0) ? StartSeed : Rng.RandRange(1, INT32_MAX);
-
-        FMountainGenSettings Cand = InOutS;
-        Cand.Seed = Seed;
-
-        MGDeriveParamsFromSeed(Cand, Seed);
-        (void)MGFinalizeSettingsFromSeed(Cand, TerrainOriginWorld, WorldMinCm, WorldMaxCm);
-
-        Cand.HeightAmpCm = FixedHeightAmp;
-        Cand.EnvelopeRadiusCm = FixedRadius;
-        Cand.BaseHeightCm = FixedBaseH;
-
-        const FMGMetrics M = MGComputeMetricsQuick(Cand, TerrainOriginWorld, WorldMinCm, WorldMaxCm);
-
-        const float Score =
-            ScoreToRange(M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax) +
-            ScoreToRange(M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax);
-
-        if (Score < BestScore)
-        {
-            BestScore = Score;
-            BestSeed = Seed;
-            BestS = Cand;
-        }
-
-        if (MGIsSatisfiedToTargets(Cand, M))
-        {
-            InOutS = Cand;
-            return true;
-        }
-    }
-
-    InOutS = BestS;
-    InOutS.Seed = BestSeed;
-
-    InOutS.HeightAmpCm = FixedHeightAmp;
-    InOutS.EnvelopeRadiusCm = FixedRadius;
-    InOutS.BaseHeightCm = FixedBaseH;
-
-    return false;
 }
 
 bool MGIsSatisfiedToTargets(const FMountainGenSettings& S, const FMGMetrics& M)

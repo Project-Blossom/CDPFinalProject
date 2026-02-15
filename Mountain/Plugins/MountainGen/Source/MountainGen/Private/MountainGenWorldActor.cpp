@@ -17,6 +17,7 @@
 #include "Async/Async.h"
 #include "Math/RandomStream.h"
 #include "Engine/Engine.h"
+#include "HAL/PlatformTime.h"
 
 AMountainGenWorldActor::AMountainGenWorldActor()
 {
@@ -75,8 +76,8 @@ static void MG_CarveCaves_PostProcess(
     const float Iso = S.IsoLevel;
 
     const float TileSizeCm = FMath::Max(1000.f, S.CaveTileSizeCm);
-    const float CaveDiameterCm = FMath::Max(10.f, S.CaveDiameterCm);
-    const float CaveRadiusCm = CaveDiameterCm * 0.5f;
+    const float CaveDiameter = FMath::Max(10.f, S.CaveDiameterCm);
+    const float CaveRadiusCm = CaveDiameter * 0.5f;
 
     const int32 NPerTile = MG_CaveCountPerTile(S);
     if (NPerTile <= 0)
@@ -86,28 +87,26 @@ static void MG_CarveCaves_PostProcess(
     const int32 SY = Chunk.SizeY;
     const int32 SZ = Chunk.SizeZ;
 
-    const FVector WorldMin = SampleOriginWorld;
-    const FVector WorldMax = SampleOriginWorld + FVector(
-        (SX - 1) * VoxelSizeCm,
-        (SY - 1) * VoxelSizeCm,
-        (SZ - 1) * VoxelSizeCm
-    );
+    const float LocalSizeX = (SX - 1) * VoxelSizeCm;
+    const float LocalSizeY = (SY - 1) * VoxelSizeCm;
+    const float LocalSizeZ = (SZ - 1) * VoxelSizeCm;
 
-    const int32 TileMinX = FMath::FloorToInt(WorldMin.X / TileSizeCm);
-    const int32 TileMaxX = FMath::FloorToInt(WorldMax.X / TileSizeCm);
-    const int32 TileMinY = FMath::FloorToInt(WorldMin.Y / TileSizeCm);
-    const int32 TileMaxY = FMath::FloorToInt(WorldMax.Y / TileSizeCm);
+    const int32 NumTilesX = FMath::Max(1, FMath::CeilToInt(LocalSizeX / TileSizeCm));
+    const int32 NumTilesY = FMath::Max(1, FMath::CeilToInt(LocalSizeY / TileSizeCm));
 
     const int32 Rv = FMath::Max(1, FMath::CeilToInt(CaveRadiusCm / VoxelSizeCm));
     const int32 MinNeighbors = FMath::Clamp(S.CaveMinSolidNeighbors, 0, 6);
 
-    auto WorldToVoxel = [&](const FVector& W)
+    const uint32 BaseSeed = (uint32)FMath::Max(1, S.Seed);
+    const uint32 CaveBaseSeed = BaseSeed ^ 0xC0A51234u;
+
+    auto WorldToVoxel = [&](const FVector& WorldPos) -> FIntVector
         {
-            const FVector L = (W - SampleOriginWorld) / VoxelSizeCm;
+            const FVector L = (WorldPos - SampleOriginWorld) / VoxelSizeCm;
             return FIntVector(FMath::RoundToInt(L.X), FMath::RoundToInt(L.Y), FMath::RoundToInt(L.Z));
         };
 
-    auto VoxelToWorld = [&](int32 x, int32 y, int32 z)
+    auto VoxelToWorld = [&](int32 x, int32 y, int32 z) -> FVector
         {
             return SampleOriginWorld + FVector(x * VoxelSizeCm, y * VoxelSizeCm, z * VoxelSizeCm);
         };
@@ -141,18 +140,17 @@ static void MG_CarveCaves_PostProcess(
                         if (!MG_IsInside(x, y, z, SX, SY, SZ)) continue;
 
                         const FVector P = VoxelToWorld(x, y, z);
-                        const float Dist = FVector::Distance(P, Cw);
-                        if (Dist > CaveRadiusCm) continue;
+                        if (FVector::Distance(P, Cw) > CaveRadiusCm) continue;
 
-                        Chunk.Set(x, y, z, Iso - 1.f); // air
+                        Chunk.Set(x, y, z, Iso - 1.f);
                     }
         };
 
-    for (int32 Ty = TileMinY; Ty <= TileMaxY; ++Ty)
-        for (int32 Tx = TileMinX; Tx <= TileMaxX; ++Tx)
+    for (int32 Ty = 0; Ty < NumTilesY; ++Ty)
+        for (int32 Tx = 0; Tx < NumTilesX; ++Tx)
         {
             const uint32 TileSeed =
-                (uint32)FMath::Max(1, S.Seed) ^
+                CaveBaseSeed ^
                 (uint32)(Tx * 73856093) ^
                 (uint32)(Ty * 19349663) ^
                 0xA53C9E2Du;
@@ -168,15 +166,24 @@ static void MG_CarveCaves_PostProcess(
                     const float TileOriginX = (float)Tx * TileSizeCm;
                     const float TileOriginY = (float)Ty * TileSizeCm;
 
-                    const float X = Rng.FRandRange(TileOriginX + 100.f, TileOriginX + TileSizeCm - 100.f);
-                    const float Y = Rng.FRandRange(TileOriginY + 100.f, TileOriginY + TileSizeCm - 100.f);
-                    const float Z = Rng.FRandRange(WorldMin.Z + VoxelSizeCm * 2.f, WorldMax.Z - VoxelSizeCm * 2.f);
+                    const float X0 = TileOriginX;
+                    const float Y0 = TileOriginY;
+                    const float X1 = FMath::Min(TileOriginX + TileSizeCm, LocalSizeX);
+                    const float Y1 = FMath::Min(TileOriginY + TileSizeCm, LocalSizeY);
 
-                    const FIntVector C = WorldToVoxel(FVector(X, Y, Z));
+                    if ((X1 - X0) < VoxelSizeCm * 2.f || (Y1 - Y0) < VoxelSizeCm * 2.f)
+                        continue;
+
+                    const float LocalX = Rng.FRandRange(X0 + 100.f, X1 - 100.f);
+                    const float LocalY = Rng.FRandRange(Y0 + 100.f, Y1 - 100.f);
+                    const float LocalZ = Rng.FRandRange(VoxelSizeCm * 2.f, LocalSizeZ - VoxelSizeCm * 2.f);
+
+                    const FVector WorldPos = SampleOriginWorld + FVector(LocalX, LocalY, LocalZ);
+                    const FIntVector C = WorldToVoxel(WorldPos);
+
                     if (!MG_IsInside(C.X, C.Y, C.Z, SX, SY, SZ)) continue;
 
                     if (DensityAt(C.X, C.Y, C.Z) < Iso) continue;
-
                     if (CountSolidNeighbors6(C.X, C.Y, C.Z) < MinNeighbors) continue;
 
                     CarveSphereAtVoxel(C);
@@ -195,12 +202,11 @@ FString AMountainGenWorldActor::MakeMetricsLine(
     bOutOverhangOK = MG_InRange(M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax);
     bOutSteepOK = MG_InRange(M.SteepRatio, S.Targets.SteepMin, S.Targets.SteepMax);
 
-    return FString::Format(
-        TEXT("Overhang {0} [{1}~{2}] {3} | Steep {4} [{5}~{6}] {7}"),
-        {
-            M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax, bOutOverhangOK ? TEXT("OK") : TEXT("FAIL"),
-            M.SteepRatio,    S.Targets.SteepMin,    S.Targets.SteepMax,    bOutSteepOK ? TEXT("OK") : TEXT("FAIL")
-        }
+    return FString::Printf(
+        TEXT("Overhang %.3f [%.3f~%.3f] %s | Steep %.3f [%.3f~%.3f] %s | Near=%d"),
+        M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax, bOutOverhangOK ? TEXT("OK") : TEXT("FAIL"),
+        M.SteepRatio, S.Targets.SteepMin, S.Targets.SteepMax, bOutSteepOK ? TEXT("OK") : TEXT("FAIL"),
+        M.SurfaceNearSamples
     );
 }
 
@@ -248,9 +254,7 @@ void AMountainGenWorldActor::Tick(float DeltaSeconds)
     PendingResult.bValid = false;
 
     if (Result.BuildSerial != InFlightBuildSerial)
-    {
         return;
-    }
 
     if (!ProcMesh)
     {
@@ -295,7 +299,7 @@ void AMountainGenWorldActor::Tick(float DeltaSeconds)
 
     Settings.Seed = Result.FinalSettings.Seed;
 
-    UI_Status(FString::Format(TEXT("[MountainGen] 시드 변경 완료: {0}"), { Settings.Seed }), 2.5f, FColor::Yellow);
+    UI_Status(FString::Printf(TEXT("[MountainGen] 시드 변경 완료: %d"), Settings.Seed), 2.5f, FColor::Yellow);
 
     bAsyncWorking = false;
     InFlightBuildSerial = 0;
@@ -323,7 +327,7 @@ void AMountainGenWorldActor::SetSeed(int32 NewSeed)
     if (Settings.Seed == NewSeed) return;
 
     Settings.Seed = NewSeed;
-    UI_Status(FString::Format(TEXT("[MountainGen] 시드 변경 요청: {0}"), { Settings.Seed }), 1.5f, FColor::Cyan);
+    UI_Status(FString::Printf(TEXT("[MountainGen] 시드 변경 요청: %d"), Settings.Seed), 1.5f, FColor::Cyan);
 
     BuildChunkAndMesh();
 }
@@ -338,7 +342,22 @@ void AMountainGenWorldActor::RandomizeSeed()
 
     UI_Status(TEXT("[MountainGen] 시드 변경(랜덤) 요청..."), 1.2f, FColor::Cyan);
 
-    Settings.Seed = -1;
+    const uint64 T = FPlatformTime::Cycles64();
+    const FVector L = GetActorLocation();
+
+    uint32 Mix =
+        (uint32)(T) ^
+        (uint32)(T >> 32) ^
+        (uint32)(PTRINT)this ^
+        (uint32)FMath::RoundToInt(L.X) ^
+        ((uint32)FMath::RoundToInt(L.Y) << 11) ^
+        ((uint32)FMath::RoundToInt(L.Z) << 22) ^
+        (uint32)(++CurrentBuildSerial * 977u);
+
+    int32 NewSeed = (int32)(Mix & 0x7fffffff);
+    if (NewSeed <= 0) NewSeed = 1;
+
+    Settings.Seed = NewSeed;
     BuildChunkAndMesh();
 }
 
@@ -380,38 +399,61 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     UWorld* W = GetWorld();
     const bool bEditorLike = (!W || !W->IsGameWorld());
 
-    // ---------------------------------------
-    // 공통: 난이도 프리셋 적용 + 스냅샷
-    // ---------------------------------------
     ApplyDifficultyPreset();
 
     FMountainGenSettings S = Settings;
     ApplyDifficultyPresetTo(S);
 
-    const float Voxel = S.VoxelSizeCm;
-
-    const float HalfX = (S.ChunkX * Voxel) * 0.5f;
-    const float HalfY = (S.ChunkY * Voxel) * 0.5f;
+    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
 
     const FVector ActorWorld = GetActorLocation();
     const FVector TerrainOriginWorld = ActorWorld;
 
-    const FVector SampleOriginWorld = ActorWorld + FVector(-HalfX, -HalfY, S.BaseHeightCm);
+    float XMinLocal = -S.ChunkX * Voxel * 0.5f;
+    float XMaxLocal = S.ChunkX * Voxel * 0.5f;
+    float YMinLocal = -S.ChunkY * Voxel * 0.5f;
+    float YMaxLocal = S.ChunkY * Voxel * 0.5f;
+    float ZMinLocal = S.BaseHeightCm;
+    float ZMaxLocal = S.BaseHeightCm + S.ChunkZ * Voxel;
+
+    if (S.bUseCliffBase)
+    {
+        const float Band = FMath::Max(
+            (S.FrontBandDepthCm > 0.f) ? S.FrontBandDepthCm : S.CliffDepthCm,
+            Voxel * 2.f
+        );
+
+        const float HalfW = FMath::Max(1.f, S.CliffHalfWidthCm);
+        const float H = FMath::Max(1.f, S.CliffHeightCm);
+        const float FrontX = S.CliffThicknessCm;
+
+        XMinLocal = FrontX - Band;
+        XMaxLocal = FrontX + Band;
+
+        YMinLocal = -HalfW;
+        YMaxLocal = +HalfW;
+
+        ZMinLocal = S.BaseHeightCm;
+        ZMaxLocal = S.BaseHeightCm + H;
+    }
+
+    const FVector SampleOriginWorld = TerrainOriginWorld + FVector(XMinLocal, YMinLocal, ZMinLocal);
     const FVector ChunkOriginWorld = SampleOriginWorld;
 
     const FVector WorldMin = SampleOriginWorld;
-    const FVector WorldMax = SampleOriginWorld + FVector(S.ChunkX * Voxel, S.ChunkY * Voxel, S.ChunkZ * Voxel);
+    const FVector WorldMax = TerrainOriginWorld + FVector(XMaxLocal, YMaxLocal, ZMaxLocal);
 
-    const int32 SampleX = S.ChunkX + 1;
-    const int32 SampleY = S.ChunkY + 1;
-    const int32 SampleZ = S.ChunkZ + 1;
+    const int32 SampleX = FMath::Max(2, FMath::CeilToInt((XMaxLocal - XMinLocal) / Voxel) + 1);
+    const int32 SampleY = FMath::Max(2, FMath::CeilToInt((YMaxLocal - YMinLocal) / Voxel) + 1);
+    const int32 SampleZ = FMath::Max(2, FMath::CeilToInt((ZMaxLocal - ZMinLocal) / Voxel) + 1);
 
     const int32 InputSeed = S.Seed;
     const int32 TriesForSeedSearch = FMath::Max(1, S.SeedSearchTries);
 
     UI_Status(
-        FString::Format(TEXT("[MountainGen] PATH={0}  SeedSearchTries={1}  DebugEveryN={2}  DebugOn={3}"),
-            { bEditorLike ? TEXT("EditorLike") : TEXT("RuntimeAsync"), TriesForSeedSearch, DebugPrintEveryNAttempt, bDebugSeedSearch ? 1 : 0 }),
+        FString::Printf(TEXT("[MountainGen] PATH=%s  SeedSearchTries=%d  Sample=%dx%dx%d"),
+            bEditorLike ? TEXT("EditorLike") : TEXT("RuntimeAsync"),
+            TriesForSeedSearch, SampleX, SampleY, SampleZ),
         4.0f,
         bEditorLike ? FColor::Yellow : FColor::Green
     );
@@ -425,7 +467,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         bRegenQueued = false;
         InFlightBuildSerial = 0;
 
-        // 1) Seed 확정
         if (S.Seed <= 0)
         {
             const int32 Hash = (int32)((PTRINT)this) ^ (int32)ActorWorld.X ^ ((int32)ActorWorld.Y << 1) ^ ((int32)ActorWorld.Z << 2);
@@ -433,7 +474,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             S.Seed = Rng.RandRange(1, INT32_MAX);
         }
 
-        // AutoTune이면 최종 파라미터 확정
         if (S.bAutoTune)
         {
             const float FixedHeightAmp = S.HeightAmpCm;
@@ -457,13 +497,12 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             const FString Line = MakeMetricsLine(S, EM, bO, bSt);
 
             UI_Status(
-                FString::Format(TEXT("[MountainGen][EditorMetrics] seed={0} | {1}"), { S.Seed, Line }),
+                FString::Printf(TEXT("[MountainGen][EditorMetrics] seed=%d | %s"), S.Seed, *Line),
                 6.0f,
                 (bO && bSt) ? FColor::Green : FColor::Orange
             );
         }
 
-        // 2) 샘플링
         FVoxelChunk Chunk;
         Chunk.Init(SampleX, SampleY, SampleZ);
 
@@ -479,7 +518,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
         MG_CarveCaves_PostProcess(Chunk, S, SampleOriginWorld, Voxel);
 
-        // 3) 메시 생성 + 즉시 적용
         FChunkMeshData MeshData;
         FVoxelMesher::BuildMarchingCubes(
             Chunk,
@@ -521,7 +559,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         if (VoxelMaterial)
             ProcMesh->SetMaterial(0, VoxelMaterial);
 
-        UI_Status(FString::Format(TEXT("[MountainGen][Editor] Seed={0} (즉시 생성)"), { Settings.Seed }), 2.0f, FColor::Green);
+        UI_Status(FString::Printf(TEXT("[MountainGen][Editor] Seed=%d (FrontBand)"), Settings.Seed), 2.0f, FColor::Green);
         return;
     }
 
@@ -554,9 +592,24 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
             FMountainGenSettings BaseS = S;
 
+            const uint64 T = FPlatformTime::Cycles64();
+            const int32 Entropy =
+                (int32)(T & 0x7fffffff) ^
+                (int32)((T >> 32) & 0x7fffffff) ^
+                (LocalBuildSerial * 977) ^
+                (int32)FMath::RoundToInt(SampleOriginWorld.X) ^
+                ((int32)FMath::RoundToInt(SampleOriginWorld.Y) << 7) ^
+                ((int32)FMath::RoundToInt(SampleOriginWorld.Z) << 14);
+
             FRandomStream SeedRng;
-            if (InputSeed > 0) SeedRng.Initialize(InputSeed ^ 0x1F3A9B2D);
-            else               SeedRng.Initialize((int32)((PTRINT)WeakThis.Get()) ^ 0x19D3A7F1);
+            if (InputSeed > 0)
+            {
+                SeedRng.Initialize(InputSeed ^ 0x1F3A9B2D);
+            }
+            else
+            {
+                SeedRng.Initialize(Entropy ^ (int32)((PTRINT)WeakThis.Get()) ^ 0x19D3A7F1);
+            }
 
             int32 FinalSeed = (InputSeed > 0) ? InputSeed : SeedRng.RandRange(1, INT32_MAX);
 
@@ -571,11 +624,12 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             float BestScore = FLT_MAX;
             bool bSatisfied = false;
 
-            const int32 MaxSeedTries = TriesForSeedSearch;
+            const int32 MaxSeedTries = FMath::Max(1, TriesForSeedSearch);
 
             for (int32 Attempt = 1; Attempt <= MaxSeedTries; ++Attempt)
             {
-                const int32 CandSeed = (Attempt == 1 && InputSeed > 0)
+                const int32 CandSeed =
+                    (Attempt == 1 && InputSeed > 0)
                     ? InputSeed
                     : SeedRng.RandRange(1, INT32_MAX);
 
@@ -584,24 +638,24 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
                 const FMGMetrics M = MGComputeMetricsQuick(Cand, TerrainOriginWorld, WorldMin, WorldMax);
 
-                if (MGIsSatisfiedToTargets(Cand, M))
+                bool bOverOK = false;
+                bool bSteepOK = false;
+                const FString Line = WeakThis->MakeMetricsLine(Cand, M, bOverOK, bSteepOK);
+
+                if (bOverOK && bSteepOK)
                 {
                     if (WeakThis->bDebugSeedSearch)
                     {
-                        bool bO = false, bSt = false;
-                        const FString Line = MakeMetricsLine(Cand, M, bO, bSt);
-
-                        AsyncTask(ENamedThreads::GameThread, [WeakThis, Attempt, CandSeed, Line, MaxSeedTries, bO, bSt]()
+                        AsyncTask(ENamedThreads::GameThread,
+                            [WeakThis, Attempt, CandSeed, Line, MaxSeedTries]()
                             {
                                 if (!WeakThis.IsValid()) return;
 
-                                const FColor Color = (bO && bSt) ? FColor::Green : FColor::Orange;
-
                                 WeakThis->UI_Status(
-                                    FString::Format(TEXT("[MountainGen][SeedSearch] SATISFIED {0}/{1} seed={2} | {3}"),
-                                        { Attempt, MaxSeedTries, CandSeed, Line }),
+                                    FString::Printf(TEXT("[SeedSearch] SATISFIED %d/%d seed=%d | %s"),
+                                        Attempt, MaxSeedTries, CandSeed, *Line),
                                     6.0f,
-                                    Color
+                                    FColor::Green
                                 );
                             });
                     }
@@ -624,28 +678,27 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 if (WeakThis->bDebugSeedSearch)
                 {
                     const int32 EveryN = FMath::Max(1, WeakThis->DebugPrintEveryNAttempt);
-
-                    const bool bShouldPrint =
+                    const bool bPrint =
                         (Attempt == 1) ||
                         (Attempt == MaxSeedTries) ||
                         ((Attempt % EveryN) == 0);
 
-                    if (bShouldPrint)
+                    if (bPrint)
                     {
-                        bool bO = false, bSt = false;
-                        const FString Line = MakeMetricsLine(Cand, M, bO, bSt);
-                        const bool bOK = (bO && bSt);
+                        FColor FailColor = FColor::Red;
+                        if (!bOverOK && bSteepOK)      FailColor = FColor::Blue;
+                        else if (bOverOK && !bSteepOK) FailColor = FColor::Yellow;
 
-                        AsyncTask(ENamedThreads::GameThread, [WeakThis, Attempt, CandSeed, Line, bOK, MaxSeedTries]()
+                        AsyncTask(ENamedThreads::GameThread,
+                            [WeakThis, Attempt, CandSeed, Line, FailColor, MaxSeedTries]()
                             {
                                 if (!WeakThis.IsValid()) return;
-                                const FColor Color = bOK ? FColor::Green : FColor::Orange;
 
                                 WeakThis->UI_Status(
-                                    FString::Format(TEXT("[MountainGen][SeedSearch] Try {0}/{1} seed={2} | {3}"),
-                                        { Attempt, MaxSeedTries, CandSeed, Line }),
-                                    6.0f,
-                                    Color
+                                    FString::Printf(TEXT("[SeedSearch] FAIL %d/%d seed=%d | %s"),
+                                        Attempt, MaxSeedTries, CandSeed, *Line),
+                                    4.5f,
+                                    FailColor
                                 );
                             });
                     }
@@ -655,12 +708,31 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             if (!bSatisfied)
             {
                 FinalSeed = BestSeed;
-                AsyncTask(ENamedThreads::GameThread, [WeakThis, FinalSeed]()
+
+                const FMGMetrics BM = MGComputeMetricsQuick(BaseS, TerrainOriginWorld, WorldMin, WorldMax);
+
+                FMountainGenSettings BestCand = BaseS;
+                BestCand.Seed = BestSeed;
+                const FMGMetrics BestM = MGComputeMetricsQuick(BestCand, TerrainOriginWorld, WorldMin, WorldMax);
+
+                bool bOverOK = false;
+                bool bSteepOK = false;
+                const FString BestLine = WeakThis->MakeMetricsLine(BestCand, BestM, bOverOK, bSteepOK);
+
+                FColor FailColor = FColor::Red;
+                if (!bOverOK && bSteepOK)      FailColor = FColor::Blue;
+                else if (bOverOK && !bSteepOK) FailColor = FColor::Yellow;
+                else if (!bOverOK && !bSteepOK)FailColor = FColor::Red;
+
+                AsyncTask(ENamedThreads::GameThread,
+                    [WeakThis, FinalSeed, BestLine, FailColor]()
                     {
                         if (!WeakThis.IsValid()) return;
+
                         WeakThis->UI_Status(
-                            FString::Format(TEXT("[MountainGen] 만족 실패 → 근접 후보 확정 (seed={0})"), { FinalSeed }),
-                            6.0f, FColor::Red
+                            FString::Printf(TEXT("[SeedSearch] ALL FAILED -> fallback seed=%d | %s"), FinalSeed, *BestLine),
+                            6.0f,
+                            FailColor
                         );
                     });
             }
@@ -725,8 +797,9 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     WeakThis->PendingResult.MeshData = MoveTemp(MeshData);
 
                     WeakThis->UI_Status(
-                        FString::Format(TEXT("[MountainGen] 시드 확정: {0}"), { FinalS.Seed }),
-                        3.0f, FColor::Green
+                        FString::Printf(TEXT("[MountainGen] 시드 확정: %d"), FinalS.Seed),
+                        2.5f,
+                        FColor::Green
                     );
                 });
         }
