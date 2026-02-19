@@ -23,6 +23,13 @@ void AWallCrawler::BeginPlay()
         bIsOnWall = true;
         PatrolCenter = GetActorLocation();
         
+        // 불규칙 경로 생성
+        GeneratePatrolWaypoints();
+        
+        // 초기 속도 설정
+        CurrentSpeed = FMath::RandRange(MinSpeed, MaxSpeed);
+        TargetSpeed = CurrentSpeed;
+        
         UE_LOG(LogMonster, Log, TEXT("%s found wall, normal: %s"), *GetName(), *WallNormal.ToString());
     }
     else
@@ -38,10 +45,10 @@ void AWallCrawler::Tick(float DeltaTime)
     // 벽면 정렬 업데이트
     UpdateWallAlignment();
 
-    // 원형 배회
+    // 유기적 배회
     if (bIsOnWall)
     {
-        CirclePatrol(DeltaTime);
+        OrganicPatrol(DeltaTime);
     }
 
 #if !UE_BUILD_SHIPPING
@@ -248,4 +255,137 @@ FVector AWallCrawler::ProjectToWallSurface(FVector WorldDirection)
     // 벽 Normal에 수직인 성분만 남김
     FVector ProjectedDirection = WorldDirection - CurrentWallNormal * FVector::DotProduct(WorldDirection, CurrentWallNormal);
     return ProjectedDirection.GetSafeNormal();
+}
+
+// ============================================
+// Organic Patrol (유기적 배회)
+// ============================================
+
+void AWallCrawler::GeneratePatrolWaypoints()
+{
+    PatrolWaypoints.Empty();
+    
+    // 8-12개의 불규칙한 웨이포인트 생성
+    int32 NumWaypoints = FMath::RandRange(8, 12);
+    
+    for (int32 i = 0; i < NumWaypoints; i++)
+    {
+        float Angle = (float)i / NumWaypoints * 2.0f * PI;
+        
+        // 반경을 랜덤하게 변형 (50% ~ 150%)
+        float RadiusMod = FMath::RandRange(0.5f, 1.5f);
+        float ActualRadius = CircleRadius * RadiusMod;
+        
+        // 각도도 약간 랜덤하게
+        float AngleOffset = FMath::RandRange(-0.3f, 0.3f);
+        float ActualAngle = Angle + AngleOffset;
+        
+        // 벽 Normal에 수직인 두 축
+        FVector Up = FVector::UpVector;
+        FVector Right = FVector::CrossProduct(CurrentWallNormal, Up).GetSafeNormal();
+        FVector ActualUp = FVector::CrossProduct(Right, CurrentWallNormal).GetSafeNormal();
+        
+        // 웨이포인트 계산
+        FVector Offset = Right * FMath::Cos(ActualAngle) * ActualRadius 
+                       + ActualUp * FMath::Sin(ActualAngle) * ActualRadius;
+        
+        FVector Waypoint = PatrolCenter + Offset;
+        
+        // 벽면에 투영
+        FHitResult Hit;
+        FCollisionQueryParams Params;
+        Params.AddIgnoredActor(this);
+        
+        FVector TraceStart = Waypoint - CurrentWallNormal * 100.0f;
+        FVector TraceEnd = Waypoint + CurrentWallNormal * 100.0f;
+        
+        if (GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, Params))
+        {
+            Waypoint = Hit.Location + Hit.Normal * WallStickDistance;
+        }
+        
+        PatrolWaypoints.Add(Waypoint);
+    }
+    
+    CurrentWaypointIndex = 0;
+    if (PatrolWaypoints.Num() > 0)
+    {
+        CurrentTargetPoint = PatrolWaypoints[0];
+    }
+    
+    UE_LOG(LogMonster, Log, TEXT("%s generated %d waypoints"), *GetName(), PatrolWaypoints.Num());
+}
+
+void AWallCrawler::OrganicPatrol(float DeltaTime)
+{
+    if (PatrolWaypoints.Num() == 0)
+        return;
+    
+    // 일시 정지 처리
+    if (bIsPaused)
+    {
+        PauseTimer += DeltaTime;
+        CurrentSpeed = 0.0f;
+        
+        if (PauseTimer >= NextPauseDuration)
+        {
+            bIsPaused = false;
+            PauseTimer = 0.0f;
+            TargetSpeed = FMath::RandRange(MinSpeed, MaxSpeed);
+            UE_LOG(LogMonster, Verbose, TEXT("%s resumed movement"), *GetName());
+        }
+        return;
+    }
+    
+    // 속도 업데이트
+    UpdateMovementSpeed(DeltaTime);
+    
+    // 현재 웨이포인트로 이동
+    FVector ToTarget = CurrentTargetPoint - GetActorLocation();
+    float DistanceToTarget = ToTarget.Size();
+    
+    if (DistanceToTarget < WaypointReachThreshold)
+    {
+        // 웨이포인트 도착!
+        CurrentWaypointIndex = (CurrentWaypointIndex + 1) % PatrolWaypoints.Num();
+        CurrentTargetPoint = PatrolWaypoints[CurrentWaypointIndex];
+        
+        // 랜덤 정지 확률
+        if (FMath::FRand() < PauseChance)
+        {
+            bIsPaused = true;
+            NextPauseDuration = FMath::RandRange(MinPauseDuration, MaxPauseDuration);
+            UE_LOG(LogMonster, Verbose, TEXT("%s paused for %.1fs"), *GetName(), NextPauseDuration);
+        }
+        
+        // 새 목표 속도
+        TargetSpeed = FMath::RandRange(MinSpeed, MaxSpeed);
+        
+        // 모든 웨이포인트 순회 시 새 경로 생성 (20% 확률)
+        if (CurrentWaypointIndex == 0 && FMath::FRand() < 0.2f)
+        {
+            GeneratePatrolWaypoints();
+            UE_LOG(LogMonster, Log, TEXT("%s regenerated patrol path"), *GetName());
+        }
+    }
+    
+    // 이동
+    FVector Direction = ToTarget.GetSafeNormal();
+    CrawlOnWall(Direction, CurrentSpeed);
+}
+
+void AWallCrawler::UpdateMovementSpeed(float DeltaTime)
+{
+    // 목표 속도로 부드럽게 변화
+    if (FMath::Abs(CurrentSpeed - TargetSpeed) > 1.0f)
+    {
+        if (CurrentSpeed < TargetSpeed)
+        {
+            CurrentSpeed = FMath::Min(CurrentSpeed + SpeedChangeRate * DeltaTime, TargetSpeed);
+        }
+        else
+        {
+            CurrentSpeed = FMath::Max(CurrentSpeed - SpeedChangeRate * DeltaTime, TargetSpeed);
+        }
+    }
 }

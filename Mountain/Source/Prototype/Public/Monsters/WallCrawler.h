@@ -57,6 +57,52 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
     float PatrolAngularSpeed = 30.0f;       // 각속도 (도/초)
 
+    // Organic Movement (유기적 움직임)
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    FVector CurrentTargetPoint;             // 현재 목표 지점
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    float CurrentSpeed = 0.0f;              // 현재 속도
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    float TargetSpeed = 200.0f;             // 목표 속도
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    bool bIsPaused = false;                 // 일시 정지 중
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    float PauseTimer = 0.0f;                // 정지 타이머
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    float NextPauseDuration = 0.0f;         // 다음 정지 시간
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    TArray<FVector> PatrolWaypoints;        // 불규칙 경로 웨이포인트
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    int32 CurrentWaypointIndex = 0;         // 현재 웨이포인트
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float WaypointReachThreshold = 50.0f;   // 웨이포인트 도착 거리
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float MinSpeed = 50.0f;                 // 최소 속도
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float MaxSpeed = 250.0f;                // 최대 속도
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float SpeedChangeRate = 100.0f;         // 속도 변화율
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float MinPauseDuration = 0.5f;          // 최소 정지 시간
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float MaxPauseDuration = 3.0f;          // 최대 정지 시간
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float PauseChance = 0.1f;               // 정지 확률 (10%)
+
     // ============================================
     // Functions
     // ============================================
@@ -73,7 +119,10 @@ public:
     void CrawlOnWall(FVector Direction, float Speed);
 
     UFUNCTION(BlueprintCallable, Category = "Movement")
-    void CirclePatrol(float DeltaTime);     // 원형 배회
+    void CirclePatrol(float DeltaTime);     // 원형 배회 (구형)
+    void OrganicPatrol(float DeltaTime);    // 유기적 배회 (신규)
+    void GeneratePatrolWaypoints();         // 불규칙 경로 생성
+    void UpdateMovementSpeed(float DeltaTime);  // 속도 업데이트
 
     UFUNCTION(BlueprintCallable, Category = "Movement")
     FVector ProjectToWallSurface(FVector WorldDirection);  // 벽 표면에 방향 투영
