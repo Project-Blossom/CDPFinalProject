@@ -12,6 +12,8 @@
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Monsters/FlyingPlatform.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "Perception/AISense_Sight.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -24,6 +26,10 @@ ADownfallCharacter::ADownfallCharacter()
     FirstPersonCamera->SetupAttachment(GetCapsuleComponent());
     FirstPersonCamera->SetRelativeLocation(FVector(0.0f, 0.0f, 64.0f));
     FirstPersonCamera->bUsePawnControlRotation = true;
+
+    // AI Perception Stimuli Source (몬스터가 감지할 수 있게)
+    StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
+    // BeginPlay에서 등록
 
     // Grip Finder
     GripFinder = CreateDefaultSubobject<UGripPointFinderComponent>(TEXT("GripFinder"));
@@ -63,6 +69,30 @@ ADownfallCharacter::ADownfallCharacter()
 void ADownfallCharacter::BeginPlay()
 {
     Super::BeginPlay();
+
+    UE_LOG(LogDownFall, Warning, TEXT("DownfallCharacter BeginPlay called!"));
+
+    // StimuliSource 등록
+    if (StimuliSource)
+    {
+        StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
+        StimuliSource->RegisterWithPerceptionSystem();
+        UE_LOG(LogDownFall, Warning, TEXT("Player StimuliSource registered for Sight"));
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Error, TEXT("Player StimuliSource is NULL! Creating at runtime..."));
+        
+        // 런타임에 생성 시도
+        StimuliSource = NewObject<UAIPerceptionStimuliSourceComponent>(this, TEXT("StimuliSourceRuntime"));
+        if (StimuliSource)
+        {
+            StimuliSource->RegisterComponent();
+            StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
+            StimuliSource->RegisterWithPerceptionSystem();
+            UE_LOG(LogDownFall, Warning, TEXT("Player StimuliSource created at runtime"));
+        }
+    }
 
     // Enhanced Input 등록
     if (APlayerController* PC = Cast<APlayerController>(GetController()))

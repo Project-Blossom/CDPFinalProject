@@ -14,15 +14,18 @@ AMonsterBase::AMonsterBase()
     
     // Sight Config
     UAISenseConfig_Sight* SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
-    SightConfig->SightRadius = SightRadius;
-    SightConfig->LoseSightRadius = LoseSightRadius;
-    SightConfig->PeripheralVisionAngleDegrees = SightAngle;
+    SightConfig->SightRadius = 1000.0f;  // 하드코딩 (변수는 아직 초기화 안 됨)
+    SightConfig->LoseSightRadius = 1500.0f;
+    SightConfig->PeripheralVisionAngleDegrees = 60.0f;
     SightConfig->DetectionByAffiliation.bDetectEnemies = true;
     SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
-    SightConfig->DetectionByAffiliation.bDetectFriendlies = false;
+    SightConfig->DetectionByAffiliation.bDetectFriendlies = true;  // 모두 감지
+    SightConfig->SetMaxAge(5.0f);  // 5초간 기억
     
     PerceptionComponent->ConfigureSense(*SightConfig);
     PerceptionComponent->SetDominantSense(SightConfig->GetSenseImplementation());
+    
+    UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured"));
 }
 
 void AMonsterBase::BeginPlay()
@@ -35,6 +38,15 @@ void AMonsterBase::BeginPlay()
     if (PerceptionComponent)
     {
         PerceptionComponent->OnTargetPerceptionUpdated.AddDynamic(this, &AMonsterBase::OnPerceptionUpdated);
+        
+        // CRITICAL: Perception 활성화
+        PerceptionComponent->Activate(true);
+        
+        UE_LOG(LogMonster, Warning, TEXT("%s Perception activated! SightRadius: %.1f"), *GetName(), SightRadius);
+    }
+    else
+    {
+        UE_LOG(LogMonster, Error, TEXT("%s PerceptionComponent is NULL!"), *GetName());
     }
 
     UE_LOG(LogMonster, Log, TEXT("%s spawned with %.1f health"), *GetName(), CurrentHealth);
@@ -64,23 +76,32 @@ void AMonsterBase::Tick(float DeltaTime)
 
 void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
+    UE_LOG(LogMonster, Warning, TEXT("%s OnPerceptionUpdated! Actor: %s, Successfully Sensed: %s"), 
+        *GetName(), 
+        Actor ? *Actor->GetName() : TEXT("NULL"),
+        Stimulus.WasSuccessfullySensed() ? TEXT("YES") : TEXT("NO"));
+
     if (!Actor) return;
 
     ADownfallCharacter* Player = Cast<ADownfallCharacter>(Actor);
-    if (!Player) return;
+    if (!Player)
+    {
+        UE_LOG(LogMonster, Warning, TEXT("%s Actor is not DownfallCharacter: %s"), *GetName(), *Actor->GetClass()->GetName());
+        return;
+    }
 
     if (Stimulus.WasSuccessfullySensed())
     {
         // 플레이어 인식
         TargetPlayer = Player;
-        UE_LOG(LogMonster, Log, TEXT("%s detected player at distance: %.1f"), 
+        UE_LOG(LogMonster, Warning, TEXT("%s DETECTED player at distance: %.1f"), 
             *GetName(), FVector::Dist(GetActorLocation(), Player->GetActorLocation()));
     }
     else
     {
         // 플레이어 놓침
         TargetPlayer = nullptr;
-        UE_LOG(LogMonster, Log, TEXT("%s lost player"), *GetName());
+        UE_LOG(LogMonster, Warning, TEXT("%s LOST player"), *GetName());
     }
 }
 

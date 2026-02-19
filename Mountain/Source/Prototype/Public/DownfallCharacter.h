@@ -62,6 +62,9 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
     TObjectPtr<UCameraComponent> FirstPersonCamera;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+    TObjectPtr<class UAIPerceptionStimuliSourceComponent> StimuliSource;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Climbing")
     TObjectPtr<UGripPointFinderComponent> GripFinder;
 
