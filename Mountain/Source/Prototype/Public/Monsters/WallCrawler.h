@@ -143,7 +143,7 @@ public:
     void CrawlOnWall(FVector Direction, float Speed);
 
     UFUNCTION(BlueprintCallable, Category = "Movement")
-    void CirclePatrol(float DeltaTime);     // 원형 배회 (구형)
+    // void CirclePatrol(float DeltaTime);     // 원형 배회 (사용 안 함)
     void OrganicPatrol(float DeltaTime);    // 유기적 배회 (신규)
     void GeneratePatrolWaypoints();         // 불규칙 경로 생성
     void UpdateMovementSpeed(float DeltaTime);  // 속도 업데이트

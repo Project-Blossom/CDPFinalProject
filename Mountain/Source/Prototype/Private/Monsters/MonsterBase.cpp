@@ -1,6 +1,7 @@
 #include "Monsters/MonsterBase.h"
 #include "DownfallCharacter.h"
 #include "Perception/AISenseConfig_Sight.h"
+#include "Perception/AISenseConfig_Hearing.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 
 DEFINE_LOG_CATEGORY(LogMonster);
@@ -12,20 +13,20 @@ AMonsterBase::AMonsterBase()
     // AI Perception Setup
     PerceptionComponent = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("PerceptionComponent"));
     
-    // Sight Config
-    UAISenseConfig_Sight* SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
-    SightConfig->SightRadius = 1000.0f;  // 하드코딩 (변수는 아직 초기화 안 됨)
-    SightConfig->LoseSightRadius = 1500.0f;
-    SightConfig->PeripheralVisionAngleDegrees = 60.0f;
-    SightConfig->DetectionByAffiliation.bDetectEnemies = true;
-    SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
-    SightConfig->DetectionByAffiliation.bDetectFriendlies = true;  // 모두 감지
-    SightConfig->SetMaxAge(5.0f);  // 5초간 기억
+    // Hearing Config (기본값 - 모든 몬스터가 사용)
+    UAISenseConfig_Hearing* HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("HearingConfig"));
+    HearingConfig->HearingRange = 1000.0f;
+    HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
+    HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
+    HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
     
-    PerceptionComponent->ConfigureSense(*SightConfig);
-    PerceptionComponent->SetDominantSense(SightConfig->GetSenseImplementation());
+    PerceptionComponent->ConfigureSense(*HearingConfig);
+    PerceptionComponent->SetDominantSense(HearingConfig->GetSenseImplementation());
     
-    UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured"));
+    // Sight Config (Flying 몬스터용 - 자식 클래스에서 선택적으로 추가 가능)
+    // WallCrawler는 Hearing만 사용하므로 여기서는 설정 안 함
+    
+    UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured (Hearing)"));
 }
 
 void AMonsterBase::BeginPlay()
