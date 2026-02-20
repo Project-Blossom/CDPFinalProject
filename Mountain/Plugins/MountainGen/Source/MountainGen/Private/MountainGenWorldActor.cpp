@@ -364,36 +364,20 @@ void AMountainGenWorldActor::RandomizeSeed()
 
 void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
 {
-    // 난이도별로 "지형 성격"도 바뀌게 한다.
-    // 핵심: Overhang/Steep에 영향 큰 것들
-    // - BaseField3DStrengthCm (3D 덩어리감/블롭/언더컷 성향)
-    // - BaseField3DScaleCm    (큰/작은 형태의 스케일)
-    // - DetailScaleCm         (미세 굴곡 -> 경사/거칠기 증가)
-    // - VolumeStrength        (오버행 강도)
-    // - OverhangScaleCm       (오버행 노이즈 스케일)
-    // - OverhangFadeCm        (오버행이 위/아래로 얼마나 유지되는지)
-    // - OverhangBias          (오버행 발생 문턱)
-    // - GravityStrength/Scale (중력 shaping: 수직벽/언더컷 억제/강화)
-    //
-    // ※ VoxelSizeCm까지 난이도에서 바꾸면 메트릭이 크게 튀고 성능도 달라지니
-    //   일단 고정 추천. (원하면 나중에 난이도별 LOD처럼 설계)
-
     switch (S.Difficulty)
     {
     case EMountainGenDifficulty::Easy:
-        // ---------------- targets(검사 기준) ----------------
         S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
         S.Targets.SteepMin = 0.05f; S.Targets.SteepMax = 0.20f;
 
-        // ---------------- shape weights(생성 가중치) ----------------
-        S.BaseField3DStrengthCm = 5000.f;   // 12000 -> 감소 (블롭/언더컷 감소)
-        S.BaseField3DScaleCm = 22000.f;  // 크게 -> 완만
-        S.DetailScaleCm = 9000.f;   // 디테일 완만
-        S.VolumeStrength = 0.20f;    // 오버행 거의 끔
-        S.OverhangScaleCm = 14000.f;  // 큰 스케일 -> 급격한 오버행 줄음
-        S.OverhangFadeCm = 28000.f;  // 더 빨리 사라지게(위/아래 영향 완화)
-        S.OverhangBias = 0.70f;    // 오버행 발생 어렵게
-        S.GravityStrength = 1.30f;    // 중력 shaping 강화(언더컷 억제)
+        S.BaseField3DStrengthCm = 5000.f;
+        S.BaseField3DScaleCm = 22000.f;
+        S.DetailScaleCm = 9000.f;
+        S.VolumeStrength = 0.20f;
+        S.OverhangScaleCm = 14000.f;
+        S.OverhangFadeCm = 28000.f;
+        S.OverhangBias = 0.70f;
+        S.GravityStrength = 1.30f;
         S.GravityScale = 2.5f;
         break;
 
@@ -416,7 +400,6 @@ void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
         S.Targets.OverhangMin = 0.06f; S.Targets.OverhangMax = 0.18f;
         S.Targets.SteepMin = 0.25f; S.Targets.SteepMax = 0.55f;
 
-        // 기본값에 가깝게
         S.BaseField3DStrengthCm = 12000.f;
         S.BaseField3DScaleCm = 16000.f;
         S.DetailScaleCm = 6000.f;
@@ -432,14 +415,14 @@ void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
         S.Targets.OverhangMin = 0.12f; S.Targets.OverhangMax = 0.30f;
         S.Targets.SteepMin = 0.40f; S.Targets.SteepMax = 0.80f;
 
-        S.BaseField3DStrengthCm = 17000.f;  // 더 거칠고 3D 강해짐
-        S.BaseField3DScaleCm = 12000.f;  // 스케일 줄여서 급격
-        S.DetailScaleCm = 4200.f;   // 디테일 더 촘촘 -> 경사 증가
-        S.VolumeStrength = 1.60f;    // 오버행 확실히 증가
-        S.OverhangScaleCm = 6000.f;   // 더 촘촘한 오버행
-        S.OverhangFadeCm = 9000.f;   // 오버행 영향 더 강하게 유지
-        S.OverhangBias = 0.48f;    // 오버행 쉽게
-        S.GravityStrength = 0.85f;    // 중력 shaping 약하게(언더컷 허용)
+        S.BaseField3DStrengthCm = 17000.f;
+        S.BaseField3DScaleCm = 12000.f;
+        S.DetailScaleCm = 4200.f;
+        S.VolumeStrength = 1.60f;
+        S.OverhangScaleCm = 6000.f;
+        S.OverhangFadeCm = 9000.f;
+        S.OverhangBias = 0.48f;
+        S.GravityStrength = 0.85f;
         S.GravityScale = 1.7f;
         break;
     }
@@ -505,19 +488,14 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     const int32 SampleY = FMath::Max(2, FMath::CeilToInt((YMaxLocal - YMinLocal) / Voxel) + 1);
     const int32 SampleZ = FMath::Max(2, FMath::CeilToInt((ZMaxLocal - ZMinLocal) / Voxel) + 1);
 
-    const FVector MetricsWorldMin =
-        TerrainOriginWorld + FVector(
-            -S.ChunkX * Voxel * 0.5f,
-            -S.ChunkY * Voxel * 0.5f,
-            S.BaseHeightCm
-        );
+    const FVector MetricsWorldMin = WorldMin;
+    const FVector MetricsWorldMax = WorldMax;
 
-    const FVector MetricsWorldMax =
-        TerrainOriginWorld + FVector(
-            S.ChunkX * Voxel * 0.5f,
-            S.ChunkY * Voxel * 0.5f,
-            S.BaseHeightCm + S.ChunkZ * Voxel
-        );
+    FMountainGenSettings MetricsS = S;
+    if (MetricsS.MetricsStepCm <= 0.f)
+    {
+        MetricsS.MetricsStepCm = FMath::Max(400.f, MetricsS.VoxelSizeCm * 2.f);
+    }
 
     const int32 InputSeed = S.Seed;
     const int32 TriesForSeedSearch = FMath::Max(1, S.SeedSearchTries);
@@ -565,10 +543,11 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         Settings.Seed = S.Seed;
 
         {
-            const FMGMetrics EM = MGComputeMetricsQuick(S, TerrainOriginWorld, MetricsWorldMin, MetricsWorldMax);
+            const FMGMetrics EM = MGComputeMetricsQuick(MetricsS, TerrainOriginWorld, MetricsWorldMin, MetricsWorldMax);
 
-            bool bO = false, bSt = false;
-            const FString Line = MakeMetricsLine(S, EM, bO, bSt);
+            bool bO = false;
+            bool bSt = false;
+            const FString Line = MakeMetricsLine(MetricsS, EM, bO, bSt);
 
             UI_Status(
                 FString::Printf(TEXT("[MountainGen][EditorMetrics] seed=%d | %s"), S.Seed, *Line),
@@ -732,13 +711,20 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     Cand.BaseHeightCm = FixedBaseH;
                 }
 
-                const FMGMetrics M = MGComputeMetricsQuick(Cand, TerrainOriginWorld, MetricsWorldMin, MetricsWorldMax);
+                FMountainGenSettings CandMetrics = Cand;
+                if (CandMetrics.MetricsStepCm <= 0.f)
+                {
+                    CandMetrics.MetricsStepCm = FMath::Max(400.f, CandMetrics.VoxelSizeCm * 2.f);
+                }
 
-                bool bOverOK = false;
-                bool bSteepOK = false;
-                const FString Line = WeakThis->MakeMetricsLine(Cand, M, bOverOK, bSteepOK);
+                const FMGMetrics M = MGComputeMetricsQuick(CandMetrics, TerrainOriginWorld, MetricsWorldMin, MetricsWorldMax);
 
-                if (bOverOK && bSteepOK)
+
+                bool bO = false;
+                bool bSt = false;
+                const FString Line = WeakThis->MakeMetricsLine(CandMetrics, M, bO, bSt);
+
+                if (bO && bSt)
                 {
                     FinalSeed = CandSeed;
                     bSatisfied = true;
@@ -762,8 +748,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 }
 
                 const float Score =
-                    ScoreToRange(M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax) +
-                    ScoreToRange(M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax);
+                    ScoreToRange(M.OverhangRatio, CandMetrics.Targets.OverhangMin, CandMetrics.Targets.OverhangMax) +
+                    ScoreToRange(M.SteepRatio, CandMetrics.Targets.SteepMin, CandMetrics.Targets.SteepMax);
 
                 if (Score < BestScore)
                 {
@@ -782,8 +768,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     if (bPrint)
                     {
                         FColor FailColor = FColor::Red;
-                        if (!bOverOK && bSteepOK)      FailColor = FColor::Blue;
-                        else if (bOverOK && !bSteepOK) FailColor = FColor::Yellow;
+                        if (!bO && bSt)      FailColor = FColor::Blue;
+                        else if (bO && !bSt) FailColor = FColor::Yellow;
 
                         AsyncTask(ENamedThreads::GameThread,
                             [WeakThis, Attempt, CandSeed, Line, FailColor, MaxSeedTries]()
@@ -822,15 +808,21 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     BestCand.BaseHeightCm = FixedBaseH;
                 }
 
-                const FMGMetrics BestM = MGComputeMetricsQuick(BestCand, TerrainOriginWorld, MetricsWorldMin, MetricsWorldMax);
+                FMountainGenSettings BestMetrics = BestCand;
+                if (BestMetrics.MetricsStepCm <= 0.f)
+                {
+                    BestMetrics.MetricsStepCm = FMath::Max(400.f, BestMetrics.VoxelSizeCm * 2.f);
+                }
 
-                bool bOverOK = false;
-                bool bSteepOK = false;
-                const FString BestLine = WeakThis->MakeMetricsLine(BestCand, BestM, bOverOK, bSteepOK);
+                const FMGMetrics BestM = MGComputeMetricsQuick(BestMetrics, TerrainOriginWorld, MetricsWorldMin, MetricsWorldMax);
+
+                bool bO = false;
+                bool bSt = false;
+                const FString BestLine = WeakThis->MakeMetricsLine(BestMetrics, BestM, bO, bSt);
 
                 FColor FailColor = FColor::Red;
-                if (!bOverOK && bSteepOK)      FailColor = FColor::Blue;
-                else if (bOverOK && !bSteepOK) FailColor = FColor::Yellow;
+                if (!bO && bSt)      FailColor = FColor::Blue;
+                else if (bO && !bSt) FailColor = FColor::Yellow;
 
                 AsyncTask(ENamedThreads::GameThread,
                     [WeakThis, FinalSeed, BestLine, FailColor]()
@@ -883,7 +875,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
                             const FVector WorldPos(wx, wy, wz);
                             const float D = Gen.SampleDensity(WorldPos);
-
                             Chunk.Set(x, y, z, D);
                         }
                     }
@@ -922,8 +913,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                         FColor::Green
                     );
                 });
-        }
-    );
+        });
 }
 
 #if WITH_EDITOR
