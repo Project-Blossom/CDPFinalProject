@@ -20,6 +20,156 @@
 #include "HAL/PlatformTime.h"
 #include "Async/ParallelFor.h"
 
+struct FMGLockedPreset
+{
+    FMGTargets Targets;
+
+    float BaseField3DStrengthCm = 0.f;
+    float BaseField3DScaleCm = 0.f;
+    int32 BaseField3DOctaves = 0;
+    float DetailScaleCm = 0.f;
+    int32 DetailOctaves = 0;
+
+    float VolumeStrength = 0.f;
+    float OverhangScaleCm = 0.f;
+    float OverhangBias = 0.f;
+    float OverhangDepthCm = 0.f;
+    float OverhangFadeCm = 0.f;
+
+    float GravityStrength = 0.f;
+    float GravityScale = 0.f;
+
+    float WarpPatchSizeCm = 0.f;
+    float WarpPatchAmpCm = 0.f;
+    float WarpStrength = 0.f;
+
+    bool  bUseCliffBase = false;
+    float CliffHalfWidthCm = 0.f;
+    float CliffHeightCm = 0.f;
+    float CliffThicknessCm = 0.f;
+    float CliffDepthCm = 0.f;
+    float FrontBandDepthCm = 0.f;
+    float CliffSurfaceScaleCm = 0.f;
+    float CliffSurfaceAmpCm = 0.f;
+
+    bool  bEnableCaves = false;
+    float CaveStrength = 0.f;
+    float CaveScaleCm = 0.f;
+    float CaveThreshold = 0.f;
+    float CaveBand = 0.f;
+    float CaveDepthCm = 0.f;
+    float CaveNearSurfaceCm = 0.f;
+
+    float CaveTileSizeCm = 0.f;
+    float CaveDiameterCm = 0.f;
+    int32 CaveMinSolidNeighbors = 0;
+
+    int32 CavesPerTile_Easy = 0;
+    int32 CavesPerTile_Normal = 0;
+    int32 CavesPerTile_Hard = 0;
+    int32 CavesPerTile_Extreme = 0;
+};
+
+static void SaveLockedPreset(const FMountainGenSettings& Src, FMGLockedPreset& Out)
+{
+    Out.Targets = Src.Targets;
+
+    Out.BaseField3DStrengthCm = Src.BaseField3DStrengthCm;
+    Out.BaseField3DScaleCm = Src.BaseField3DScaleCm;
+    Out.BaseField3DOctaves = Src.BaseField3DOctaves;
+    Out.DetailScaleCm = Src.DetailScaleCm;
+    Out.DetailOctaves = Src.DetailOctaves;
+
+    Out.VolumeStrength = Src.VolumeStrength;
+    Out.OverhangScaleCm = Src.OverhangScaleCm;
+    Out.OverhangBias = Src.OverhangBias;
+    Out.OverhangDepthCm = Src.OverhangDepthCm;
+    Out.OverhangFadeCm = Src.OverhangFadeCm;
+
+    Out.GravityStrength = Src.GravityStrength;
+    Out.GravityScale = Src.GravityScale;
+
+    Out.WarpPatchSizeCm = Src.WarpPatchSizeCm;
+    Out.WarpPatchAmpCm = Src.WarpPatchAmpCm;
+    Out.WarpStrength = Src.WarpStrength;
+
+    Out.bUseCliffBase = Src.bUseCliffBase;
+    Out.CliffHalfWidthCm = Src.CliffHalfWidthCm;
+    Out.CliffHeightCm = Src.CliffHeightCm;
+    Out.CliffThicknessCm = Src.CliffThicknessCm;
+    Out.CliffDepthCm = Src.CliffDepthCm;
+    Out.FrontBandDepthCm = Src.FrontBandDepthCm;
+    Out.CliffSurfaceScaleCm = Src.CliffSurfaceScaleCm;
+    Out.CliffSurfaceAmpCm = Src.CliffSurfaceAmpCm;
+
+    Out.bEnableCaves = Src.bEnableCaves;
+    Out.CaveStrength = Src.CaveStrength;
+    Out.CaveScaleCm = Src.CaveScaleCm;
+    Out.CaveThreshold = Src.CaveThreshold;
+    Out.CaveBand = Src.CaveBand;
+    Out.CaveDepthCm = Src.CaveDepthCm;
+    Out.CaveNearSurfaceCm = Src.CaveNearSurfaceCm;
+
+    Out.CaveTileSizeCm = Src.CaveTileSizeCm;
+    Out.CaveDiameterCm = Src.CaveDiameterCm;
+    Out.CaveMinSolidNeighbors = Src.CaveMinSolidNeighbors;
+
+    Out.CavesPerTile_Easy = Src.CavesPerTile_Easy;
+    Out.CavesPerTile_Normal = Src.CavesPerTile_Normal;
+    Out.CavesPerTile_Hard = Src.CavesPerTile_Hard;
+    Out.CavesPerTile_Extreme = Src.CavesPerTile_Extreme;
+}
+
+static void RestoreLockedPreset(FMountainGenSettings& Dst, const FMGLockedPreset& L)
+{
+    Dst.Targets = L.Targets;
+
+    Dst.BaseField3DStrengthCm = L.BaseField3DStrengthCm;
+    Dst.BaseField3DScaleCm = L.BaseField3DScaleCm;
+    Dst.BaseField3DOctaves = L.BaseField3DOctaves;
+    Dst.DetailScaleCm = L.DetailScaleCm;
+    Dst.DetailOctaves = L.DetailOctaves;
+
+    Dst.VolumeStrength = L.VolumeStrength;
+    Dst.OverhangScaleCm = L.OverhangScaleCm;
+    Dst.OverhangBias = L.OverhangBias;
+    Dst.OverhangDepthCm = L.OverhangDepthCm;
+    Dst.OverhangFadeCm = L.OverhangFadeCm;
+
+    Dst.GravityStrength = L.GravityStrength;
+    Dst.GravityScale = L.GravityScale;
+
+    Dst.WarpPatchSizeCm = L.WarpPatchSizeCm;
+    Dst.WarpPatchAmpCm = L.WarpPatchAmpCm;
+    Dst.WarpStrength = L.WarpStrength;
+
+    Dst.bUseCliffBase = L.bUseCliffBase;
+    Dst.CliffHalfWidthCm = L.CliffHalfWidthCm;
+    Dst.CliffHeightCm = L.CliffHeightCm;
+    Dst.CliffThicknessCm = L.CliffThicknessCm;
+    Dst.CliffDepthCm = L.CliffDepthCm;
+    Dst.FrontBandDepthCm = L.FrontBandDepthCm;
+    Dst.CliffSurfaceScaleCm = L.CliffSurfaceScaleCm;
+    Dst.CliffSurfaceAmpCm = L.CliffSurfaceAmpCm;
+
+    Dst.bEnableCaves = L.bEnableCaves;
+    Dst.CaveStrength = L.CaveStrength;
+    Dst.CaveScaleCm = L.CaveScaleCm;
+    Dst.CaveThreshold = L.CaveThreshold;
+    Dst.CaveBand = L.CaveBand;
+    Dst.CaveDepthCm = L.CaveDepthCm;
+    Dst.CaveNearSurfaceCm = L.CaveNearSurfaceCm;
+
+    Dst.CaveTileSizeCm = L.CaveTileSizeCm;
+    Dst.CaveDiameterCm = L.CaveDiameterCm;
+    Dst.CaveMinSolidNeighbors = L.CaveMinSolidNeighbors;
+
+    Dst.CavesPerTile_Easy = L.CavesPerTile_Easy;
+    Dst.CavesPerTile_Normal = L.CavesPerTile_Normal;
+    Dst.CavesPerTile_Hard = L.CavesPerTile_Hard;
+    Dst.CavesPerTile_Extreme = L.CavesPerTile_Extreme;
+}
+
 AMountainGenWorldActor::AMountainGenWorldActor()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -440,10 +590,12 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     UWorld* W = GetWorld();
     const bool bEditorLike = (!W || !W->IsGameWorld());
 
-    ApplyDifficultyPreset();
-
+    // =========================================================
+    // 0) Effective Settings
+    // =========================================================
     FMountainGenSettings S = Settings;
-    ApplyDifficultyPresetTo(S);
+
+    MGApplyDifficultyPreset(S);
 
     const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
 
@@ -459,11 +611,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
     if (S.bUseCliffBase)
     {
-        const float Band = FMath::Max(
-            (S.FrontBandDepthCm > 0.f) ? S.FrontBandDepthCm : S.CliffDepthCm,
-            Voxel * 2.f
-        );
-
+        const float Band = FMath::Max(S.CliffDepthCm, Voxel * 2.f);
         const float HalfW = FMath::Max(1.f, S.CliffHalfWidthCm);
         const float H = FMath::Max(1.f, S.CliffHeightCm);
         const float FrontX = S.CliffThicknessCm;
@@ -488,13 +636,10 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     const int32 SampleY = FMath::Max(2, FMath::CeilToInt((YMaxLocal - YMinLocal) / Voxel) + 1);
     const int32 SampleZ = FMath::Max(2, FMath::CeilToInt((ZMaxLocal - ZMinLocal) / Voxel) + 1);
 
-    const FVector MetricsWorldMin = WorldMin;
-    const FVector MetricsWorldMax = WorldMax;
-
-    FMountainGenSettings MetricsS = S;
-    if (MetricsS.MetricsStepCm <= 0.f)
+    // MetricsStep 기본값
+    if (S.MetricsStepCm <= 0.f)
     {
-        MetricsS.MetricsStepCm = FMath::Max(400.f, MetricsS.VoxelSizeCm * 2.f);
+        S.MetricsStepCm = FMath::Max(400.f, S.VoxelSizeCm * 2.f);
     }
 
     const int32 InputSeed = S.Seed;
@@ -508,54 +653,64 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         bEditorLike ? FColor::Yellow : FColor::Green
     );
 
-    // ---------------------------------------
-    // (A) 에디터: 동기 생성 + 즉시 적용
-    // ---------------------------------------
+    // =========================================================
+    // (A) Editor: 동기 생성
+    // =========================================================
     if (bEditorLike)
     {
         bAsyncWorking = false;
         bRegenQueued = false;
         InFlightBuildSerial = 0;
 
-        if (S.Seed <= 0)
-        {
-            const int32 Hash = (int32)((PTRINT)this) ^ (int32)ActorWorld.X ^ ((int32)ActorWorld.Y << 1) ^ ((int32)ActorWorld.Z << 2);
-            FRandomStream Rng(Hash ^ 0x51A3B9D1);
-            S.Seed = Rng.RandRange(1, INT32_MAX);
-        }
-
+        // 1) AutoTune
         if (S.bAutoTune)
         {
-            const float FixedHeightAmp = S.HeightAmpCm;
-            const float FixedRadius = S.EnvelopeRadiusCm;
-            const float FixedBaseH = S.BaseHeightCm;
-
-            MGDeriveParamsFromSeed(S, S.Seed);
-            (void)MGFinalizeSettingsFromSeed(S, TerrainOriginWorld, WorldMin, WorldMax);
-
-            S.HeightAmpCm = FixedHeightAmp;
-            S.EnvelopeRadiusCm = FixedRadius;
-            S.BaseHeightCm = FixedBaseH;
-
-            (void)MGTuneSettingsFeedback(S, TerrainOriginWorld, WorldMin, WorldMax);
+            MGAutoTuneIntentParams(S, TerrainOriginWorld, WorldMin, WorldMax);
+            MGClampToDifficultyBounds(S);
         }
 
-        Settings.Seed = S.Seed;
+        // 2) SeedSearch
+        auto DebugPrint = [this](const FString& Msg, float Sec, FColor Col)
+            {
+                this->UI_Status(Msg, Sec, Col);
+            };
 
+        const int32 FinalSeed =
+            MGSearchSeedForTargets(
+                S,
+                TerrainOriginWorld,
+                WorldMin, WorldMax,
+                InputSeed,
+                TriesForSeedSearch,
+                S.bRetrySeedUntilSatisfied,
+                S.MaxSeedAttempts,
+                bDebugSeedSearch,
+                DebugPrintEveryNAttempt,
+                DebugPrint
+            );
+
+        S.Seed = FinalSeed;
+        MGDeriveReproducibleDomainFromSeed(S, FinalSeed);
+
+        // 디버그 Metrics
         {
-            const FMGMetrics EM = MGComputeMetricsQuick(MetricsS, TerrainOriginWorld, MetricsWorldMin, MetricsWorldMax);
+            const FMGMetrics M = MGComputeMetricsQuick(S, TerrainOriginWorld, WorldMin, WorldMax);
 
-            bool bO = false;
-            bool bSt = false;
-            const FString Line = MakeMetricsLine(MetricsS, EM, bO, bSt);
+            const bool bO = (M.OverhangRatio >= S.Targets.OverhangMin && M.OverhangRatio <= S.Targets.OverhangMax);
+            const bool bSt = (M.SteepRatio >= S.Targets.SteepMin && M.SteepRatio <= S.Targets.SteepMax);
 
             UI_Status(
-                FString::Printf(TEXT("[MountainGen][EditorMetrics] seed=%d | %s"), S.Seed, *Line),
+                FString::Printf(TEXT("[MountainGen][EditorMetrics] seed=%d | Over %.3f [%.2f~%.2f] %s | Steep %.3f [%.2f~%.2f] %s | Near=%d"),
+                    S.Seed,
+                    M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax, bO ? TEXT("OK") : TEXT("FAIL"),
+                    M.SteepRatio, S.Targets.SteepMin, S.Targets.SteepMax, bSt ? TEXT("OK") : TEXT("FAIL"),
+                    M.SurfaceNearSamples),
                 6.0f,
                 (bO && bSt) ? FColor::Green : FColor::Orange
             );
         }
 
+        // 3) Density -> Meshing
         FVoxelChunk Chunk;
         Chunk.Init(SampleX, SampleY, SampleZ);
 
@@ -564,16 +719,12 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         ParallelFor(SampleZ, [&](int32 z)
             {
                 for (int32 y = 0; y < SampleY; ++y)
-                {
                     for (int32 x = 0; x < SampleX; ++x)
                     {
                         const FVector WorldPos = SampleOriginWorld + FVector(x * Voxel, y * Voxel, z * Voxel);
                         Chunk.Set(x, y, z, Gen.SampleDensity(WorldPos));
                     }
-                }
             });
-
-        MG_CarveCaves_PostProcess(Chunk, S, SampleOriginWorld, Voxel);
 
         FChunkMeshData MeshData;
         FVoxelMesher::BuildMarchingCubes(
@@ -616,13 +767,18 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         if (VoxelMaterial)
             ProcMesh->SetMaterial(0, VoxelMaterial);
 
-        UI_Status(FString::Printf(TEXT("[MountainGen][Editor] Seed=%d (FrontBand)"), Settings.Seed), 2.0f, FColor::Green);
+        // Settings에는 최종 seed만 반영
+        Settings.Seed = S.Seed;
+
+        UI_Status(FString::Printf(TEXT("[MountainGen][Editor] Seed=%d (CliffBase=%s)"),
+            Settings.Seed, S.bUseCliffBase ? TEXT("true") : TEXT("false")), 2.0f, FColor::Green);
+
         return;
     }
 
-    // ---------------------------------------
-    // (B) 런타임: 비동기
-    // ---------------------------------------
+    // =========================================================
+    // (B) Runtime: 비동기
+    // =========================================================
     if (bAsyncWorking)
     {
         bRegenQueued = true;
@@ -634,7 +790,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     bAsyncWorking = true;
     InFlightBuildSerial = LocalBuildSerial;
 
-    UI_Status(TEXT("[MountainGen] 시드 탐색/생성 시작"), 2.0f, FColor::Cyan);
+    UI_Status(TEXT("[MountainGen] AutoTune/SeedSearch/생성 시작"), 2.0f, FColor::Cyan);
 
     TWeakObjectPtr<AMountainGenWorldActor> WeakThis(this);
 
@@ -642,265 +798,79 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         [WeakThis,
         S, TerrainOriginWorld,
         WorldMin, WorldMax,
-        MetricsWorldMin, MetricsWorldMax,
         ChunkOriginWorld, ActorWorld, SampleOriginWorld,
         SampleX, SampleY, SampleZ, Voxel,
         InputSeed, TriesForSeedSearch, LocalBuildSerial]() mutable
         {
             if (!WeakThis.IsValid()) return;
 
-            FMountainGenSettings BaseS = S;
-
-            FRandomStream SeedRng;
-            if (InputSeed > 0)
+            // 1) AutoTune
+            if (S.bAutoTune)
             {
-                SeedRng.Initialize(InputSeed ^ 0x1F3A9B2D);
-            }
-            else
-            {
-                const uint64 T = FPlatformTime::Cycles64();
-                SeedRng.Initialize(
-                    (int32)(T & 0x7fffffff) ^
-                    (int32)((T >> 32) & 0x7fffffff) ^
-                    (LocalBuildSerial * 977) ^
-                    (int32)FMath::RoundToInt(SampleOriginWorld.X) ^
-                    ((int32)FMath::RoundToInt(SampleOriginWorld.Y) << 7) ^
-                    ((int32)FMath::RoundToInt(SampleOriginWorld.Z) << 14)
-                );
+                MGAutoTuneIntentParams(S, TerrainOriginWorld, WorldMin, WorldMax);
+                MGClampToDifficultyBounds(S);
             }
 
-            int32 FinalSeed = (InputSeed > 0) ? InputSeed : SeedRng.RandRange(1, INT32_MAX);
-
-            auto ScoreToRange = [](float v, float mn, float mx)
+            // 2) SeedSearch
+            auto DebugPrint = [WeakThis](const FString& Msg, float Sec, FColor Col)
                 {
-                    if (v < mn) return (mn - v);
-                    if (v > mx) return (v - mx);
-                    return 0.f;
+                    AsyncTask(ENamedThreads::GameThread, [WeakThis, Msg, Sec, Col]()
+                        {
+                            if (!WeakThis.IsValid()) return;
+                            WeakThis->UI_Status(Msg, Sec, Col);
+                        });
                 };
 
-            int32 BestSeed = FinalSeed;
-            float BestScore = FLT_MAX;
-            bool bSatisfied = false;
+            const int32 FinalSeed =
+                MGSearchSeedForTargets(
+                    S,
+                    TerrainOriginWorld,
+                    WorldMin, WorldMax,
+                    InputSeed,
+                    TriesForSeedSearch,
+                    S.bRetrySeedUntilSatisfied,
+                    S.MaxSeedAttempts,
+                    WeakThis->bDebugSeedSearch,
+                    WeakThis->DebugPrintEveryNAttempt,
+                    DebugPrint
+                );
 
-            const int32 MaxSeedTries =
-                BaseS.bRetrySeedUntilSatisfied
-                ? FMath::Max(1, BaseS.MaxSeedAttempts)
-                : FMath::Max(1, TriesForSeedSearch);
+            S.Seed = FinalSeed;
+            MGDeriveReproducibleDomainFromSeed(S, FinalSeed);
 
-            for (int32 Attempt = 1; Attempt <= MaxSeedTries; ++Attempt)
-            {
-                const int32 CandSeed =
-                    (Attempt == 1 && InputSeed > 0)
-                    ? InputSeed
-                    : SeedRng.RandRange(1, INT32_MAX);
-
-                FMountainGenSettings Cand = BaseS;
-                Cand.Seed = CandSeed;
-
-                if (Cand.bAutoTune)
-                {
-                    const float FixedHeightAmp = Cand.HeightAmpCm;
-                    const float FixedRadius = Cand.EnvelopeRadiusCm;
-                    const float FixedBaseH = Cand.BaseHeightCm;
-
-                    MGDeriveParamsFromSeed(Cand, CandSeed);
-                    (void)MGFinalizeSettingsFromSeed(Cand, TerrainOriginWorld, WorldMin, WorldMax);
-
-                    Cand.HeightAmpCm = FixedHeightAmp;
-                    Cand.EnvelopeRadiusCm = FixedRadius;
-                    Cand.BaseHeightCm = FixedBaseH;
-                }
-
-                FMountainGenSettings CandMetrics = Cand;
-                if (CandMetrics.MetricsStepCm <= 0.f)
-                {
-                    CandMetrics.MetricsStepCm = FMath::Max(400.f, CandMetrics.VoxelSizeCm * 2.f);
-                }
-
-                const FMGMetrics M = MGComputeMetricsQuick(CandMetrics, TerrainOriginWorld, MetricsWorldMin, MetricsWorldMax);
-
-
-                bool bO = false;
-                bool bSt = false;
-                const FString Line = WeakThis->MakeMetricsLine(CandMetrics, M, bO, bSt);
-
-                if (bO && bSt)
-                {
-                    FinalSeed = CandSeed;
-                    bSatisfied = true;
-
-                    if (WeakThis->bDebugSeedSearch)
-                    {
-                        AsyncTask(ENamedThreads::GameThread,
-                            [WeakThis, Attempt, CandSeed, Line, MaxSeedTries]()
-                            {
-                                if (!WeakThis.IsValid()) return;
-
-                                WeakThis->UI_Status(
-                                    FString::Printf(TEXT("[SeedSearch] SATISFIED %d/%d seed=%d | %s"),
-                                        Attempt, MaxSeedTries, CandSeed, *Line),
-                                    6.0f,
-                                    FColor::Green
-                                );
-                            });
-                    }
-                    break;
-                }
-
-                const float Score =
-                    ScoreToRange(M.OverhangRatio, CandMetrics.Targets.OverhangMin, CandMetrics.Targets.OverhangMax) +
-                    ScoreToRange(M.SteepRatio, CandMetrics.Targets.SteepMin, CandMetrics.Targets.SteepMax);
-
-                if (Score < BestScore)
-                {
-                    BestScore = Score;
-                    BestSeed = CandSeed;
-                }
-
-                if (WeakThis->bDebugSeedSearch)
-                {
-                    const int32 EveryN = FMath::Max(1, WeakThis->DebugPrintEveryNAttempt);
-                    const bool bPrint =
-                        (Attempt == 1) ||
-                        (Attempt == MaxSeedTries) ||
-                        ((Attempt % EveryN) == 0);
-
-                    if (bPrint)
-                    {
-                        FColor FailColor = FColor::Red;
-                        if (!bO && bSt)      FailColor = FColor::Blue;
-                        else if (bO && !bSt) FailColor = FColor::Yellow;
-
-                        AsyncTask(ENamedThreads::GameThread,
-                            [WeakThis, Attempt, CandSeed, Line, FailColor, MaxSeedTries]()
-                            {
-                                if (!WeakThis.IsValid()) return;
-
-                                WeakThis->UI_Status(
-                                    FString::Printf(TEXT("[SeedSearch] FAIL %d/%d seed=%d | %s"),
-                                        Attempt, MaxSeedTries, CandSeed, *Line),
-                                    4.5f,
-                                    FailColor
-                                );
-                            });
-                    }
-                }
-            }
-
-            if (!bSatisfied)
-            {
-                FinalSeed = BestSeed;
-
-                FMountainGenSettings BestCand = BaseS;
-                BestCand.Seed = BestSeed;
-
-                if (BestCand.bAutoTune)
-                {
-                    const float FixedHeightAmp = BestCand.HeightAmpCm;
-                    const float FixedRadius = BestCand.EnvelopeRadiusCm;
-                    const float FixedBaseH = BestCand.BaseHeightCm;
-
-                    MGDeriveParamsFromSeed(BestCand, BestSeed);
-                    (void)MGFinalizeSettingsFromSeed(BestCand, TerrainOriginWorld, WorldMin, WorldMax);
-
-                    BestCand.HeightAmpCm = FixedHeightAmp;
-                    BestCand.EnvelopeRadiusCm = FixedRadius;
-                    BestCand.BaseHeightCm = FixedBaseH;
-                }
-
-                FMountainGenSettings BestMetrics = BestCand;
-                if (BestMetrics.MetricsStepCm <= 0.f)
-                {
-                    BestMetrics.MetricsStepCm = FMath::Max(400.f, BestMetrics.VoxelSizeCm * 2.f);
-                }
-
-                const FMGMetrics BestM = MGComputeMetricsQuick(BestMetrics, TerrainOriginWorld, MetricsWorldMin, MetricsWorldMax);
-
-                bool bO = false;
-                bool bSt = false;
-                const FString BestLine = WeakThis->MakeMetricsLine(BestMetrics, BestM, bO, bSt);
-
-                FColor FailColor = FColor::Red;
-                if (!bO && bSt)      FailColor = FColor::Blue;
-                else if (bO && !bSt) FailColor = FColor::Yellow;
-
-                AsyncTask(ENamedThreads::GameThread,
-                    [WeakThis, FinalSeed, BestLine, FailColor]()
-                    {
-                        if (!WeakThis.IsValid()) return;
-
-                        WeakThis->UI_Status(
-                            FString::Printf(TEXT("[SeedSearch] ALL FAILED -> fallback seed=%d | %s"), FinalSeed, *BestLine),
-                            6.0f,
-                            FailColor
-                        );
-                    });
-            }
-
-            // (2) 최종 설정 확정 + AutoTune
-            FMountainGenSettings FinalS = BaseS;
-            FinalS.Seed = FinalSeed;
-
-            if (FinalS.bAutoTune)
-            {
-                const float FixedHeightAmp = FinalS.HeightAmpCm;
-                const float FixedRadius = FinalS.EnvelopeRadiusCm;
-                const float FixedBaseH = FinalS.BaseHeightCm;
-
-                MGDeriveParamsFromSeed(FinalS, FinalSeed);
-                (void)MGFinalizeSettingsFromSeed(FinalS, TerrainOriginWorld, WorldMin, WorldMax);
-
-                FinalS.HeightAmpCm = FixedHeightAmp;
-                FinalS.EnvelopeRadiusCm = FixedRadius;
-                FinalS.BaseHeightCm = FixedBaseH;
-
-                (void)MGTuneSettingsFeedback(FinalS, TerrainOriginWorld, WorldMin, WorldMax);
-            }
-
-            // (3) Mesh Build
+            // 3) Density -> Meshing
             FVoxelChunk Chunk;
             Chunk.Init(SampleX, SampleY, SampleZ);
 
-            FVoxelDensityGenerator Gen(FinalS, TerrainOriginWorld);
+            FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
 
             ParallelFor(SampleZ, [&](int32 z)
                 {
                     for (int32 y = 0; y < SampleY; ++y)
-                    {
                         for (int32 x = 0; x < SampleX; ++x)
                         {
-                            const float wx = WorldMin.X + float(x) * Voxel;
-                            const float wy = WorldMin.Y + float(y) * Voxel;
-                            const float wz = WorldMin.Z + float(z) * Voxel;
-
-                            const FVector WorldPos(wx, wy, wz);
-                            const float D = Gen.SampleDensity(WorldPos);
-                            Chunk.Set(x, y, z, D);
+                            const FVector WorldPos = SampleOriginWorld + FVector(x * Voxel, y * Voxel, z * Voxel);
+                            Chunk.Set(x, y, z, Gen.SampleDensity(WorldPos));
                         }
-                    }
                 });
-
-            MG_CarveCaves_PostProcess(Chunk, FinalS, SampleOriginWorld, Voxel);
 
             FChunkMeshData MeshData;
             FVoxelMesher::BuildMarchingCubes(
                 Chunk,
-                FinalS.VoxelSizeCm,
-                FinalS.IsoLevel,
+                S.VoxelSizeCm,
+                S.IsoLevel,
                 ChunkOriginWorld,
                 ActorWorld,
                 Gen,
                 MeshData
             );
 
-            // (4) 결과 전달
+            // 4) 결과 전달
             AsyncTask(ENamedThreads::GameThread,
-                [WeakThis, FinalS, MeshData = MoveTemp(MeshData), LocalBuildSerial]() mutable
+                [WeakThis, FinalS = S, MeshData = MoveTemp(MeshData), LocalBuildSerial]() mutable
                 {
                     if (!WeakThis.IsValid()) return;
-
-                    if (WeakThis->InFlightBuildSerial != LocalBuildSerial)
-                        return;
+                    if (WeakThis->InFlightBuildSerial != LocalBuildSerial) return;
 
                     WeakThis->PendingResult.bValid = true;
                     WeakThis->PendingResult.BuildSerial = LocalBuildSerial;
