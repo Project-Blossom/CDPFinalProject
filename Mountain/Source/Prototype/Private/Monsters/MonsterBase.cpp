@@ -16,6 +16,7 @@ AMonsterBase::AMonsterBase()
     // Hearing Config (기본값 - 모든 몬스터가 사용)
     UAISenseConfig_Hearing* HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("HearingConfig"));
     HearingConfig->HearingRange = 1000.0f;
+    HearingConfig->SetMaxAge(0.2f);  // 즉시 반응
     HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
     HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
     HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;

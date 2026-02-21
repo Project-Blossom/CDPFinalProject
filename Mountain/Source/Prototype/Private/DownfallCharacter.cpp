@@ -127,11 +127,15 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateClimbingState();
     CheckForPlatformAbduction();  // 납치 체크 추가
     
-    // AI Hearing: 움직일 때 소음 발생
+    // AI Hearing: 의도적인 움직임만 소음 발생
     FVector Velocity = GetVelocity();
     float Speed = Velocity.Size();
     
-    if (Speed > 10.0f)  // 움직이고 있으면
+    // 등반 중인지 확인 (멤버 변수 사용)
+    // CRITICAL: 등반 중일 때는 더 높은 임계값 (200), 일반 이동은 100
+    float NoiseThreshold = bIsClimbing ? 200.0f : 100.0f;
+    
+    if (Speed > NoiseThreshold)
     {
         // Noise 발생
         UAISense_Hearing::ReportNoiseEvent(
@@ -144,7 +148,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
         );
         
         // 디버그 로그 (Verbose)
-        UE_LOG(LogDownFall, Verbose, TEXT("Player making noise at speed: %.1f"), Speed);
+        UE_LOG(LogDownFall, Verbose, TEXT("Player making noise at speed: %.1f (threshold: %.1f)"), Speed, NoiseThreshold);
     }
 
     // 착지 감지 및 Physics → Walking 모드 전환

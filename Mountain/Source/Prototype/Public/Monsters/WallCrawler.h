@@ -107,13 +107,28 @@ public:
     // Attack State
     // ============================================
     UPROPERTY(EditAnywhere, Category = "Attack")
-    float AttachRange = 50.0f;              // 달라붙기 범위
+    float DetectionGaugeMax = 100.0f;       // 감지 게이지 최대값
+
+    UPROPERTY(EditAnywhere, Category = "Attack")
+    float DetectionGainRate = 20.0f;        // 게이지 증가율 (초당)
+
+    UPROPERTY(EditAnywhere, Category = "Attack")
+    float DetectionDecayRate = 10.0f;       // 게이지 감소율 (초당)
+
+    UPROPERTY(BlueprintReadOnly, Category = "Attack")
+    float DetectionGauge = 0.0f;            // 현재 감지 게이지
+
+    UPROPERTY(BlueprintReadOnly, Category = "Attack")
+    AActor* PotentialTarget = nullptr;      // 감지 중인 대상 (게이지 쌓는 중)
+    
+    UPROPERTY(EditAnywhere, Category = "Attack")
+    float AttachRange = 150.0f;              // 달라붙기 범위 (증가)
 
     UPROPERTY(EditAnywhere, Category = "Attack")
     float StaminaDrainRate = 10.0f;         // Stamina 흡수율 (초당)
 
     UPROPERTY(EditAnywhere, Category = "Attack")
-    float ShakeThreshold = 500.0f;          // 떨쳐내기 임계값
+    float ShakeThreshold = 1000.0f;          // 떨쳐내기 임계값 (증가)
 
     UPROPERTY(EditAnywhere, Category = "Attack")
     float PursuitSpeed = 300.0f;            // 추격 속도
@@ -163,10 +178,14 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Attack")
     void UpdateShakeDetection(float DeltaTime); // 흔들기 감지
+    
+    UFUNCTION(BlueprintCallable, Category = "Attack")
+    void UpdateDetectionGauge(float DeltaTime); // 감지 게이지 업데이트
 
     UFUNCTION(BlueprintCallable, Category = "Movement")
     FVector ProjectToWallSurface(FVector WorldDirection);  // 벽 표면에 방향 투영
 
     // Override
     virtual void Attack() override {}       // Phase 2에서 구현
+    virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus) override;  // 게이지 방식
 };
