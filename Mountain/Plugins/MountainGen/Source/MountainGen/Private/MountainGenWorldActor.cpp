@@ -170,6 +170,150 @@ static void RestoreLockedPreset(FMountainGenSettings& Dst, const FMGLockedPreset
     Dst.CavesPerTile_Extreme = L.CavesPerTile_Extreme;
 }
 
+static void MG_CullMeshIslands(FChunkMeshData& Out, int32 MinTrisToKeep, bool bKeepLargestOnly)
+{
+    const int32 NumVerts = Out.Vertices.Num();
+    const int32 NumTris = Out.Triangles.Num() / 3;
+    if (NumVerts <= 0 || NumTris <= 0) return;
+
+    TArray<TArray<int32>> TrisPerVert;
+    TrisPerVert.SetNum(NumVerts);
+
+    for (int32 t = 0; t < NumTris; ++t)
+    {
+        const int32 i0 = Out.Triangles[t * 3 + 0];
+        const int32 i1 = Out.Triangles[t * 3 + 1];
+        const int32 i2 = Out.Triangles[t * 3 + 2];
+
+        if ((uint32)i0 >= (uint32)NumVerts || (uint32)i1 >= (uint32)NumVerts || (uint32)i2 >= (uint32)NumVerts)
+            continue;
+
+        TrisPerVert[i0].Add(t);
+        TrisPerVert[i1].Add(t);
+        TrisPerVert[i2].Add(t);
+    }
+
+    TArray<int32> TriComp;
+    TriComp.Init(-1, NumTris);
+
+    TArray<int32> CompTriCount;
+    CompTriCount.Reserve(64);
+
+    TQueue<int32> Q;
+    int32 CompId = 0;
+
+    for (int32 tStart = 0; tStart < NumTris; ++tStart)
+    {
+        if (TriComp[tStart] != -1) continue;
+
+        int32 Count = 0;
+        TriComp[tStart] = CompId;
+        Q.Enqueue(tStart);
+
+        while (!Q.IsEmpty())
+        {
+            int32 t;
+            Q.Dequeue(t);
+            ++Count;
+
+            const int32 i0 = Out.Triangles[t * 3 + 0];
+            const int32 i1 = Out.Triangles[t * 3 + 1];
+            const int32 i2 = Out.Triangles[t * 3 + 2];
+
+            auto PushNeighbors = [&](int32 v)
+                {
+                    for (int32 nt : TrisPerVert[v])
+                    {
+                        if (TriComp[nt] == -1)
+                        {
+                            TriComp[nt] = CompId;
+                            Q.Enqueue(nt);
+                        }
+                    }
+                };
+
+            PushNeighbors(i0);
+            PushNeighbors(i1);
+            PushNeighbors(i2);
+        }
+
+        CompTriCount.Add(Count);
+        ++CompId;
+    }
+
+    if (CompId <= 1) return;
+
+    int32 LargestComp = 0;
+    for (int32 c = 1; c < CompTriCount.Num(); ++c)
+    {
+        if (CompTriCount[c] > CompTriCount[LargestComp]) LargestComp = c;
+    }
+
+    TArray<uint8> KeepComp;
+    KeepComp.Init(0, CompTriCount.Num());
+
+    if (bKeepLargestOnly)
+    {
+        KeepComp[LargestComp] = 1;
+    }
+    else
+    {
+        for (int32 c = 0; c < CompTriCount.Num(); ++c)
+        {
+            if (CompTriCount[c] >= MinTrisToKeep) KeepComp[c] = 1;
+        }
+    }
+
+    TArray<int32> NewTris;
+    NewTris.Reserve(Out.Triangles.Num());
+
+    TArray<int32> NewIndex;
+    NewIndex.Init(-1, NumVerts);
+
+    TArray<FVector> NewVerts;
+    TArray<FVector> NewNormals;
+    TArray<FVector2D> NewUV0;
+    TArray<FProcMeshTangent> NewTangents;
+
+    for (int32 t = 0; t < NumTris; ++t)
+    {
+        const int32 c = TriComp[t];
+        if ((uint32)c >= (uint32)KeepComp.Num() || !KeepComp[c]) continue;
+
+        const int32 old[3] = {
+            Out.Triangles[t * 3 + 0],
+            Out.Triangles[t * 3 + 1],
+            Out.Triangles[t * 3 + 2]
+        };
+
+        int32 remap[3];
+        for (int32 k = 0; k < 3; ++k)
+        {
+            const int32 ov = old[k];
+            int32& ni = NewIndex[ov];
+            if (ni == -1)
+            {
+                ni = NewVerts.Num();
+                NewVerts.Add(Out.Vertices[ov]);
+                NewNormals.Add(Out.Normals.IsValidIndex(ov) ? Out.Normals[ov] : FVector::UpVector);
+                NewUV0.Add(Out.UV0.IsValidIndex(ov) ? Out.UV0[ov] : FVector2D::ZeroVector);
+                NewTangents.Add(Out.Tangents.IsValidIndex(ov) ? Out.Tangents[ov] : FProcMeshTangent());
+            }
+            remap[k] = ni;
+        }
+
+        NewTris.Add(remap[0]);
+        NewTris.Add(remap[1]);
+        NewTris.Add(remap[2]);
+    }
+
+    Out.Vertices = MoveTemp(NewVerts);
+    Out.Normals = MoveTemp(NewNormals);
+    Out.UV0 = MoveTemp(NewUV0);
+    Out.Tangents = MoveTemp(NewTangents);
+    Out.Triangles = MoveTemp(NewTris);
+}
+
 AMountainGenWorldActor::AMountainGenWorldActor()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -594,7 +738,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     // 0) Effective Settings
     // =========================================================
     FMountainGenSettings S = Settings;
-
     MGApplyDifficultyPreset(S);
 
     const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
@@ -737,12 +880,14 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             MeshData
         );
 
+        MG_CullMeshIslands(MeshData, 200, true);
+
         ProcMesh->ClearAllMeshSections();
         ProcMesh->ClearCollisionConvexMeshes();
 
         if (MeshData.Vertices.Num() == 0 || MeshData.Triangles.Num() == 0)
         {
-            UI_Status(TEXT("[MountainGen][Editor] MeshData 비어있음 (생성 실패)"), 2.0f, FColor::Red);
+            UI_Status(TEXT("[MountainGen][Editor] MeshData 비어있음 (생성 실패/섬 제거로 모두 삭제됨)"), 2.0f, FColor::Red);
             return;
         }
 
@@ -864,6 +1009,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 Gen,
                 MeshData
             );
+
+            MG_CullMeshIslands(MeshData, 200, true);
 
             // 4) 결과 전달
             AsyncTask(ENamedThreads::GameThread,
