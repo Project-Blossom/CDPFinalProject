@@ -44,6 +44,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MountainGen")
     void RandomizeSeed();
 
+    UFUNCTION()
+    void CycleDifficulty();
+
 public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen")
     TObjectPtr<UProceduralMeshComponent> ProcMesh;

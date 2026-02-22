@@ -245,6 +245,9 @@ void AMountainGenWorldActor::BeginPlay()
     InputComponent->BindKey(EKeys::NumPadOne, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
 
     UI_Status(TEXT("[MountainGen] 1 키: 시드 랜덤 변경"), 2.0f, FColor::Green);
+
+    InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AMountainGenWorldActor::CycleDifficulty);
+    InputComponent->BindKey(EKeys::NumPadTwo, IE_Pressed, this, &AMountainGenWorldActor::CycleDifficulty);
 }
 
 void AMountainGenWorldActor::Tick(float DeltaSeconds)
@@ -365,6 +368,46 @@ void AMountainGenWorldActor::RandomizeSeed()
     BuildChunkAndMesh();
 }
 
+void AMountainGenWorldActor::CycleDifficulty()
+{
+    using ED = EMountainGenDifficulty;
+
+    switch (Settings.Difficulty)
+    {
+    case ED::Easy:
+        Settings.Difficulty = ED::Normal;
+        break;
+
+    case ED::Normal:
+        Settings.Difficulty = ED::Hard;
+        break;
+
+    case ED::Hard:
+        Settings.Difficulty = ED::Easy;
+        break;
+
+    default:
+        Settings.Difficulty = ED::Easy;
+        break;
+    }
+
+    FString DifficultyText;
+    switch (Settings.Difficulty)
+    {
+    case ED::Easy:   DifficultyText = TEXT("Easy");   break;
+    case ED::Normal: DifficultyText = TEXT("Normal"); break;
+    case ED::Hard:   DifficultyText = TEXT("Hard");   break;
+    default:         DifficultyText = TEXT("Unknown"); break;
+    }
+
+    UI_Status(
+        FString::Printf(TEXT("[MountainGen] 난이도 변경 → %s"), *DifficultyText),
+        2.0f,
+        FColor::Green
+    );
+
+    BuildChunkAndMesh();
+}
 
 void AMountainGenWorldActor::BuildChunkAndMesh()
 {
