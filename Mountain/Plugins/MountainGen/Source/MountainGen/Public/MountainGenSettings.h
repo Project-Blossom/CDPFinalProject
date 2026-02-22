@@ -9,7 +9,6 @@ enum class EMountainGenDifficulty : uint8
     Easy     UMETA(DisplayName = "Easy"),
     Normal   UMETA(DisplayName = "Normal"),
     Hard     UMETA(DisplayName = "Hard"),
-    Extreme  UMETA(DisplayName = "Extreme"),
 };
 
 // ============================================================
@@ -144,7 +143,7 @@ struct FMountainGenSettings
     float GravityScale = 2.0f;
 
     // ========================================================
-    // 7) Warp (이름 통일)
+    // 7) Warp
     // ========================================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Warp")
     float WarpPatchSizeCm = 15000.f;
@@ -156,10 +155,8 @@ struct FMountainGenSettings
     float WarpStrength = 1.0f;
 
     // ========================================================
-    // 8) Cliff Base (절벽 유지 핵심)
+    // 8) Cliff Base
     // ========================================================
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff")
-    bool bUseCliffBase = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "1000.0"))
     float CliffHalfWidthCm = 30000.f;
@@ -228,9 +225,6 @@ struct FMountainGenSettings
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves", meta = (ClampMin = "0", ClampMax = "64"))
     int32 CavesPerTile_Hard = 2;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Caves", meta = (ClampMin = "0", ClampMax = "64"))
-    int32 CavesPerTile_Extreme = 3;
 
     // ========================================================
     // 10) Meshing

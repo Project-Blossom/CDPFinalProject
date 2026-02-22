@@ -19,156 +19,7 @@
 #include "Engine/Engine.h"
 #include "HAL/PlatformTime.h"
 #include "Async/ParallelFor.h"
-
-struct FMGLockedPreset
-{
-    FMGTargets Targets;
-
-    float BaseField3DStrengthCm = 0.f;
-    float BaseField3DScaleCm = 0.f;
-    int32 BaseField3DOctaves = 0;
-    float DetailScaleCm = 0.f;
-    int32 DetailOctaves = 0;
-
-    float VolumeStrength = 0.f;
-    float OverhangScaleCm = 0.f;
-    float OverhangBias = 0.f;
-    float OverhangDepthCm = 0.f;
-    float OverhangFadeCm = 0.f;
-
-    float GravityStrength = 0.f;
-    float GravityScale = 0.f;
-
-    float WarpPatchSizeCm = 0.f;
-    float WarpPatchAmpCm = 0.f;
-    float WarpStrength = 0.f;
-
-    bool  bUseCliffBase = false;
-    float CliffHalfWidthCm = 0.f;
-    float CliffHeightCm = 0.f;
-    float CliffThicknessCm = 0.f;
-    float CliffDepthCm = 0.f;
-    float FrontBandDepthCm = 0.f;
-    float CliffSurfaceScaleCm = 0.f;
-    float CliffSurfaceAmpCm = 0.f;
-
-    bool  bEnableCaves = false;
-    float CaveStrength = 0.f;
-    float CaveScaleCm = 0.f;
-    float CaveThreshold = 0.f;
-    float CaveBand = 0.f;
-    float CaveDepthCm = 0.f;
-    float CaveNearSurfaceCm = 0.f;
-
-    float CaveTileSizeCm = 0.f;
-    float CaveDiameterCm = 0.f;
-    int32 CaveMinSolidNeighbors = 0;
-
-    int32 CavesPerTile_Easy = 0;
-    int32 CavesPerTile_Normal = 0;
-    int32 CavesPerTile_Hard = 0;
-    int32 CavesPerTile_Extreme = 0;
-};
-
-static void SaveLockedPreset(const FMountainGenSettings& Src, FMGLockedPreset& Out)
-{
-    Out.Targets = Src.Targets;
-
-    Out.BaseField3DStrengthCm = Src.BaseField3DStrengthCm;
-    Out.BaseField3DScaleCm = Src.BaseField3DScaleCm;
-    Out.BaseField3DOctaves = Src.BaseField3DOctaves;
-    Out.DetailScaleCm = Src.DetailScaleCm;
-    Out.DetailOctaves = Src.DetailOctaves;
-
-    Out.VolumeStrength = Src.VolumeStrength;
-    Out.OverhangScaleCm = Src.OverhangScaleCm;
-    Out.OverhangBias = Src.OverhangBias;
-    Out.OverhangDepthCm = Src.OverhangDepthCm;
-    Out.OverhangFadeCm = Src.OverhangFadeCm;
-
-    Out.GravityStrength = Src.GravityStrength;
-    Out.GravityScale = Src.GravityScale;
-
-    Out.WarpPatchSizeCm = Src.WarpPatchSizeCm;
-    Out.WarpPatchAmpCm = Src.WarpPatchAmpCm;
-    Out.WarpStrength = Src.WarpStrength;
-
-    Out.bUseCliffBase = Src.bUseCliffBase;
-    Out.CliffHalfWidthCm = Src.CliffHalfWidthCm;
-    Out.CliffHeightCm = Src.CliffHeightCm;
-    Out.CliffThicknessCm = Src.CliffThicknessCm;
-    Out.CliffDepthCm = Src.CliffDepthCm;
-    Out.FrontBandDepthCm = Src.FrontBandDepthCm;
-    Out.CliffSurfaceScaleCm = Src.CliffSurfaceScaleCm;
-    Out.CliffSurfaceAmpCm = Src.CliffSurfaceAmpCm;
-
-    Out.bEnableCaves = Src.bEnableCaves;
-    Out.CaveStrength = Src.CaveStrength;
-    Out.CaveScaleCm = Src.CaveScaleCm;
-    Out.CaveThreshold = Src.CaveThreshold;
-    Out.CaveBand = Src.CaveBand;
-    Out.CaveDepthCm = Src.CaveDepthCm;
-    Out.CaveNearSurfaceCm = Src.CaveNearSurfaceCm;
-
-    Out.CaveTileSizeCm = Src.CaveTileSizeCm;
-    Out.CaveDiameterCm = Src.CaveDiameterCm;
-    Out.CaveMinSolidNeighbors = Src.CaveMinSolidNeighbors;
-
-    Out.CavesPerTile_Easy = Src.CavesPerTile_Easy;
-    Out.CavesPerTile_Normal = Src.CavesPerTile_Normal;
-    Out.CavesPerTile_Hard = Src.CavesPerTile_Hard;
-    Out.CavesPerTile_Extreme = Src.CavesPerTile_Extreme;
-}
-
-static void RestoreLockedPreset(FMountainGenSettings& Dst, const FMGLockedPreset& L)
-{
-    Dst.Targets = L.Targets;
-
-    Dst.BaseField3DStrengthCm = L.BaseField3DStrengthCm;
-    Dst.BaseField3DScaleCm = L.BaseField3DScaleCm;
-    Dst.BaseField3DOctaves = L.BaseField3DOctaves;
-    Dst.DetailScaleCm = L.DetailScaleCm;
-    Dst.DetailOctaves = L.DetailOctaves;
-
-    Dst.VolumeStrength = L.VolumeStrength;
-    Dst.OverhangScaleCm = L.OverhangScaleCm;
-    Dst.OverhangBias = L.OverhangBias;
-    Dst.OverhangDepthCm = L.OverhangDepthCm;
-    Dst.OverhangFadeCm = L.OverhangFadeCm;
-
-    Dst.GravityStrength = L.GravityStrength;
-    Dst.GravityScale = L.GravityScale;
-
-    Dst.WarpPatchSizeCm = L.WarpPatchSizeCm;
-    Dst.WarpPatchAmpCm = L.WarpPatchAmpCm;
-    Dst.WarpStrength = L.WarpStrength;
-
-    Dst.bUseCliffBase = L.bUseCliffBase;
-    Dst.CliffHalfWidthCm = L.CliffHalfWidthCm;
-    Dst.CliffHeightCm = L.CliffHeightCm;
-    Dst.CliffThicknessCm = L.CliffThicknessCm;
-    Dst.CliffDepthCm = L.CliffDepthCm;
-    Dst.FrontBandDepthCm = L.FrontBandDepthCm;
-    Dst.CliffSurfaceScaleCm = L.CliffSurfaceScaleCm;
-    Dst.CliffSurfaceAmpCm = L.CliffSurfaceAmpCm;
-
-    Dst.bEnableCaves = L.bEnableCaves;
-    Dst.CaveStrength = L.CaveStrength;
-    Dst.CaveScaleCm = L.CaveScaleCm;
-    Dst.CaveThreshold = L.CaveThreshold;
-    Dst.CaveBand = L.CaveBand;
-    Dst.CaveDepthCm = L.CaveDepthCm;
-    Dst.CaveNearSurfaceCm = L.CaveNearSurfaceCm;
-
-    Dst.CaveTileSizeCm = L.CaveTileSizeCm;
-    Dst.CaveDiameterCm = L.CaveDiameterCm;
-    Dst.CaveMinSolidNeighbors = L.CaveMinSolidNeighbors;
-
-    Dst.CavesPerTile_Easy = L.CavesPerTile_Easy;
-    Dst.CavesPerTile_Normal = L.CavesPerTile_Normal;
-    Dst.CavesPerTile_Hard = L.CavesPerTile_Hard;
-    Dst.CavesPerTile_Extreme = L.CavesPerTile_Extreme;
-}
+#include "Containers/Queue.h"
 
 static void MG_CullMeshIslands(FChunkMeshData& Out, int32 MinTrisToKeep, bool bKeepLargestOnly)
 {
@@ -342,150 +193,9 @@ static bool MG_InRange(float V, float Min, float Max)
     return (V >= Min && V <= Max);
 }
 
-static int32 MG_CaveCountPerTile(const FMountainGenSettings& S)
-{
-    switch (S.Difficulty)
-    {
-    case EMountainGenDifficulty::Easy:     return S.CavesPerTile_Easy;
-    case EMountainGenDifficulty::Normal:   return S.CavesPerTile_Normal;
-    case EMountainGenDifficulty::Hard:     return S.CavesPerTile_Hard;
-    case EMountainGenDifficulty::Extreme:  return S.CavesPerTile_Extreme;
-    default:                               return S.CavesPerTile_Easy;
-    }
-}
-
 static FORCEINLINE bool MG_IsInside(int32 x, int32 y, int32 z, int32 SX, int32 SY, int32 SZ)
 {
     return (x >= 0 && y >= 0 && z >= 0 && x < SX && y < SY && z < SZ);
-}
-
-static void MG_CarveCaves_PostProcess(
-    FVoxelChunk& Chunk,
-    const FMountainGenSettings& S,
-    const FVector& SampleOriginWorld,
-    float VoxelSizeCm)
-{
-    if (!S.bEnableCaves)
-        return;
-
-    const float Iso = S.IsoLevel;
-
-    const float TileSizeCm = FMath::Max(1000.f, S.CaveTileSizeCm);
-    const float CaveDiameter = FMath::Max(10.f, S.CaveDiameterCm);
-    const float CaveRadiusCm = CaveDiameter * 0.5f;
-
-    const int32 NPerTile = MG_CaveCountPerTile(S);
-    if (NPerTile <= 0)
-        return;
-
-    const int32 SX = Chunk.SizeX;
-    const int32 SY = Chunk.SizeY;
-    const int32 SZ = Chunk.SizeZ;
-
-    const float LocalSizeX = (SX - 1) * VoxelSizeCm;
-    const float LocalSizeY = (SY - 1) * VoxelSizeCm;
-    const float LocalSizeZ = (SZ - 1) * VoxelSizeCm;
-
-    const int32 NumTilesX = FMath::Max(1, FMath::CeilToInt(LocalSizeX / TileSizeCm));
-    const int32 NumTilesY = FMath::Max(1, FMath::CeilToInt(LocalSizeY / TileSizeCm));
-
-    const int32 Rv = FMath::Max(1, FMath::CeilToInt(CaveRadiusCm / VoxelSizeCm));
-    const int32 MinNeighbors = FMath::Clamp(S.CaveMinSolidNeighbors, 0, 6);
-
-    const uint32 BaseSeed = (uint32)FMath::Max(1, S.Seed);
-    const uint32 CaveBaseSeed = BaseSeed ^ 0xC0A51234u;
-
-    auto WorldToVoxel = [&](const FVector& WorldPos) -> FIntVector
-        {
-            const FVector L = (WorldPos - SampleOriginWorld) / VoxelSizeCm;
-            return FIntVector(FMath::RoundToInt(L.X), FMath::RoundToInt(L.Y), FMath::RoundToInt(L.Z));
-        };
-
-    auto VoxelToWorld = [&](int32 x, int32 y, int32 z) -> FVector
-        {
-            return SampleOriginWorld + FVector(x * VoxelSizeCm, y * VoxelSizeCm, z * VoxelSizeCm);
-        };
-
-    auto DensityAt = [&](int32 x, int32 y, int32 z) -> float
-        {
-            if (!MG_IsInside(x, y, z, SX, SY, SZ)) return Iso - 1.f;
-            return Chunk.Get(x, y, z);
-        };
-
-    auto CountSolidNeighbors6 = [&](int32 x, int32 y, int32 z) -> int32
-        {
-            int32 c = 0;
-            c += (DensityAt(x - 1, y, z) >= Iso) ? 1 : 0;
-            c += (DensityAt(x + 1, y, z) >= Iso) ? 1 : 0;
-            c += (DensityAt(x, y - 1, z) >= Iso) ? 1 : 0;
-            c += (DensityAt(x, y + 1, z) >= Iso) ? 1 : 0;
-            c += (DensityAt(x, y, z - 1) >= Iso) ? 1 : 0;
-            c += (DensityAt(x, y, z + 1) >= Iso) ? 1 : 0;
-            return c;
-        };
-
-    auto CarveSphereAtVoxel = [&](const FIntVector& C)
-        {
-            const FVector Cw = VoxelToWorld(C.X, C.Y, C.Z);
-
-            for (int32 z = C.Z - Rv; z <= C.Z + Rv; ++z)
-                for (int32 y = C.Y - Rv; y <= C.Y + Rv; ++y)
-                    for (int32 x = C.X - Rv; x <= C.X + Rv; ++x)
-                    {
-                        if (!MG_IsInside(x, y, z, SX, SY, SZ)) continue;
-
-                        const FVector P = VoxelToWorld(x, y, z);
-                        if (FVector::Distance(P, Cw) > CaveRadiusCm) continue;
-
-                        Chunk.Set(x, y, z, Iso - 1.f);
-                    }
-        };
-
-    for (int32 Ty = 0; Ty < NumTilesY; ++Ty)
-        for (int32 Tx = 0; Tx < NumTilesX; ++Tx)
-        {
-            const uint32 TileSeed =
-                CaveBaseSeed ^
-                (uint32)(Tx * 73856093) ^
-                (uint32)(Ty * 19349663) ^
-                0xA53C9E2Du;
-
-            FRandomStream Rng((int32)TileSeed);
-
-            for (int32 i = 0; i < NPerTile; ++i)
-            {
-                const int32 MaxTry = 24;
-
-                for (int32 t = 0; t < MaxTry; ++t)
-                {
-                    const float TileOriginX = (float)Tx * TileSizeCm;
-                    const float TileOriginY = (float)Ty * TileSizeCm;
-
-                    const float X0 = TileOriginX;
-                    const float Y0 = TileOriginY;
-                    const float X1 = FMath::Min(TileOriginX + TileSizeCm, LocalSizeX);
-                    const float Y1 = FMath::Min(TileOriginY + TileSizeCm, LocalSizeY);
-
-                    if ((X1 - X0) < VoxelSizeCm * 2.f || (Y1 - Y0) < VoxelSizeCm * 2.f)
-                        continue;
-
-                    const float LocalX = Rng.FRandRange(X0 + 100.f, X1 - 100.f);
-                    const float LocalY = Rng.FRandRange(Y0 + 100.f, Y1 - 100.f);
-                    const float LocalZ = Rng.FRandRange(VoxelSizeCm * 2.f, LocalSizeZ - VoxelSizeCm * 2.f);
-
-                    const FVector WorldPos = SampleOriginWorld + FVector(LocalX, LocalY, LocalZ);
-                    const FIntVector C = WorldToVoxel(WorldPos);
-
-                    if (!MG_IsInside(C.X, C.Y, C.Z, SX, SY, SZ)) continue;
-
-                    if (DensityAt(C.X, C.Y, C.Z) < Iso) continue;
-                    if (CountSolidNeighbors6(C.X, C.Y, C.Z) < MinNeighbors) continue;
-
-                    CarveSphereAtVoxel(C);
-                    break;
-                }
-            }
-        }
 }
 
 FString AMountainGenWorldActor::MakeMetricsLine(
@@ -509,7 +219,6 @@ void AMountainGenWorldActor::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
 
-    ApplyDifficultyPreset();
     BuildChunkAndMesh();
 }
 
@@ -656,76 +365,6 @@ void AMountainGenWorldActor::RandomizeSeed()
     BuildChunkAndMesh();
 }
 
-void AMountainGenWorldActor::ApplyDifficultyPresetTo(FMountainGenSettings& S)
-{
-    switch (S.Difficulty)
-    {
-    case EMountainGenDifficulty::Easy:
-        S.Targets.OverhangMin = 0.00f; S.Targets.OverhangMax = 0.05f;
-        S.Targets.SteepMin = 0.05f; S.Targets.SteepMax = 0.20f;
-
-        S.BaseField3DStrengthCm = 5000.f;
-        S.BaseField3DScaleCm = 22000.f;
-        S.DetailScaleCm = 9000.f;
-        S.VolumeStrength = 0.20f;
-        S.OverhangScaleCm = 14000.f;
-        S.OverhangFadeCm = 28000.f;
-        S.OverhangBias = 0.70f;
-        S.GravityStrength = 1.30f;
-        S.GravityScale = 2.5f;
-        break;
-
-    case EMountainGenDifficulty::Normal:
-        S.Targets.OverhangMin = 0.02f; S.Targets.OverhangMax = 0.10f;
-        S.Targets.SteepMin = 0.15f; S.Targets.SteepMax = 0.35f;
-
-        S.BaseField3DStrengthCm = 8500.f;
-        S.BaseField3DScaleCm = 18000.f;
-        S.DetailScaleCm = 7000.f;
-        S.VolumeStrength = 0.55f;
-        S.OverhangScaleCm = 10000.f;
-        S.OverhangFadeCm = 20000.f;
-        S.OverhangBias = 0.60f;
-        S.GravityStrength = 1.10f;
-        S.GravityScale = 2.2f;
-        break;
-
-    case EMountainGenDifficulty::Hard:
-        S.Targets.OverhangMin = 0.06f; S.Targets.OverhangMax = 0.18f;
-        S.Targets.SteepMin = 0.25f; S.Targets.SteepMax = 0.55f;
-
-        S.BaseField3DStrengthCm = 12000.f;
-        S.BaseField3DScaleCm = 16000.f;
-        S.DetailScaleCm = 6000.f;
-        S.VolumeStrength = 1.00f;
-        S.OverhangScaleCm = 8000.f;
-        S.OverhangFadeCm = 15000.f;
-        S.OverhangBias = 0.55f;
-        S.GravityStrength = 1.00f;
-        S.GravityScale = 2.0f;
-        break;
-
-    case EMountainGenDifficulty::Extreme:
-        S.Targets.OverhangMin = 0.12f; S.Targets.OverhangMax = 0.30f;
-        S.Targets.SteepMin = 0.40f; S.Targets.SteepMax = 0.80f;
-
-        S.BaseField3DStrengthCm = 17000.f;
-        S.BaseField3DScaleCm = 12000.f;
-        S.DetailScaleCm = 4200.f;
-        S.VolumeStrength = 1.60f;
-        S.OverhangScaleCm = 6000.f;
-        S.OverhangFadeCm = 9000.f;
-        S.OverhangBias = 0.48f;
-        S.GravityStrength = 0.85f;
-        S.GravityScale = 1.7f;
-        break;
-    }
-}
-
-void AMountainGenWorldActor::ApplyDifficultyPreset()
-{
-    ApplyDifficultyPresetTo(Settings);
-}
 
 void AMountainGenWorldActor::BuildChunkAndMesh()
 {
@@ -743,31 +382,21 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
 
     const FVector ActorWorld = GetActorLocation();
-    const FVector TerrainOriginWorld = ActorWorld;
 
-    float XMinLocal = -S.ChunkX * Voxel * 0.5f;
-    float XMaxLocal = S.ChunkX * Voxel * 0.5f;
-    float YMinLocal = -S.ChunkY * Voxel * 0.5f;
-    float YMaxLocal = S.ChunkY * Voxel * 0.5f;
-    float ZMinLocal = S.BaseHeightCm;
-    float ZMaxLocal = S.BaseHeightCm + S.ChunkZ * Voxel;
+    const float FrontX = FMath::Max(200.f, S.CliffThicknessCm);
 
-    if (S.bUseCliffBase)
-    {
-        const float Band = FMath::Max(S.CliffDepthCm, Voxel * 2.f);
-        const float HalfW = FMath::Max(1.f, S.CliffHalfWidthCm);
-        const float H = FMath::Max(1.f, S.CliffHeightCm);
-        const float FrontX = S.CliffThicknessCm;
+    FVector TerrainOriginWorld = ActorWorld - FVector(FrontX, 0.f, 0.f);
 
-        XMinLocal = FrontX - Band;
-        XMaxLocal = FrontX + Band;
+    const float Band = FMath::Max(S.CliffDepthCm, Voxel * 2.f);
+    const float HalfW = FMath::Max(1.f, S.CliffHalfWidthCm);
+    const float H = FMath::Max(1.f, S.CliffHeightCm);
 
-        YMinLocal = -HalfW;
-        YMaxLocal = +HalfW;
-
-        ZMinLocal = S.BaseHeightCm;
-        ZMaxLocal = S.BaseHeightCm + H;
-    }
+    const float XMinLocal = FrontX - Band;
+    const float XMaxLocal = FrontX + Band;
+    const float YMinLocal = -HalfW;
+    const float YMaxLocal = +HalfW;
+    const float ZMinLocal = S.BaseHeightCm;
+    const float ZMaxLocal = S.BaseHeightCm + H;
 
     const FVector SampleOriginWorld = TerrainOriginWorld + FVector(XMinLocal, YMinLocal, ZMinLocal);
     const FVector ChunkOriginWorld = SampleOriginWorld;
@@ -915,8 +544,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         // Settings에는 최종 seed만 반영
         Settings.Seed = S.Seed;
 
-        UI_Status(FString::Printf(TEXT("[MountainGen][Editor] Seed=%d (CliffBase=%s)"),
-            Settings.Seed, S.bUseCliffBase ? TEXT("true") : TEXT("false")), 2.0f, FColor::Green);
+        UI_Status(FString::Printf(TEXT("[MountainGen][Editor] Seed=%d"), Settings.Seed),
+            2.0f, FColor::Green);
 
         return;
     }
@@ -1039,7 +668,6 @@ void AMountainGenWorldActor::PostEditChangeProperty(FPropertyChangedEvent& Prope
     Super::PostEditChangeProperty(PropertyChangedEvent);
     if (!PropertyChangedEvent.Property) return;
 
-    ApplyDifficultyPreset();
     BuildChunkAndMesh();
 }
 #endif

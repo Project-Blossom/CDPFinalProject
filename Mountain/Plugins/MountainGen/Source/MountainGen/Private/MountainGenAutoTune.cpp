@@ -196,13 +196,6 @@ FMGMetrics MGComputeMetrics_RaycastYZ(
 
 FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
 {
-    // ✅ Extreme은 없앤다: 내부적으로 Hard로 동작
-    // (enum/블루프린트 레퍼런스 안 깨지게 유지)
-    if (D == EMountainGenDifficulty::Extreme)
-    {
-        D = EMountainGenDifficulty::Hard;
-    }
-
     FMGDifficultyPreset P;
     auto& B = P.Bounds;
 
