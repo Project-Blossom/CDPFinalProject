@@ -86,17 +86,29 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
 
     float density = (FrontX - Local.X);
 
-    // -----------------------------
-    // Overhang
-    // -----------------------------
+    // -------------------------------------------------
+    // 3) Overhang / Undercut field 
+    // -------------------------------------------------
     {
-        const float curve = FMath::Pow(z01, 1.8f);
+        const float insideDepth = (FrontX - Local.X);
 
-        const float OverhangAmp =
-            FMath::Clamp(S.OverhangDepthCm, 0.f, 20000.f) *
-            FMath::Clamp(S.VolumeStrength, 0.f, 3.0f);
+        const float band = FMath::Max(Voxel * 3.f, FMath::Min(S.OverhangFadeCm, 6000.f));
 
-        density += curve * OverhangAmp;
+        const float d = FMath::Max(0.f, insideDepth);
+        const float nearFaceMask = 1.f - SmoothStep(0.f, band, d);
+
+        const float mid = 1.f - FMath::Abs(2.f * z01 - 1.f);
+        const float heightMask = FMath::Pow(FMath::Clamp(mid, 0.f, 1.f), 1.6f);
+
+        const float Scale = FMath::Max(200.f, S.OverhangScaleCm);
+        const float r = RidgedFBM01(SeededDomain(Local) / Scale, 5, 2.0f, 0.55f); // 0..1
+
+        const float bias = FMath::Clamp(S.OverhangBias, 0.0f, 1.0f);
+        const float shaped = (r - bias);
+
+        const float Amp = FMath::Max(0.f, S.VolumeStrength) * FMath::Max(0.f, S.OverhangDepthCm);
+
+        density += shaped * Amp * nearFaceMask * heightMask;
     }
 
     // -----------------------------

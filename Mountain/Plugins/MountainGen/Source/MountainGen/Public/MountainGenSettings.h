@@ -249,4 +249,7 @@ struct FMountainGenSettings
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Metrics", meta = (ClampMin = "16", ClampMax = "4096"))
     int32 MetricsSamplesPerTry = 64;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Metrics", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+    float SteepDotOverride = -1.f;
 };
