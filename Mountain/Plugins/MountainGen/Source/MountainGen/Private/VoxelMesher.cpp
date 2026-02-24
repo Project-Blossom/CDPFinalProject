@@ -116,7 +116,6 @@ void FVoxelMesher::BuildMarchingCubes(
         FIntVector(0, 1, 1),
     };
 
-
     auto WorldP = [&](int32 x, int32 y, int32 z) -> FVector
         {
             return ChunkOriginWorld + FVector(x * VoxelSizeCm, y * VoxelSizeCm, z * VoxelSizeCm);
@@ -169,24 +168,19 @@ void FVoxelMesher::BuildMarchingCubes(
             return x + y * SX + z * SX * SY;
         };
 
-    auto AddSharedVertex = [&](const FVector& PWorld, const FVector& NIn) -> int32
+    auto AddSharedVertex = [&](const FVector& PWorld) -> int32
         {
             const int32 Idx = Out.Vertices.Num();
             Out.Vertices.Add(PWorld - ActorWorld);
 
-            FVector N = NIn;
-            N *= -1.f;
-
-            if (!N.IsNormalized()) N = FVector::UpVector;
-            Out.Normals.Add(N);
+            Out.Normals.Add(FVector::ZeroVector);
 
             const FVector PLocal = (PWorld - ActorWorld);
             Out.UV0.Add(FVector2D(PLocal.X * 0.001f, PLocal.Y * 0.001f));
 
-            Out.Tangents.Add(MakeTangentFromNormal(N));
+            Out.Tangents.Add(FProcMeshTangent());
             return Idx;
         };
-
 
     auto MakeAndCache = [&](int32 x, int32 y, int32 z, int32& CacheSlot, int32 cA, int32 cB, const float V[8], const FVector P[8]) -> int32
         {
@@ -194,20 +188,9 @@ void FVoxelMesher::BuildMarchingCubes(
 
             const FVector PV = LerpVertex(P[cA], P[cB], V[cA], V[cB], IsoLevel);
 
-            const float t = FMath::Clamp(LerpT(V[cA], V[cB], IsoLevel), 0.0f, 1.0f);
-
-            const FIntVector OA = CornerOfs[cA];
-            const FIntVector OB = CornerOfs[cB];
-
-            const FVector GA = GradAt(x + OA.X, y + OA.Y, z + OA.Z);
-            const FVector GB = GradAt(x + OB.X, y + OB.Y, z + OB.Z);
-            const FVector G = (GA + (GB - GA) * t);
-
-            const FVector N = G.GetSafeNormal();
-            CacheSlot = AddSharedVertex(PV, N);
+            CacheSlot = AddSharedVertex(PV);
             return CacheSlot;
         };
-
 
     auto GetEdgeVertexIndex = [&](int32 x, int32 y, int32 z, int32 e, const float V[8], const FVector P[8]) -> int32
         {
@@ -292,8 +275,32 @@ void FVoxelMesher::BuildMarchingCubes(
                     Out.Triangles.Add(iA);
                     Out.Triangles.Add(iC);
                     Out.Triangles.Add(iB);
+
+                    const FVector A = Out.Vertices[iA];
+                    const FVector B = Out.Vertices[iB];
+                    const FVector C = Out.Vertices[iC];
+
+                    FVector FaceN = FVector::CrossProduct(C - A, B - A);
+                    if (!FaceN.IsNearlyZero())
+                    {
+                        FaceN.Normalize();
+                        Out.Normals[iA] += FaceN;
+                        Out.Normals[iB] += FaceN;
+                        Out.Normals[iC] += FaceN;
+                    }
                 }
             }
         }
+    }
+
+    for (int32 i = 0; i < Out.Normals.Num(); ++i)
+    {
+        FVector N = Out.Normals[i];
+        if (!N.Normalize())
+        {
+            N = FVector::UpVector;
+        }
+        Out.Normals[i] = N;
+        Out.Tangents[i] = MakeTangentFromNormal(N);
     }
 }

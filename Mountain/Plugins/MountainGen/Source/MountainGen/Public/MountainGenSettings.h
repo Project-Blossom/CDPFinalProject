@@ -92,19 +92,19 @@ struct FMountainGenSettings
     float BaseHeightCm = 0.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Base", meta = (ClampMin = "1000.0"))
-    float HeightAmpCm = 30000.f;
+    float HeightAmpCm = 48000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Base", meta = (ClampMin = "1000.0"))
-    float EnvelopeRadiusCm = 32000.f;
+    float EnvelopeRadiusCm = 48000.f;
 
     // ========================================================
     // 4) Density Field
     // ========================================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Field3D")
-    float BaseField3DStrengthCm = 12000.f;
+    float BaseField3DStrengthCm = 18000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Field3D")
-    float BaseField3DScaleCm = 16000.f;
+    float BaseField3DScaleCm = 18000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Field3D", meta = (ClampMin = "1", ClampMax = "12"))
     int32 BaseField3DOctaves = 4;
@@ -140,13 +140,13 @@ struct FMountainGenSettings
     float GravityStrength = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Gravity", meta = (ClampMin = "0.1"))
-    float GravityScale = 2.0f;
+    float GravityScale = 3.0f;
 
     // ========================================================
     // 7) Warp
     // ========================================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Warp")
-    float WarpPatchSizeCm = 15000.f;
+    float WarpPatchSizeCm = 40000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Warp")
     float WarpPatchAmpCm = 6000.f;
@@ -159,10 +159,10 @@ struct FMountainGenSettings
     // ========================================================
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "1000.0"))
-    float CliffHalfWidthCm = 30000.f;
+    float CliffHalfWidthCm = 40000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "1000.0"))
-    float CliffHeightCm = 35000.f;
+    float CliffHeightCm = 80000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "200.0"))
     float CliffThicknessCm = 20000.f;
