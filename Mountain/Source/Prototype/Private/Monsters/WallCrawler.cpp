@@ -9,8 +9,6 @@ AWallCrawler::AWallCrawler()
 {
     GetCharacterMovement()->GravityScale = 0.0f;
     GetCharacterMovement()->SetMovementMode(MOVE_Flying);
-    
-    // Collision 설정 - 플레이어와 Overlap만 감지 (밀리지 않음)
     GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 }
 
@@ -18,22 +16,18 @@ void AWallCrawler::BeginPlay()
 {
     Super::BeginPlay();
     
-    // CRITICAL: WallCrawler는 Hearing만 사용 (방향 무관)
+    // Hearing만 사용 (방향 무관)
     if (PerceptionComponent)
     {
-        // Hearing Config 생성 및 설정
         UAISenseConfig_Hearing* HearingConfig = NewObject<UAISenseConfig_Hearing>(this);
-        HearingConfig->HearingRange = 1000.0f;  // 10m
-        HearingConfig->SetMaxAge(0.2f);  // 0.2초로 단축 (즉시 반응)
+        HearingConfig->HearingRange = 1000.0f;
+        HearingConfig->SetMaxAge(0.2f);
         HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
         HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
         HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
         
-        // Hearing을 재설정하고 Dominant로 강제
         PerceptionComponent->ConfigureSense(*HearingConfig);
         PerceptionComponent->SetDominantSense(HearingConfig->GetSenseImplementation());
-        
-        UE_LOG(LogMonster, Warning, TEXT("%s configured Hearing-only (Range: 1000cm)"), *GetName());
     }
 
     FVector WallNormal, HitLocation;
@@ -56,8 +50,6 @@ void AWallCrawler::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
 
     UpdateWallAlignment();
-    
-    // 감지 게이지 업데이트
     UpdateDetectionGauge(DeltaTime);
 
     if (bAttachedToPlayer)
@@ -71,16 +63,12 @@ void AWallCrawler::Tick(float DeltaTime)
         {
             float Distance = FVector::Dist(GetActorLocation(), TargetPlayer->GetActorLocation());
             
-            // CRITICAL: 범위 체크 (1500cm = 15m, Hearing Range보다 50% 더 멀리)
             if (Distance > 1500.0f)
             {
-                // 너무 멀어짐 - Target 해제
                 TargetPlayer = nullptr;
-                UE_LOG(LogMonster, Warning, TEXT("%s lost player (too far: %.1f)"), *GetName(), Distance);
             }
             else if (Distance <= AttachRange)
             {
-                // 범위 내 도달 → 달라붙기!
                 AttachToPlayer(TargetPlayer);
             }
             else
@@ -95,72 +83,40 @@ void AWallCrawler::Tick(float DeltaTime)
     }
 
 #if !UE_BUILD_SHIPPING
-    // 달라붙었을 때는 디버그 표시 안 함
     if (!bAttachedToPlayer)
     {
         FVector ActorLoc = GetActorLocation();
-    
-    /* === 디버그 시각화 (필요시 주석 해제) === */
-    
-    /* 벽 Normal & 접촉점
-    if (bIsOnWall)
-    {
-        DrawDebugLine(GetWorld(), ActorLoc, ActorLoc + CurrentWallNormal * 100.0f, FColor::Blue, false, 0.1f, 0, 3.0f);
-        DrawDebugSphere(GetWorld(), WallHitLocation, 10.0f, 8, FColor::Green, false, 0.1f, 0, 2.0f);
-    }
-    */
-    
-    /* 배회 경로
-    if (PatrolWaypoints.Num() > 0)
-    {
-        for (int32 i = 0; i < PatrolWaypoints.Num(); i++)
-        {
-            int32 NextIndex = (i + 1) % PatrolWaypoints.Num();
-            DrawDebugLine(GetWorld(), PatrolWaypoints[i], PatrolWaypoints[NextIndex], FColor::Yellow, false, 0.1f, 0, 2.0f);
-            DrawDebugSphere(GetWorld(), PatrolWaypoints[i], 8.0f, 6, 
-                (i == CurrentWaypointIndex) ? FColor::Orange : FColor::Yellow, false, 0.1f, 0, 1.0f);
-        }
-        DrawDebugLine(GetWorld(), ActorLoc, CurrentTargetPoint, FColor::Red, false, 0.1f, 0, 3.0f);
-    }
-    */
-    
-    /* 추격 선
-    if (TargetPlayer)
-    {
-        DrawDebugLine(GetWorld(), ActorLoc, TargetPlayer->GetActorLocation(), FColor::Red, false, 0.1f, 0, 3.0f);
-    }
-    */
-    
-    // AI 감지 범위
-    DrawDebugSphere(GetWorld(), ActorLoc, 1000.0f, 16, FColor::Yellow, false, 0.1f, 0, 1.0f);
-    
-    // 상태 텍스트
-    DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 50), 
-        bAttachedToPlayer ? TEXT("ATTACHED") : (bIsOnWall ? TEXT("ON WALL") : TEXT("NO WALL")),
-        nullptr, bAttachedToPlayer ? FColor::Red : (bIsOnWall ? FColor::Green : FColor::Red), 0.0f, true);
-    
-    // Detection Gauge (감지 게이지)
-    if (DetectionGauge > 0.0f || PotentialTarget)
-    {
-        FColor GaugeColor = DetectionGauge >= DetectionGaugeMax ? FColor::Red : 
-                           DetectionGauge > DetectionGaugeMax * 0.5f ? FColor::Orange : FColor::Yellow;
         
-        DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 90), 
-            FString::Printf(TEXT("Gauge: %.0f/%.0f"), DetectionGauge, DetectionGaugeMax), 
-            nullptr, GaugeColor, 0.0f, true);
+        // AI 감지 범위
+        DrawDebugSphere(GetWorld(), ActorLoc, 1000.0f, 16, FColor::Yellow, false, 0.1f, 0, 1.0f);
+        
+        // 상태 텍스트
+        DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 50), 
+            bIsOnWall ? TEXT("ON WALL") : TEXT("NO WALL"),
+            nullptr, bIsOnWall ? FColor::Green : FColor::Red, 0.0f, true);
+        
+        // 감지 게이지
+        if (DetectionGauge > 0.0f || PotentialTarget)
+        {
+            FColor GaugeColor = DetectionGauge >= DetectionGaugeMax ? FColor::Red : 
+                               DetectionGauge > DetectionGaugeMax * 0.5f ? FColor::Orange : FColor::Yellow;
+            
+            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 90), 
+                FString::Printf(TEXT("Gauge: %.0f/%.0f"), DetectionGauge, DetectionGaugeMax), 
+                nullptr, GaugeColor, 0.0f, true);
+        }
+        
+        // Target 상태
+        if (TargetPlayer)
+        {
+            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 70), 
+                FString::Printf(TEXT("TARGET: %.0fcm"), FVector::Dist(ActorLoc, TargetPlayer->GetActorLocation())), 
+                nullptr, FColor::Red, 0.0f, true);
+        }
     }
-    
-    // TargetPlayer 상태
-    if (TargetPlayer)
-    {
-        DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 70), 
-            FString::Printf(TEXT("TARGET: %.0fcm"), FVector::Dist(ActorLoc, TargetPlayer->GetActorLocation())), 
-            nullptr, FColor::Red, 0.0f, true);
-    }
-    }  // if (!bAttachedToPlayer)
     else
     {
-        // 달라붙었을 때는 Shake 게이지만 표시
+        // Shake 게이지
         if (GEngine)
         {
             GEngine->AddOnScreenDebugMessage(-1, 0.0f, 
@@ -171,6 +127,7 @@ void AWallCrawler::Tick(float DeltaTime)
 #endif
 }
 
+// Wall Detection
 bool AWallCrawler::DetectWall(FVector& OutWallNormal, FVector& OutHitLocation)
 {
     FVector ActorLoc = GetActorLocation();
@@ -178,19 +135,18 @@ bool AWallCrawler::DetectWall(FVector& OutWallNormal, FVector& OutHitLocation)
     FVector ActorUp = GetActorUpVector();
     FVector ActorRight = GetActorRightVector();
     
-    // 다방향 Trace (더 많은 방향)
     TArray<FVector> TraceDirections;
-    TraceDirections.Add(ActorForward);                                      // 앞
-    TraceDirections.Add(-ActorUp);                                          // 아래
-    TraceDirections.Add((ActorForward - ActorUp).GetSafeNormal());         // 앞+아래
-    TraceDirections.Add((ActorForward + ActorUp).GetSafeNormal());         // 앞+위
-    TraceDirections.Add((ActorForward - ActorRight).GetSafeNormal());      // 앞+왼쪽
-    TraceDirections.Add((ActorForward + ActorRight).GetSafeNormal());      // 앞+오른쪽
-    TraceDirections.Add((ActorForward - ActorUp - ActorRight).GetSafeNormal()); // 앞+아래+왼쪽
-    TraceDirections.Add((ActorForward - ActorUp + ActorRight).GetSafeNormal()); // 앞+아래+오른쪽
+    TraceDirections.Add(ActorForward);
+    TraceDirections.Add(-ActorUp);
+    TraceDirections.Add((ActorForward - ActorUp).GetSafeNormal());
+    TraceDirections.Add((ActorForward + ActorUp).GetSafeNormal());
+    TraceDirections.Add((ActorForward - ActorRight).GetSafeNormal());
+    TraceDirections.Add((ActorForward + ActorRight).GetSafeNormal());
+    TraceDirections.Add((ActorForward - ActorUp - ActorRight).GetSafeNormal());
+    TraceDirections.Add((ActorForward - ActorUp + ActorRight).GetSafeNormal());
     
     FHitResult BestHit;
-    float ClosestDistance = WallTraceDistance * 2.0f;  // 거리 2배 증가
+    float ClosestDistance = WallTraceDistance * 2.0f;
     bool bFoundWall = false;
     
     FCollisionQueryParams Params;
@@ -203,10 +159,9 @@ bool AWallCrawler::DetectWall(FVector& OutWallNormal, FVector& OutHitLocation)
         
         if (GetWorld()->LineTraceSingleByChannel(Hit, ActorLoc, TraceEnd, ECC_WorldStatic, Params))
         {
-            float Distance = Hit.Distance;
-            if (Distance < ClosestDistance)
+            if (Hit.Distance < ClosestDistance)
             {
-                ClosestDistance = Distance;
+                ClosestDistance = Hit.Distance;
                 BestHit = Hit;
                 bFoundWall = true;
             }
@@ -233,32 +188,14 @@ void AWallCrawler::UpdateWallAlignment()
         WallHitLocation = HitLocation;
         bIsOnWall = true;
         
-        // 벽에 수직으로 회전 (보간 속도 증가)
-        FRotator TargetRotation = (-WallNormal).Rotation();
-        
-        // 급경사 대응: Normal 변화가 크면 빠르게 회전
+        // 경사 대응 회전 속도
         float NormalDifference = FVector::DotProduct(GetActorForwardVector(), -WallNormal);
+        float InterpSpeed = (FMath::Abs(NormalDifference) < 0.8f && FMath::Abs(NormalDifference) > 0.6f) ? 20.0f :
+                           (NormalDifference < 0.5f) ? 15.0f : 5.0f;
         
-        // 45도 근처 (DotProduct ~0.7)에서 특히 빠르게
-        float InterpSpeed;
-        if (FMath::Abs(NormalDifference) < 0.8f && FMath::Abs(NormalDifference) > 0.6f)
-        {
-            InterpSpeed = 20.0f;  // 45도 부근에서 매우 빠르게
-        }
-        else if (NormalDifference < 0.5f)
-        {
-            InterpSpeed = 15.0f;  // 급경사
-        }
-        else
-        {
-            InterpSpeed = 5.0f;   // 일반
-        }
-        
-        FRotator NewRotation = FMath::RInterpTo(GetActorRotation(), TargetRotation, 
+        FRotator NewRotation = FMath::RInterpTo(GetActorRotation(), (-WallNormal).Rotation(), 
             GetWorld()->GetDeltaSeconds(), InterpSpeed);
         SetActorRotation(NewRotation);
-        
-        // 벽에서 일정 거리 유지
         SetActorLocation(HitLocation + WallNormal * WallStickDistance);
     }
     else
@@ -267,25 +204,20 @@ void AWallCrawler::UpdateWallAlignment()
     }
 }
 
+// Wall Movement
 void AWallCrawler::CrawlOnWall(FVector Direction, float Speed)
 {
     if (!bIsOnWall) return;
     
-    // 방향을 벽 표면에 투영하고 정규화
     FVector ProjectedDir = ProjectToWallSurface(Direction);
-    
-    // CRITICAL: 속도 일정하게 유지 (경사 무관)
     FVector Movement = ProjectedDir * Speed * GetWorld()->GetDeltaSeconds();
-    
-    // 새 위치로 이동
     FVector NewLocation = GetActorLocation() + Movement;
     SetActorLocation(NewLocation);
     
-    // 이동 후 즉시 벽 재정렬 (경사 변화 대응)
+    // 재정렬
     FVector WallNormal, HitLocation;
     if (DetectWall(WallNormal, HitLocation))
     {
-        // 벽에 다시 붙이기
         SetActorLocation(HitLocation + WallNormal * WallStickDistance);
     }
 }
@@ -294,13 +226,9 @@ FVector AWallCrawler::ProjectToWallSurface(FVector WorldDirection)
 {
     if (!bIsOnWall) return WorldDirection.GetSafeNormal();
     
-    // 벽 Normal에 수직인 성분만 남김
     FVector ProjectedDirection = WorldDirection - CurrentWallNormal * FVector::DotProduct(WorldDirection, CurrentWallNormal);
-    
-    // CRITICAL: 반드시 정규화 (길이 1.0 유지)
     FVector Result = ProjectedDirection.GetSafeNormal();
     
-    // 안전 검사: 유효하지 않으면 Up 벡터 사용
     if (Result.IsNearlyZero())
     {
         FVector Right = FVector::CrossProduct(CurrentWallNormal, FVector::UpVector).GetSafeNormal();
@@ -310,29 +238,7 @@ FVector AWallCrawler::ProjectToWallSurface(FVector WorldDirection)
     return Result;
 }
 
-// ============================================
-// CirclePatrol - 사용 안 함
-// ============================================
-/*
-void AWallCrawler::CirclePatrol(float DeltaTime)
-{
-    PatrolAngle += PatrolAngularSpeed * DeltaTime;
-    if (PatrolAngle >= 360.0f) PatrolAngle -= 360.0f;
-    
-    float AngleRad = FMath::DegreesToRadians(PatrolAngle);
-    FVector Up = FVector::UpVector;
-    FVector Right = FVector::CrossProduct(CurrentWallNormal, Up).GetSafeNormal();
-    FVector ActualUp = FVector::CrossProduct(Right, CurrentWallNormal).GetSafeNormal();
-    FVector CircleOffset = Right * FMath::Cos(AngleRad) * CircleRadius + ActualUp * FMath::Sin(AngleRad) * CircleRadius;
-    FVector TargetLocation = PatrolCenter + CircleOffset;
-    CrawlOnWall((TargetLocation - GetActorLocation()).GetSafeNormal(), CrawlSpeed);
-}
-*/
-
-// ============================================
 // Organic Patrol
-// ============================================
-
 void AWallCrawler::GeneratePatrolWaypoints()
 {
     PatrolWaypoints.Empty();
@@ -423,18 +329,13 @@ void AWallCrawler::UpdateMovementSpeed(float DeltaTime)
     }
 }
 
-// ============================================
 // Attack
-// ============================================
-
 void AWallCrawler::PursuePlayer(float DeltaTime)
 {
     if (!TargetPlayer) return;
     
-    // 플레이어보다 약간 앞쪽 목표 (빠른 달라붙기)
     FVector PlayerVelocity = TargetPlayer->GetVelocity();
-    FVector PredictedLocation = TargetPlayer->GetActorLocation() + PlayerVelocity * 0.3f;  // 0.3초 예측
-    
+    FVector PredictedLocation = TargetPlayer->GetActorLocation() + PlayerVelocity * 0.3f;
     FVector ToPlayer = PredictedLocation - GetActorLocation();
     CrawlOnWall(ProjectToWallSurface(ToPlayer.GetSafeNormal()), PursuitSpeed);
 }
@@ -449,15 +350,12 @@ void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
     DetectionGauge = 0.0f;
     PotentialTarget = nullptr;
     
-    // 몬스터 숨기기 (디버프 모드)
     SetActorHiddenInGame(true);
     SetActorEnableCollision(false);
-    SetActorTickEnabled(true);  // Tick은 유지 (Stamina 흡수용)
-    
-    // 위치는 플레이어 근처로만 (보이지 않음)
+    SetActorTickEnabled(true);
     SetActorLocation(Player->GetActorLocation() + FVector(0, 0, 100));
     
-    UE_LOG(LogMonster, Warning, TEXT("%s ATTACHED to player (hidden debuff mode)!"), *GetName());
+    UE_LOG(LogMonster, Warning, TEXT("%s ATTACHED (debuff mode)"), *GetName());
 }
 
 void AWallCrawler::DetachFromPlayer()
@@ -467,56 +365,36 @@ void AWallCrawler::DetachFromPlayer()
     bAttachedToPlayer = false;
     AccumulatedShake = 0.0f;
     
-    // 몬스터 다시 나타내기
     SetActorHiddenInGame(false);
     SetActorEnableCollision(true);
     
     if (TargetPlayer)
     {
         FVector PlayerLoc = TargetPlayer->GetActorLocation();
-        
-        // 플레이어 주변 랜덤 방향
-        FVector RandomDir = FVector(
-            FMath::RandRange(-1.0f, 1.0f),
-            FMath::RandRange(-1.0f, 1.0f),
-            FMath::RandRange(-0.5f, 0.5f)
-        ).GetSafeNormal();
-        
-        // 플레이어에서 100-150cm 거리
+        FVector RandomDir = FVector(FMath::RandRange(-1.0f, 1.0f), FMath::RandRange(-1.0f, 1.0f), 
+            FMath::RandRange(-0.5f, 0.5f)).GetSafeNormal();
         FVector TestLocation = PlayerLoc + RandomDir * FMath::RandRange(100.0f, 150.0f);
         
-        // 그 위치에서 가장 가까운 벽 찾기
-        bool bFoundWall = false;
-        
-        // 여러 방향으로 벽 찾기
-        TArray<FVector> SearchDirections;
-        SearchDirections.Add(RandomDir);
-        SearchDirections.Add(-RandomDir);
-        SearchDirections.Add(FVector::UpVector);
-        SearchDirections.Add(-FVector::UpVector);
-        SearchDirections.Add(FVector::RightVector);
-        SearchDirections.Add(-FVector::RightVector);
+        // 가까운 벽 찾기
+        TArray<FVector> SearchDirections = {RandomDir, -RandomDir, FVector::UpVector, 
+            -FVector::UpVector, FVector::RightVector, -FVector::RightVector};
         
         FCollisionQueryParams Params;
         Params.AddIgnoredActor(this);
         Params.AddIgnoredActor(TargetPlayer);
         
         float BestDistance = 999999.0f;
-        FVector BestWallLocation;
-        FVector BestWallNormal;
+        FVector BestWallLocation, BestWallNormal;
+        bool bFoundWall = false;
         
         for (const FVector& Dir : SearchDirections)
         {
             FHitResult Hit;
-            FVector TraceStart = TestLocation;
-            FVector TraceEnd = TestLocation + Dir * 300.0f;  // 3m 범위
-            
-            if (GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, Params))
+            if (GetWorld()->LineTraceSingleByChannel(Hit, TestLocation, TestLocation + Dir * 300.0f, ECC_WorldStatic, Params))
             {
-                float Distance = Hit.Distance;
-                if (Distance < BestDistance)
+                if (Hit.Distance < BestDistance)
                 {
-                    BestDistance = Distance;
+                    BestDistance = Hit.Distance;
                     BestWallLocation = Hit.Location;
                     BestWallNormal = Hit.Normal;
                     bFoundWall = true;
@@ -526,40 +404,24 @@ void AWallCrawler::DetachFromPlayer()
         
         if (bFoundWall)
         {
-            // 벽에서 플레이어 쪽으로 WallStickDistance만큼 떨어진 위치에 스폰
-            // Normal이 플레이어를 향하도록 확인
-            FVector ToPlayer = PlayerLoc - BestWallLocation;
-            float DotProduct = FVector::DotProduct(BestWallNormal, ToPlayer.GetSafeNormal());
-            
-            // Normal이 벽 안쪽을 향하면 반대로
-            if (DotProduct < 0)
+            // Normal 방향 확인
+            if (FVector::DotProduct(BestWallNormal, (PlayerLoc - BestWallLocation).GetSafeNormal()) < 0)
             {
                 BestWallNormal = -BestWallNormal;
             }
             
             FVector SpawnLocation = BestWallLocation + BestWallNormal * WallStickDistance;
             SetActorLocation(SpawnLocation);
+            SetActorRotation((-BestWallNormal).Rotation());
             
-            // 벽을 향하도록 회전
-            FRotator TargetRotation = (-BestWallNormal).Rotation();
-            SetActorRotation(TargetRotation);
-            
-            // 멤버 변수 업데이트
             CurrentWallNormal = BestWallNormal;
             WallHitLocation = BestWallLocation;
             bIsOnWall = true;
-            
-            UE_LOG(LogMonster, Warning, TEXT("%s DETACHED! Respawning on wall at %.1fcm from player"), 
-                *GetName(), FVector::Dist(SpawnLocation, PlayerLoc));
         }
         else
         {
-            // 벽을 못 찾았으면 플레이어 근처에 그냥 스폰
             SetActorLocation(TestLocation);
             bIsOnWall = false;
-            
-            UE_LOG(LogMonster, Warning, TEXT("%s DETACHED! No wall found, spawning at %.1fcm from player"), 
-                *GetName(), FVector::Dist(TestLocation, PlayerLoc));
         }
     }
 }
@@ -587,33 +449,28 @@ void AWallCrawler::UpdateShakeDetection(float DeltaTime)
     APlayerController* PC = Cast<APlayerController>(TargetPlayer->GetController());
     if (!PC) return;
     
-    // 카메라 회전 변화량으로 Shake 감지
     FRotator CurrentRotation = PC->GetControlRotation();
     
     if (LastMousePosition.IsNearlyZero())
     {
-        // 첫 프레임: 현재 회전을 저장 (X=Pitch, Y=Yaw로 변환)
         LastMousePosition = FVector2D(CurrentRotation.Pitch, CurrentRotation.Yaw);
         return;
     }
     
-    // 이전 회전과 현재 회전의 차이 계산
     FVector2D CurrentRotation2D(CurrentRotation.Pitch, CurrentRotation.Yaw);
     FVector2D RotationDelta = CurrentRotation2D - LastMousePosition;
     
-    // Yaw의 360도 wrap 처리
+    // Yaw wrap 처리
     if (RotationDelta.Y > 180.0f) RotationDelta.Y -= 360.0f;
     if (RotationDelta.Y < -180.0f) RotationDelta.Y += 360.0f;
     
-    // 회전 변화량을 Shake로 누적 (좌우 흔들기 = Yaw 변화)
-    float RotationMovement = FMath::Abs(RotationDelta.Y);  // Yaw 변화만 사용
-    AccumulatedShake += RotationMovement * 5.0f;  // 배율 적용
-    
+    float RotationMovement = FMath::Abs(RotationDelta.Y);
+    AccumulatedShake += RotationMovement * 5.0f;
     LastMousePosition = CurrentRotation2D;
     
     if (AccumulatedShake >= ShakeThreshold)
     {
-        UE_LOG(LogMonster, Warning, TEXT("%s shaken off! (%.1f accumulated)"), *GetName(), AccumulatedShake);
+        UE_LOG(LogMonster, Warning, TEXT("%s shaken off!"), *GetName());
         DetachFromPlayer();
     }
     
@@ -622,15 +479,12 @@ void AWallCrawler::UpdateShakeDetection(float DeltaTime)
     {
         GEngine->AddOnScreenDebugMessage(-1, 0.0f, 
             AccumulatedShake > ShakeThreshold * 0.7f ? FColor::Red : FColor::Yellow,
-            FString::Printf(TEXT("Shake: %.0f / %.0f (Yaw: %.1f)"), AccumulatedShake, ShakeThreshold, RotationMovement));
+            FString::Printf(TEXT("Shake: %.0f / %.0f"), AccumulatedShake, ShakeThreshold));
     }
 #endif
 }
 
-// ============================================
-// Detection Gauge System (감지 게이지)
-// ============================================
-
+// Detection Gauge
 void AWallCrawler::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
     if (!Actor) return;
@@ -640,17 +494,11 @@ void AWallCrawler::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 
     if (Stimulus.WasSuccessfullySensed())
     {
-        // 플레이어 움직임 감지 - PotentialTarget 설정
         PotentialTarget = Player;
-        UE_LOG(LogMonster, Verbose, TEXT("%s heard noise from player"), *GetName());
     }
     else
     {
-        // 플레이어 소리 사라짐
-        if (PotentialTarget == Player)
-        {
-            PotentialTarget = nullptr;
-        }
+        if (PotentialTarget == Player) PotentialTarget = nullptr;
     }
 }
 
@@ -658,35 +506,30 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
 {
     if (PotentialTarget)
     {
-        // 소음 감지 중 - 게이지 증가
         DetectionGauge += DetectionGainRate * DeltaTime;
         DetectionGauge = FMath::Min(DetectionGauge, DetectionGaugeMax);
         
-        // 게이지 가득 참 → Target 확정!
         if (DetectionGauge >= DetectionGaugeMax && !TargetPlayer)
         {
             TargetPlayer = Cast<ADownfallCharacter>(PotentialTarget);
-            UE_LOG(LogMonster, Warning, TEXT("%s DETECTED player (gauge full: %.1f)"), *GetName(), DetectionGauge);
+            UE_LOG(LogMonster, Warning, TEXT("%s DETECTED player"), *GetName());
         }
     }
     else
     {
-        // 소음 없음 - 게이지 감소
         if (DetectionGauge > 0.0f)
         {
             DetectionGauge -= DetectionDecayRate * DeltaTime;
             DetectionGauge = FMath::Max(DetectionGauge, 0.0f);
             
-            // 게이지 0 → Target 해제
             if (DetectionGauge <= 0.0f && TargetPlayer)
             {
                 TargetPlayer = nullptr;
-                UE_LOG(LogMonster, Warning, TEXT("%s LOST player (gauge empty)"), *GetName());
+                UE_LOG(LogMonster, Warning, TEXT("%s LOST player"), *GetName());
             }
         }
     }
     
-    // 거리 체크 (기존)
     if (TargetPlayer)
     {
         float Distance = FVector::Dist(GetActorLocation(), TargetPlayer->GetActorLocation());
@@ -695,7 +538,6 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
             TargetPlayer = nullptr;
             PotentialTarget = nullptr;
             DetectionGauge = 0.0f;
-            UE_LOG(LogMonster, Warning, TEXT("%s lost player (too far: %.1f)"), *GetName(), Distance);
         }
     }
 }
