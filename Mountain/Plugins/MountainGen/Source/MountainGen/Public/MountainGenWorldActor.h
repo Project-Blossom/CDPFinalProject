@@ -35,6 +35,13 @@ public:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaSeconds) override;
 
+#if WITH_EDITOR
+    virtual bool ShouldTickIfViewportsOnly() const override { return true; }
+    virtual void PostEditMove(bool bFinished) override;
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+
+    // ---------- API ----------
     UFUNCTION(BlueprintCallable, Category = "MountainGen")
     void Regenerate();
 
@@ -57,23 +64,22 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen")
     FMountainGenSettings Settings;
 
+    // ---------- Runtime ----------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Runtime")
     bool bEnableRandomSeedKey = true;
 
-    // Seed 탐색 디버그
+    // ---------- Debug ----------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug")
     bool bDebugSeedSearch = true;
 
-    // "몇 번마다 출력할지"
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug")
+    bool bDebugPipeline = true;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug", meta = (ClampMin = "1", ClampMax = "200"))
     int32 DebugPrintEveryNAttempt = 10;
 
 private:
     void BuildChunkAndMesh();
-
-    static void ApplyDifficultyPresetTo(FMountainGenSettings& S);
-    void ApplyDifficultyPreset();
-
     void UI_Status(const FString& Msg, float Seconds = 2.0f, FColor Color = FColor::Cyan) const;
 
     static FString MakeMetricsLine(
@@ -82,17 +88,18 @@ private:
         bool& bOutOverhangOK,
         bool& bOutSteepOK);
 
+#if WITH_EDITOR
+    uint32 ComputeSettingsHash_Editor() const;
+#endif
+
 private:
-    // --- async state ---
     bool bAsyncWorking = false;
     bool bRegenQueued = false;
-
     int32 CurrentBuildSerial = 0;
     int32 InFlightBuildSerial = 0;
-
     FMGAsyncResult PendingResult;
 
 #if WITH_EDITOR
-    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+    uint32 LastSettingsHash_Editor = 0;
 #endif
 };

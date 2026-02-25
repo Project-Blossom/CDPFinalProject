@@ -140,7 +140,7 @@ struct FMountainGenSettings
     float GravityStrength = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Gravity", meta = (ClampMin = "0.1"))
-    float GravityScale = 3.0f;
+    float GravityScale = 2.0f;
 
     // ========================================================
     // 7) Warp

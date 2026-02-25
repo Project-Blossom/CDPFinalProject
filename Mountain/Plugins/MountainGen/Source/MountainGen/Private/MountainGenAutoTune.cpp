@@ -1,6 +1,11 @@
 ﻿#include "MountainGenAutoTune.h"
 #include "VoxelDensityGenerator.h"
 #include "HAL/PlatformTime.h"
+#include "Async/ParallelFor.h"
+
+// ============================================================
+// Utils
+// ============================================================
 
 static FORCEINLINE float Clamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
 static FORCEINLINE bool InRange(float v, float a, float b) { return (v >= a && v <= b); }
@@ -38,24 +43,23 @@ static FVector EstimateNormalCentralDiff(
     return FVector(dx, dy, dz).GetSafeNormal();
 }
 
-static bool FindIsoCrossingAlongX(
+static bool FindIsoCrossingAlongX_Cached(
     const FVoxelDensityGenerator& Gen,
     float Iso,
-    const FVector& StartOutside,
-    const FVector& EndInside,
+    FVector A, float dA,
+    FVector B, float dB,
     int32 Steps,
     FVector& OutHit)
 {
-    float d0 = Gen.SampleDensity(StartOutside) - Iso;
-    float d1 = Gen.SampleDensity(EndInside) - Iso;
+    if (dA * dB > 0.f) return false;
 
-    if (d0 * d1 > 0.f) return false;
-
-    FVector a = StartOutside;
-    FVector b = EndInside;
+    FVector a = A;
+    FVector b = B;
+    float d0 = dA;
+    float d1 = dB;
 
     Steps = FMath::Clamp(Steps, 6, 24);
-    for (int32 i = 0; i < Steps; i++)
+    for (int32 i = 0; i < Steps; ++i)
     {
         const FVector m = (a + b) * 0.5f;
         const float dm = Gen.SampleDensity(m) - Iso;
@@ -69,7 +73,176 @@ static bool FindIsoCrossingAlongX(
 }
 
 // ============================================================
-// Metrics: RaycastYZ
+// Metrics context
+// ============================================================
+
+struct FMGMetricsContext
+{
+    int32 Grid = 0;
+    TArray<float> Ys;
+    TArray<float> Zs;
+
+    float Iso = 0.f;
+    float FrontX = 0.f;
+    float Voxel = 0.f;
+    float SurfaceBand = 0.f;
+    float SteepDot = 0.f;
+    float e = 0.f;
+
+    FVector WorldMin;
+    FVector WorldMax;
+    FVector TerrainOriginWorld;
+
+    static constexpr float BaseCliff_NxAbs_Threshold = 0.97f;
+    static constexpr float BaseCliff_UpAbs_Threshold = 0.12f;
+    static constexpr float BaseCliff_NyAbs_Threshold = 0.25f;
+
+    void Build(const FMountainGenSettings& S,
+        const FVector& InTerrainOriginWorld,
+        const FVector& InWorldMin,
+        const FVector& InWorldMax)
+    {
+        TerrainOriginWorld = InTerrainOriginWorld;
+        WorldMin = InWorldMin;
+        WorldMax = InWorldMax;
+
+        Iso = S.IsoLevel;
+
+        const int32 TotalRays = FMath::Clamp(S.MetricsSamplesPerTry, 16, 4096);
+        Grid = FMath::Max(4, (int32)FMath::Sqrt((float)TotalRays));
+
+        Ys.SetNumUninitialized(Grid);
+        Zs.SetNumUninitialized(Grid);
+
+        const float y0 = WorldMin.Y;
+        const float y1 = WorldMax.Y;
+        const float z0 = WorldMin.Z;
+        const float z1 = WorldMax.Z;
+
+        for (int32 i = 0; i < Grid; ++i)
+        {
+            const float ty = (i + 0.5f) / (float)Grid;
+            const float tz = (i + 0.5f) / (float)Grid;
+            Ys[i] = FMath::Lerp(y0, y1, ty);
+            Zs[i] = FMath::Lerp(z0, z1, tz);
+        }
+
+        FrontX = FMath::Max(200.f, S.CliffThicknessCm);
+        Voxel = FMath::Max(1.f, S.VoxelSizeCm);
+        SurfaceBand = FMath::Max(Voxel * 3.f, FMath::Min(S.OverhangFadeCm, 6000.f));
+        SteepDot = GetSteepDotThreshold(S);
+        e = FMath::Max(5.f, Voxel * 0.25f);
+    }
+
+    FMGMetrics Compute(const FMountainGenSettings& S) const
+    {
+        FMGMetrics M{};
+
+        const FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
+        const FVector Up(0, 0, 1);
+
+        // 병렬 누적용 (원자 연산 피하려고 TLS 합산)
+        struct FAcc { int32 Valid = 0, Over = 0, Steep = 0; };
+        TArray<FAcc> Accs;
+        const int32 NumWorkers = FMath::Max(1, FTaskGraphInterface::Get().GetNumWorkerThreads());
+        Accs.SetNumZeroed(NumWorkers + 1);
+
+        const int32 Total = Grid * Grid;
+
+        ParallelFor(Total, [&](int32 idx)
+            {
+                const int32 Worker = FMath::Clamp(FPlatformTLS::GetCurrentThreadId() % (NumWorkers + 1), 0, NumWorkers);
+                FAcc& A = Accs[Worker];
+
+                const int32 iz = idx / Grid;
+                const int32 iy = idx - iz * Grid;
+
+                const float z = Zs[iz];
+                const float y = Ys[iy];
+
+                const FVector P0(WorldMin.X, y, z);
+                const FVector P1(WorldMax.X, y, z);
+
+                const float dP0 = Gen.SampleDensity(P0) - Iso;
+                const float dP1 = Gen.SampleDensity(P1) - Iso;
+
+                FVector Outside = P0;
+                FVector Inside = P1;
+                float dOut = dP0;
+                float dIn = dP1;
+
+                if (dP0 < 0.f && dP1 >= 0.f)
+                {
+                }
+                else if (dP1 < 0.f && dP0 >= 0.f)
+                {
+                    Outside = P1; Inside = P0;
+                    dOut = dP1;  dIn = dP0;
+                }
+                else
+                {
+                    return;
+                }
+
+                FVector Hit;
+                if (!FindIsoCrossingAlongX_Cached(Gen, Iso, Outside, dOut, Inside, dIn, 14, Hit))
+                    return;
+
+                const float LocalX = Hit.X - TerrainOriginWorld.X;
+                const float insideDepth = (FrontX - LocalX);
+
+                if (insideDepth < 0.f || insideDepth > SurfaceBand)
+                    return;
+
+                const FVector N = EstimateNormalCentralDiff(Gen, Hit, e);
+                if (N.IsNearlyZero())
+                    return;
+
+                const float UpDot = FVector::DotProduct(N, Up);
+
+                const float NxAbs = FMath::Abs(N.X);
+                const float NyAbs = FMath::Abs(N.Y);
+                const bool bIsBaseCliff =
+                    (NxAbs >= BaseCliff_NxAbs_Threshold) &&
+                    (FMath::Abs(UpDot) <= BaseCliff_UpAbs_Threshold) &&
+                    (NyAbs <= BaseCliff_NyAbs_Threshold);
+
+                if (bIsBaseCliff)
+                    return;
+
+                A.Valid++;
+
+                static constexpr float OverhangUpDotThreshold = -0.15f;
+                if (UpDot <= OverhangUpDotThreshold) A.Over++;
+                if (FMath::Abs(UpDot) <= SteepDot)   A.Steep++;
+            });
+
+        int32 Valid = 0, Over = 0, Steep = 0;
+        for (const FAcc& A : Accs)
+        {
+            Valid += A.Valid;
+            Over += A.Over;
+            Steep += A.Steep;
+        }
+
+        M.SurfaceNearSamples = Valid;
+        if (Valid > 0)
+        {
+            M.OverhangRatio = (float)Over / (float)Valid;
+            M.SteepRatio = (float)Steep / (float)Valid;
+        }
+        else
+        {
+            M.OverhangRatio = 0.f;
+            M.SteepRatio = 0.f;
+        }
+
+        return M;
+    }
+};
+
+// ============================================================
+// Metrics
 // ============================================================
 
 FMGMetrics MGComputeMetrics_RaycastYZ(
@@ -78,116 +251,18 @@ FMGMetrics MGComputeMetrics_RaycastYZ(
     const FVector& WorldMin,
     const FVector& WorldMax)
 {
-    FMGMetrics M{};
+    FMGMetricsContext Ctx;
+    Ctx.Build(S, TerrainOriginWorld, WorldMin, WorldMax);
+    return Ctx.Compute(S);
+}
 
-    const FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
-    const float Iso = S.IsoLevel;
-
-    const int32 TotalRays = FMath::Clamp(S.MetricsSamplesPerTry, 16, 4096);
-    const int32 Grid = FMath::Max(4, (int32)FMath::Sqrt((float)TotalRays));
-    const int32 Ny = Grid;
-    const int32 Nz = Grid;
-
-    const float y0 = WorldMin.Y;
-    const float y1 = WorldMax.Y;
-    const float z0 = WorldMin.Z;
-    const float z1 = WorldMax.Z;
-
-    const float FrontX = FMath::Max(200.f, S.CliffThicknessCm);
-    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
-
-    const float SurfaceBand = FMath::Max(Voxel * 3.f, FMath::Min(S.OverhangFadeCm, 6000.f));
-
-    const float SteepDot = GetSteepDotThreshold(S);
-
-    int32 Valid = 0;
-    int32 Over = 0;
-    int32 Steep = 0;
-
-    const FVector Up(0, 0, 1);
-    const float e = FMath::Max(5.f, Voxel * 0.25f);
-
-    auto MakeRayEndpoints = [&](float y, float z, FVector& OutOutside, FVector& OutInside)
-        {
-            const FVector A(WorldMin.X, y, z);
-            const FVector B(WorldMax.X, y, z);
-
-            const float da = Gen.SampleDensity(A);
-            const float db = Gen.SampleDensity(B);
-
-            if (da < Iso && db >= Iso) { OutOutside = A; OutInside = B; return; }
-            if (db < Iso && da >= Iso) { OutOutside = B; OutInside = A; return; }
-
-            OutOutside = A;
-            OutInside = B;
-        };
-
-    static constexpr float BaseCliff_NxAbs_Threshold = 0.97f;
-    static constexpr float BaseCliff_UpAbs_Threshold = 0.12f;
-    static constexpr float BaseCliff_NyAbs_Threshold = 0.25f;
-
-    for (int32 iz = 0; iz < Nz; ++iz)
-    {
-        const float z = FMath::Lerp(z0, z1, (iz + 0.5f) / (float)Nz);
-
-        for (int32 iy = 0; iy < Ny; ++iy)
-        {
-            const float y = FMath::Lerp(y0, y1, (iy + 0.5f) / (float)Ny);
-
-            FVector Outside, Inside;
-            MakeRayEndpoints(y, z, Outside, Inside);
-
-            FVector Hit;
-            if (!FindIsoCrossingAlongX(Gen, Iso, Outside, Inside, 14, Hit))
-                continue;
-
-            const float LocalX = Hit.X - TerrainOriginWorld.X;
-            const float insideDepth = (FrontX - LocalX);
-
-            if (insideDepth < 0.f || insideDepth > SurfaceBand)
-                continue;
-
-            const FVector N = EstimateNormalCentralDiff(Gen, Hit, e);
-            if (N.IsNearlyZero())
-                continue;
-
-            const float UpDot = FVector::DotProduct(N, Up);
-
-            const float NxAbs = FMath::Abs(N.X);
-            const float NyAbs = FMath::Abs(N.Y);
-            const bool bIsBaseCliff =
-                (NxAbs >= BaseCliff_NxAbs_Threshold) &&
-                (FMath::Abs(UpDot) <= BaseCliff_UpAbs_Threshold) &&
-                (NyAbs <= BaseCliff_NyAbs_Threshold);
-
-            if (bIsBaseCliff)
-                continue;
-
-            Valid++;
-
-            static constexpr float OverhangUpDotThreshold = -0.15f;
-
-            if (UpDot <= OverhangUpDotThreshold)
-            {
-                Over++;
-            }
-            if (FMath::Abs(UpDot) <= SteepDot) Steep++;
-        }
-    }
-
-    M.SurfaceNearSamples = Valid;
-    if (Valid > 0)
-    {
-        M.OverhangRatio = (float)Over / (float)Valid;
-        M.SteepRatio = (float)Steep / (float)Valid;
-    }
-    else
-    {
-        M.OverhangRatio = 0.f;
-        M.SteepRatio = 0.f;
-    }
-
-    return M;
+FMGMetrics MGComputeMetricsQuick(
+    const FMountainGenSettings& S,
+    const FVector& TerrainOriginWorld,
+    const FVector& WorldMin,
+    const FVector& WorldMax)
+{
+    return MGComputeMetrics_RaycastYZ(S, TerrainOriginWorld, WorldMin, WorldMax);
 }
 
 // ============================================================================
@@ -324,7 +399,6 @@ void MGApplyDifficultyPreset(FMountainGenSettings& S)
 
     S.Targets = P.Targets;
 
-    // 의도 파라미터 초기점
     S.BaseField3DStrengthCm = P.BaseField3DStrengthCm;
     S.BaseField3DScaleCm = P.BaseField3DScaleCm;
     S.DetailScaleCm = P.DetailScaleCm;
@@ -342,22 +416,7 @@ void MGApplyDifficultyPreset(FMountainGenSettings& S)
 }
 
 // ============================================================
-// Metrics (외부 이름 유지: MGComputeMetricsQuick)
-// - 내부 구현을 RaycastYZ로 교체 (진짜 언더컷 측정)
-// ============================================================
-
-FMGMetrics MGComputeMetricsQuick(
-    const FMountainGenSettings& S,
-    const FVector& TerrainOriginWorld,
-    const FVector& WorldMin,
-    const FVector& WorldMax)
-{
-    // ✅ 기존 호출부는 그대로, 측정 품질만 교체
-    return MGComputeMetrics_RaycastYZ(S, TerrainOriginWorld, WorldMin, WorldMax);
-}
-
-// ============================================================
-// AutoTune (intent params)
+// AutoTune
 // ============================================================
 
 void MGAutoTuneIntentParams(
@@ -371,12 +430,15 @@ void MGAutoTuneIntentParams(
     const int32 Iters = FMath::Clamp(InOutS.FeedbackIters, 0, 30);
     if (Iters <= 0) return;
 
+    FMGMetricsContext Ctx;
+    Ctx.Build(InOutS, TerrainOriginWorld, WorldMin, WorldMax);
+
     const float TargetOver = RangeMid(InOutS.Targets.OverhangMin, InOutS.Targets.OverhangMax);
     const float TargetSteep = RangeMid(InOutS.Targets.SteepMin, InOutS.Targets.SteepMax);
 
     for (int32 it = 0; it < Iters; ++it)
     {
-        const FMGMetrics M = MGComputeMetricsQuick(InOutS, TerrainOriginWorld, WorldMin, WorldMax);
+        const FMGMetrics M = Ctx.Compute(InOutS);
 
         const float eOver = (TargetOver - M.OverhangRatio);
         const float eSteep = (TargetSteep - M.SteepRatio);
@@ -427,6 +489,9 @@ int32 MGSearchSeedForTargets(
     int32 BestSeed = (InputSeed > 0) ? InputSeed : Rng.RandRange(1, INT32_MAX);
     float BestScore = FLT_MAX;
 
+    FMGMetricsContext Ctx;
+    Ctx.Build(BaseS, TerrainOriginWorld, WorldMin, WorldMax);
+
     for (int32 Attempt = 1; Attempt <= MaxTry; ++Attempt)
     {
         const int32 Seed =
@@ -437,7 +502,7 @@ int32 MGSearchSeedForTargets(
 
         MGDeriveReproducibleDomainFromSeed(Cand, Seed);
 
-        const FMGMetrics M = MGComputeMetricsQuick(Cand, TerrainOriginWorld, WorldMin, WorldMax);
+        const FMGMetrics M = Ctx.Compute(Cand);
 
         const bool bOverOK = InRange(M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax);
         const bool bSteepOK = InRange(M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax);

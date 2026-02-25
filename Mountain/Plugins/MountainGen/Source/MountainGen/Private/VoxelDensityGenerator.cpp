@@ -74,7 +74,10 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
 {
     const float Iso = S.IsoLevel;
     const FVector Local = WorldPosCm - TerrainOriginWorld;
+    const FVector Domain = SeededDomain(Local);
     const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
+
+    const float BaseFieldAmp = FMath::Clamp(S.BaseField3DStrengthCm, 0.f, 50000.f);
 
     // -----------------------------
     // Cliff 기반 면
@@ -87,7 +90,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     float density = (FrontX - Local.X);
 
     // -------------------------------------------------
-    // 3) Overhang / Undercut field 
+    // 3) Overhang / Undercut field
     // -------------------------------------------------
     {
         const float insideDepth = (FrontX - Local.X);
@@ -100,40 +103,46 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
         const float mid = 1.f - FMath::Abs(2.f * z01 - 1.f);
         const float heightMask = FMath::Pow(FMath::Clamp(mid, 0.f, 1.f), 1.6f);
 
-        const float Scale = FMath::Max(200.f, S.OverhangScaleCm);
-        const float r = RidgedFBM01(SeededDomain(Local) / Scale, 5, 2.0f, 0.55f); // 0..1
-
-        const float bias = FMath::Clamp(S.OverhangBias, 0.0f, 1.0f);
-        const float shaped = (r - bias);
-
         const float Amp = FMath::Max(0.f, S.VolumeStrength) * FMath::Max(0.f, S.OverhangDepthCm);
 
-        density += shaped * Amp * nearFaceMask * heightMask;
+        if (Amp != 0.f && nearFaceMask != 0.f && heightMask != 0.f)
+        {
+            const float Scale = FMath::Max(200.f, S.OverhangScaleCm);
+            const float r = RidgedFBM01(Domain / Scale, 5, 2.0f, 0.55f); // 0..1
+
+            const float bias = FMath::Clamp(S.OverhangBias, 0.0f, 1.0f);
+            const float shaped = (r - bias);
+
+            density += shaped * Amp * nearFaceMask * heightMask;
+        }
     }
 
     // -----------------------------
     // Macro 3D
     // -----------------------------
     {
-        const float Scale = FMath::Max(2000.f, S.BaseField3DScaleCm);
-        const int32 Oct = FMath::Clamp(S.BaseField3DOctaves, 1, 8);
+        if (BaseFieldAmp != 0.f)
+        {
+            const float Scale = FMath::Max(2000.f, S.BaseField3DScaleCm);
+            const int32 Oct = FMath::Clamp(S.BaseField3DOctaves, 1, 8);
 
-        const float n = FBM3D(SeededDomain(Local) / Scale, Oct, 2.0f, 0.5f);
-        const float Amp = FMath::Clamp(S.BaseField3DStrengthCm, 0.f, 50000.f);
-
-        density += n * Amp;
+            const float n = FBM3D(Domain / Scale, Oct, 2.0f, 0.5f);
+            density += n * BaseFieldAmp;
+        }
     }
 
     // -----------------------------
     // Detail
     // -----------------------------
     {
-        const float Scale = FMath::Max(600.f, S.DetailScaleCm);
-        const int32 Oct = FMath::Clamp(S.DetailOctaves, 1, 4);
+        if (BaseFieldAmp != 0.f)
+        {
+            const float Scale = FMath::Max(600.f, S.DetailScaleCm);
+            const int32 Oct = FMath::Clamp(S.DetailOctaves, 1, 4);
 
-        const float n = FBM3D(SeededDomain(Local) / Scale, Oct, 2.0f, 0.55f);
-
-        density += n * (0.18f * FMath::Clamp(S.BaseField3DStrengthCm, 0.f, 50000.f));
+            const float n = FBM3D(Domain / Scale, Oct, 2.0f, 0.55f);
+            density += n * (0.18f * BaseFieldAmp);
+        }
     }
 
     // -----------------------------
@@ -143,11 +152,11 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
         const float Band = FMath::Max(150.f, Voxel * 3.f);
         const float surfMask = 1.f - SmoothStep(0.f, Band, FMath::Abs(density - Iso));
 
-        if (surfMask > 0.f)
+        if (surfMask > 0.f && BaseFieldAmp != 0.f)
         {
             const float Scale = FMath::Max(300.f, S.DetailScaleCm * 0.35f);
-            const float n = FBM3D(SeededDomain(Local) / Scale, 3, 2.0f, 0.55f);
-            density += n * (0.10f * FMath::Clamp(S.BaseField3DStrengthCm, 0.f, 50000.f)) * surfMask;
+            const float n = FBM3D(Domain / Scale, 3, 2.0f, 0.55f);
+            density += n * (0.10f * BaseFieldAmp) * surfMask;
         }
     }
 
