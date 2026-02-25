@@ -70,20 +70,49 @@ void FVoxelDensityGenerator::InitSeedDomain()
     AxisShuffle = (Rng.FRand() < PKeep) ? 0 : Rng.RandRange(0, 5);
 }
 
+void FVoxelDensityGenerator::InitCachedConstants()
+{
+    C.Iso = S.IsoLevel;
+    C.Voxel = FMath::Max(1.f, S.VoxelSizeCm);
+
+    C.BaseFieldAmp = FMath::Clamp(S.BaseField3DStrengthCm, 0.f, 50000.f);
+
+    C.CliffH = FMath::Max(1000.f, S.CliffHeightCm);
+    C.FrontX = FMath::Max(200.f, S.CliffThicknessCm);
+
+    // Overhang
+    C.OverhangBand = FMath::Max(C.Voxel * 3.f, FMath::Min(S.OverhangFadeCm, 6000.f));
+    C.OverhangScale = FMath::Max(200.f, S.OverhangScaleCm);
+    C.OverhangBias = FMath::Clamp(S.OverhangBias, 0.0f, 1.0f);
+    C.OverhangAmp = FMath::Max(0.f, S.VolumeStrength) * FMath::Max(0.f, S.OverhangDepthCm);
+
+    // Macro 3D
+    C.Base3DScale = FMath::Max(2000.f, S.BaseField3DScaleCm);
+    C.Base3DOct = FMath::Clamp(S.BaseField3DOctaves, 1, 8);
+
+    // Detail
+    C.DetailScale = FMath::Max(600.f, S.DetailScaleCm);
+    C.DetailOct = FMath::Clamp(S.DetailOctaves, 1, 4);
+
+    // Roughness near surface
+    C.RoughBand = FMath::Max(150.f, C.Voxel * 3.f);
+    C.RoughScale = FMath::Max(300.f, S.DetailScaleCm * 0.35f);
+}
+
 float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
 {
-    const float Iso = S.IsoLevel;
+    const float Iso = C.Iso;
     const FVector Local = WorldPosCm - TerrainOriginWorld;
     const FVector Domain = SeededDomain(Local);
-    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
+    const float Voxel = C.Voxel;
 
-    const float BaseFieldAmp = FMath::Clamp(S.BaseField3DStrengthCm, 0.f, 50000.f);
+    const float BaseFieldAmp = C.BaseFieldAmp;
 
     // -----------------------------
     // Cliff 기반 면
     // -----------------------------
-    const float CliffH = FMath::Max(1000.f, S.CliffHeightCm);
-    const float FrontX = FMath::Max(200.f, S.CliffThicknessCm);
+    const float CliffH = C.CliffH;
+    const float FrontX = C.FrontX;
 
     const float z01 = Clamp01((Local.Z - S.BaseHeightCm) / CliffH);
 
@@ -95,7 +124,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     {
         const float insideDepth = (FrontX - Local.X);
 
-        const float band = FMath::Max(Voxel * 3.f, FMath::Min(S.OverhangFadeCm, 6000.f));
+        const float band = C.OverhangBand;
 
         const float d = FMath::Max(0.f, insideDepth);
         const float nearFaceMask = 1.f - SmoothStep(0.f, band, d);
@@ -103,14 +132,14 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
         const float mid = 1.f - FMath::Abs(2.f * z01 - 1.f);
         const float heightMask = FMath::Pow(FMath::Clamp(mid, 0.f, 1.f), 1.6f);
 
-        const float Amp = FMath::Max(0.f, S.VolumeStrength) * FMath::Max(0.f, S.OverhangDepthCm);
+        const float Amp = C.OverhangAmp;
 
         if (Amp != 0.f && nearFaceMask != 0.f && heightMask != 0.f)
         {
-            const float Scale = FMath::Max(200.f, S.OverhangScaleCm);
+            const float Scale = C.OverhangScale;
             const float r = RidgedFBM01(Domain / Scale, 5, 2.0f, 0.55f); // 0..1
 
-            const float bias = FMath::Clamp(S.OverhangBias, 0.0f, 1.0f);
+            const float bias = C.OverhangBias;
             const float shaped = (r - bias);
 
             density += shaped * Amp * nearFaceMask * heightMask;
@@ -123,8 +152,8 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     {
         if (BaseFieldAmp != 0.f)
         {
-            const float Scale = FMath::Max(2000.f, S.BaseField3DScaleCm);
-            const int32 Oct = FMath::Clamp(S.BaseField3DOctaves, 1, 8);
+            const float Scale = C.Base3DScale;
+            const int32 Oct = C.Base3DOct;
 
             const float n = FBM3D(Domain / Scale, Oct, 2.0f, 0.5f);
             density += n * BaseFieldAmp;
@@ -137,8 +166,8 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     {
         if (BaseFieldAmp != 0.f)
         {
-            const float Scale = FMath::Max(600.f, S.DetailScaleCm);
-            const int32 Oct = FMath::Clamp(S.DetailOctaves, 1, 4);
+            const float Scale = C.DetailScale;
+            const int32 Oct = C.DetailOct;
 
             const float n = FBM3D(Domain / Scale, Oct, 2.0f, 0.55f);
             density += n * (0.18f * BaseFieldAmp);
@@ -149,12 +178,12 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     //  추가 거칠기
     // -----------------------------
     {
-        const float Band = FMath::Max(150.f, Voxel * 3.f);
+        const float Band = C.RoughBand;
         const float surfMask = 1.f - SmoothStep(0.f, Band, FMath::Abs(density - Iso));
 
         if (surfMask > 0.f && BaseFieldAmp != 0.f)
         {
-            const float Scale = FMath::Max(300.f, S.DetailScaleCm * 0.35f);
+            const float Scale = C.RoughScale;
             const float n = FBM3D(Domain / Scale, 3, 2.0f, 0.55f);
             density += n * (0.10f * BaseFieldAmp) * surfMask;
         }
