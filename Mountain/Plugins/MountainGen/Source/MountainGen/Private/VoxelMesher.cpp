@@ -71,6 +71,14 @@ namespace
         TArray<FVector>           Normals;
         TArray<FVector2D>         UV0;
         TArray<FProcMeshTangent>  Tangents;
+
+        struct FBoundaryV
+        {
+            FQuantKey Key;
+            int32 LocalIndex = -1;
+        };
+        TArray<FBoundaryV> LowerBoundary;
+        TArray<FBoundaryV> UpperBoundary;
     };
 
     struct FStampedEdgeCache
@@ -122,7 +130,7 @@ void FVoxelMesher::BuildMarchingCubes(
     float IsoLevel,
     const FVector& ChunkOriginWorld,
     const FVector& ActorWorld,
-    const FVoxelDensityGenerator& ,
+    const FVoxelDensityGenerator&,
     FChunkMeshData& Out)
 {
     Out.Vertices.Reset();
@@ -168,6 +176,8 @@ void FVoxelMesher::BuildMarchingCubes(
             LM.Normals.Reset();
             LM.UV0.Reset();
             LM.Tangents.Reset();
+            LM.LowerBoundary.Reset();
+            LM.UpperBoundary.Reset();
 
             if (Z0 >= Z1) return;
 
@@ -206,7 +216,7 @@ void FVoxelMesher::BuildMarchingCubes(
                     return x + y * SX + zLayerLocal * SX * SY;
                 };
 
-            auto AddSharedVertex = [&](const FVector& PWorld) -> int32
+            auto AddSharedVertex = [&](const FVector& PWorld, bool bLower, bool bUpper) -> int32
                 {
                     const int32 Idx = LM.Vertices.Num();
                     const FVector PLocal = (PWorld - ActorWorld);
@@ -215,43 +225,55 @@ void FVoxelMesher::BuildMarchingCubes(
                     LM.Normals.Add(FVector::ZeroVector);
                     LM.UV0.Add(FVector2D(PLocal.X * 0.001f, PLocal.Y * 0.001f));
                     LM.Tangents.Add(FProcMeshTangent());
+
+
+                    if (bLower || bUpper)
+                    {
+                        FLocalMesh::FBoundaryV BV;
+                        BV.Key = QuantizePos01mm(PLocal);
+                        BV.LocalIndex = Idx;
+                        if (bLower) LM.LowerBoundary.Add(BV);
+                        if (bUpper) LM.UpperBoundary.Add(BV);
+                    }
                     return Idx;
                 };
 
-            auto MakeAndCache = [&](FStampedEdgeCache& Cache, int32 Slot, int32 cA, int32 cB, const float V[8], const FVector P[8]) -> int32
+            auto MakeAndCache = [&](FStampedEdgeCache& Cache, int32 Slot, int32 cA, int32 cB, const float V[8], const FVector P[8], bool bLower, bool bUpper) -> int32
                 {
                     Cache.TouchSlot(Slot, BuildStamp);
                     int32& CachedIdx = Cache.SlotIndex(Slot);
                     if (CachedIdx != -1) return CachedIdx;
 
                     const FVector PV = LerpVertex(P[cA], P[cB], V[cA], V[cB], IsoLevel);
-                    CachedIdx = AddSharedVertex(PV);
+                    CachedIdx = AddSharedVertex(PV, bLower, bUpper);
                     return CachedIdx;
                 };
 
             auto GetEdgeVertexIndex = [&](int32 x, int32 y, int32 zCell, int32 e, const float V[8], const FVector P[8]) -> int32
                 {
                     const int32 zL = zCell - Z0;
+                    const int32 zPlaneLower = 0;
+                    const int32 zPlaneUpper = ZPlaneCount - 1;
 
                     switch (e)
                     {
                         // X edges
-                    case 0:  return MakeAndCache(XCacheTL, XEdgeIdx(x, y, zL), 0, 1, V, P);
-                    case 2:  return MakeAndCache(XCacheTL, XEdgeIdx(x, y + 1, zL), 2, 3, V, P);
-                    case 4:  return MakeAndCache(XCacheTL, XEdgeIdx(x, y, zL + 1), 4, 5, V, P);
-                    case 6:  return MakeAndCache(XCacheTL, XEdgeIdx(x, y + 1, zL + 1), 6, 7, V, P);
+                    case 0:  return MakeAndCache(XCacheTL, XEdgeIdx(x, y, zL), 0, 1, V, P, zL == zPlaneLower, zL == zPlaneUpper);
+                    case 2:  return MakeAndCache(XCacheTL, XEdgeIdx(x, y + 1, zL), 2, 3, V, P, zL == zPlaneLower, zL == zPlaneUpper);
+                    case 4:  return MakeAndCache(XCacheTL, XEdgeIdx(x, y, zL + 1), 4, 5, V, P, (zL + 1) == zPlaneLower, (zL + 1) == zPlaneUpper);
+                    case 6:  return MakeAndCache(XCacheTL, XEdgeIdx(x, y + 1, zL + 1), 6, 7, V, P, (zL + 1) == zPlaneLower, (zL + 1) == zPlaneUpper);
 
                         // Y edges
-                    case 1:  return MakeAndCache(YCacheTL, YEdgeIdx(x + 1, y, zL), 1, 2, V, P);
-                    case 3:  return MakeAndCache(YCacheTL, YEdgeIdx(x, y, zL), 3, 0, V, P);
-                    case 5:  return MakeAndCache(YCacheTL, YEdgeIdx(x + 1, y, zL + 1), 5, 6, V, P);
-                    case 7:  return MakeAndCache(YCacheTL, YEdgeIdx(x, y, zL + 1), 7, 4, V, P);
+                    case 1:  return MakeAndCache(YCacheTL, YEdgeIdx(x + 1, y, zL), 1, 2, V, P, zL == zPlaneLower, zL == zPlaneUpper);
+                    case 3:  return MakeAndCache(YCacheTL, YEdgeIdx(x, y, zL), 3, 0, V, P, zL == zPlaneLower, zL == zPlaneUpper);
+                    case 5:  return MakeAndCache(YCacheTL, YEdgeIdx(x + 1, y, zL + 1), 5, 6, V, P, (zL + 1) == zPlaneLower, (zL + 1) == zPlaneUpper);
+                    case 7:  return MakeAndCache(YCacheTL, YEdgeIdx(x, y, zL + 1), 7, 4, V, P, (zL + 1) == zPlaneLower, (zL + 1) == zPlaneUpper);
 
                         // Z edges
-                    case 8:  return MakeAndCache(ZCacheTL, ZEdgeIdx(x, y, zL), 0, 4, V, P);
-                    case 9:  return MakeAndCache(ZCacheTL, ZEdgeIdx(x + 1, y, zL), 1, 5, V, P);
-                    case 10: return MakeAndCache(ZCacheTL, ZEdgeIdx(x + 1, y + 1, zL), 2, 6, V, P);
-                    case 11: return MakeAndCache(ZCacheTL, ZEdgeIdx(x, y + 1, zL), 3, 7, V, P);
+                    case 8:  return MakeAndCache(ZCacheTL, ZEdgeIdx(x, y, zL), 0, 4, V, P, false, false);
+                    case 9:  return MakeAndCache(ZCacheTL, ZEdgeIdx(x + 1, y, zL), 1, 5, V, P, false, false);
+                    case 10: return MakeAndCache(ZCacheTL, ZEdgeIdx(x + 1, y + 1, zL), 2, 6, V, P, false, false);
+                    case 11: return MakeAndCache(ZCacheTL, ZEdgeIdx(x, y + 1, zL), 3, 7, V, P, false, false);
                     default: return -1;
                     }
                 };
@@ -339,13 +361,6 @@ void FVoxelMesher::BuildMarchingCubes(
             }
         });
 
-    // --------------------------
-    // Merge slabs
-    // --------------------------
-    TArray<int32> SlabBase;
-    SlabBase.SetNum(SlabCount + 1);
-    SlabBase[0] = 0;
-
     int32 TotalV = 0, TotalT = 0;
     for (const FLocalMesh& LM : SlabMeshes)
     {
@@ -359,93 +374,66 @@ void FVoxelMesher::BuildMarchingCubes(
     Out.Tangents.Reserve(TotalV);
     Out.Triangles.Reserve(TotalT);
 
+    TMap<FQuantKey, int32> PrevUpperMap;
+
     for (int32 s = 0; s < SlabCount; ++s)
     {
         const FLocalMesh& LM = SlabMeshes[s];
-        const int32 V0 = Out.Vertices.Num();
+        const int32 VB = LM.Vertices.Num();
+        if (VB == 0 || LM.Triangles.Num() == 0)
+        {
+            PrevUpperMap.Reset();
+            continue;
+        }
 
-        Out.Vertices.Append(LM.Vertices);
-        Out.Normals.Append(LM.Normals);
-        Out.UV0.Append(LM.UV0);
+        TArray<int32> LocalToGlobal;
+        LocalToGlobal.Init(-1, VB);
 
-        const int32 AddCount = LM.Vertices.Num();
-        for (int32 i = 0; i < AddCount; ++i)
+        if (s > 0 && PrevUpperMap.Num() > 0 && LM.LowerBoundary.Num() > 0)
+        {
+            for (const FLocalMesh::FBoundaryV& BV : LM.LowerBoundary)
+            {
+                if ((uint32)BV.LocalIndex >= (uint32)VB) continue;
+                if (int32* Found = PrevUpperMap.Find(BV.Key))
+                {
+                    LocalToGlobal[BV.LocalIndex] = *Found;
+                }
+            }
+        }
+
+        for (int32 i = 0; i < VB; ++i)
+        {
+            const int32 Existing = LocalToGlobal[i];
+            if (Existing >= 0)
+            {
+                if (LM.Normals.IsValidIndex(i))
+                    Out.Normals[Existing] += LM.Normals[i];
+                continue;
+            }
+
+            const int32 NewIdx = Out.Vertices.Num();
+            LocalToGlobal[i] = NewIdx;
+            Out.Vertices.Add(LM.Vertices[i]);
+            Out.Normals.Add(LM.Normals.IsValidIndex(i) ? LM.Normals[i] : FVector::ZeroVector);
+            Out.UV0.Add(LM.UV0.IsValidIndex(i) ? LM.UV0[i] : FVector2D::ZeroVector);
             Out.Tangents.Add(FProcMeshTangent());
-
-        for (int32 i = 0; i < LM.Triangles.Num(); ++i)
-            Out.Triangles.Add(V0 + LM.Triangles[i]);
-
-        SlabBase[s + 1] = Out.Vertices.Num();
-    }
-
-    {
-        const int32 TotalVerts = Out.Vertices.Num();
-
-        TArray<int32> Parent;
-        Parent.SetNumUninitialized(TotalVerts);
-        for (int32 i = 0; i < TotalVerts; ++i) Parent[i] = i;
-
-        auto FindRoot = [&](int32 i) -> int32
-            {
-                int32 r = i;
-                while (Parent[r] != r) r = Parent[r];
-
-                while (Parent[i] != i)
-                {
-                    const int32 p = Parent[i];
-                    Parent[i] = r;
-                    i = p;
-                }
-                return r;
-            };
-
-        auto UnionTo = [&](int32 Dup, int32 Keep)
-            {
-                const int32 rDup = FindRoot(Dup);
-                const int32 rKeep = FindRoot(Keep);
-                if (rDup != rKeep)
-                {
-                    Parent[rDup] = rKeep;
-                }
-            };
-
-        for (int32 s = 0; s < SlabCount - 1; ++s)
-        {
-            const int32 A0 = SlabBase[s];
-            const int32 A1 = SlabBase[s + 1];
-            const int32 B0 = SlabBase[s + 1];
-            const int32 B1 = SlabBase[s + 2];
-
-            TMap<FQuantKey, int32> Map;
-            Map.Reserve(A1 - A0);
-
-            for (int32 i = A0; i < A1; ++i)
-            {
-                Map.Add(QuantizePos01mm(Out.Vertices[i]), i);
-            }
-
-            for (int32 i = B0; i < B1; ++i)
-            {
-                if (int32* Found = Map.Find(QuantizePos01mm(Out.Vertices[i])))
-                {
-                    UnionTo(i, *Found);
-                }
-            }
         }
 
-        for (int32 i = 0; i < TotalVerts; ++i)
+        for (int32 ti = 0; ti < LM.Triangles.Num(); ++ti)
         {
-            const int32 r = FindRoot(i);
-            if (r != i)
-            {
-                Out.Normals[r] += Out.Normals[i];
-                Out.Normals[i] = FVector::ZeroVector;
-            }
+            const int32 li = LM.Triangles[ti];
+            if ((uint32)li >= (uint32)VB) continue;
+            const int32 gi = LocalToGlobal[li];
+            if (gi >= 0) Out.Triangles.Add(gi);
         }
 
-        for (int32& T : Out.Triangles)
+        PrevUpperMap.Reset();
+        PrevUpperMap.Reserve(LM.UpperBoundary.Num());
+        for (const FLocalMesh::FBoundaryV& BV : LM.UpperBoundary)
         {
-            T = FindRoot(T);
+            if ((uint32)BV.LocalIndex >= (uint32)VB) continue;
+            const int32 GI = LocalToGlobal[BV.LocalIndex];
+            if (GI >= 0) PrevUpperMap.Add(BV.Key, GI);
         }
     }
 

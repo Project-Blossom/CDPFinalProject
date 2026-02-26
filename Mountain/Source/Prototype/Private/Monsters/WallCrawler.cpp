@@ -184,19 +184,30 @@ void AWallCrawler::UpdateWallAlignment()
     
     if (DetectWall(WallNormal, HitLocation))
     {
+        // 부드러운 Normal 변화 (급격한 변화 방지)
+        if (!CurrentWallNormal.IsNearlyZero())
+        {
+            // 이전 Normal과 너무 다르면 부드럽게 보간
+            float DotProduct = FVector::DotProduct(CurrentWallNormal, WallNormal);
+            if (DotProduct > 0.5f)  // 60도 이내
+            {
+                WallNormal = FMath::VInterpTo(CurrentWallNormal, WallNormal, GetWorld()->GetDeltaSeconds(), 3.0f);
+            }
+        }
+        
         CurrentWallNormal = WallNormal;
         WallHitLocation = HitLocation;
         bIsOnWall = true;
         
-        // 경사 대응 회전 속도
-        float NormalDifference = FVector::DotProduct(GetActorForwardVector(), -WallNormal);
-        float InterpSpeed = (FMath::Abs(NormalDifference) < 0.8f && FMath::Abs(NormalDifference) > 0.6f) ? 20.0f :
-                           (NormalDifference < 0.5f) ? 15.0f : 5.0f;
+        // 회전 (배회 중일 때는 더 느리게)
+        float RotationSpeed = TargetPlayer ? 10.0f : 3.0f;  // 배회: 3, 추격: 10
         
         FRotator NewRotation = FMath::RInterpTo(GetActorRotation(), (-WallNormal).Rotation(), 
-            GetWorld()->GetDeltaSeconds(), InterpSpeed);
+            GetWorld()->GetDeltaSeconds(), RotationSpeed);
         SetActorRotation(NewRotation);
-        SetActorLocation(HitLocation + WallNormal * WallStickDistance);
+        
+        // 위치 업데이트 (더 멀리)
+        SetActorLocation(HitLocation + WallNormal * (WallStickDistance + 5.0f));
     }
     else
     {
@@ -214,12 +225,8 @@ void AWallCrawler::CrawlOnWall(FVector Direction, float Speed)
     FVector NewLocation = GetActorLocation() + Movement;
     SetActorLocation(NewLocation);
     
-    // 재정렬
-    FVector WallNormal, HitLocation;
-    if (DetectWall(WallNormal, HitLocation))
-    {
-        SetActorLocation(HitLocation + WallNormal * WallStickDistance);
-    }
+    // 재정렬 제거 (UpdateWallAlignment에서 처리)
+    // 매 이동마다 재정렬하면 떨림 발생
 }
 
 FVector AWallCrawler::ProjectToWallSurface(FVector WorldDirection)
@@ -242,7 +249,7 @@ FVector AWallCrawler::ProjectToWallSurface(FVector WorldDirection)
 void AWallCrawler::GeneratePatrolWaypoints()
 {
     PatrolWaypoints.Empty();
-    int32 NumWaypoints = FMath::RandRange(8, 12);
+    int32 NumWaypoints = FMath::RandRange(6, 8);  // 웨이포인트 수 감소 (더 안정적)
     
     FVector Up = FVector::UpVector;
     FVector Right = FVector::CrossProduct(CurrentWallNormal, Up).GetSafeNormal();
@@ -250,30 +257,37 @@ void AWallCrawler::GeneratePatrolWaypoints()
     
     for (int32 i = 0; i < NumWaypoints; i++)
     {
-        float Angle = (float)i / NumWaypoints * 2.0f * PI + FMath::RandRange(-0.3f, 0.3f);
-        float Radius = CircleRadius * FMath::RandRange(0.5f, 1.5f);
+        float Angle = (float)i / NumWaypoints * 2.0f * PI + FMath::RandRange(-0.2f, 0.2f);  // 변형 감소
+        float Radius = CircleRadius * FMath::RandRange(0.7f, 1.3f);  // 반경 변화 감소
         
         FVector Offset = Right * FMath::Cos(Angle) * Radius + ActualUp * FMath::Sin(Angle) * Radius;
-        FVector Waypoint = PatrolCenter + Offset;
+        FVector TargetPoint = PatrolCenter + Offset;
         
-        // 벽면 투영
+        // 벽면 투영 (더 넓은 범위)
         FHitResult Hit;
         FCollisionQueryParams Params;
         Params.AddIgnoredActor(this);
         
-        if (GetWorld()->LineTraceSingleByChannel(Hit, 
-            Waypoint - CurrentWallNormal * 100.0f, 
-            Waypoint + CurrentWallNormal * 100.0f, 
-            ECC_WorldStatic, Params))
-        {
-            Waypoint = Hit.Location + Hit.Normal * WallStickDistance;
-        }
+        FVector TraceStart = TargetPoint - CurrentWallNormal * 200.0f;  // 2m
+        FVector TraceEnd = TargetPoint + CurrentWallNormal * 200.0f;
         
-        PatrolWaypoints.Add(Waypoint);
+        if (GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, Params))
+        {
+            // 벽에서 더 멀리 떨어진 위치 (떨림 방지)
+            FVector Waypoint = Hit.Location + Hit.Normal * (WallStickDistance + 10.0f);
+            PatrolWaypoints.Add(Waypoint);
+        }
+        else
+        {
+            // 벽을 못 찾으면 현재 위치 기준으로
+            PatrolWaypoints.Add(PatrolCenter + Offset.GetSafeNormal() * (Radius * 0.5f));
+        }
     }
     
     CurrentWaypointIndex = 0;
     if (PatrolWaypoints.Num() > 0) CurrentTargetPoint = PatrolWaypoints[0];
+    
+    UE_LOG(LogMonster, Log, TEXT("%s generated %d waypoints"), *GetName(), PatrolWaypoints.Num());
 }
 
 void AWallCrawler::OrganicPatrol(float DeltaTime)
@@ -296,28 +310,35 @@ void AWallCrawler::OrganicPatrol(float DeltaTime)
     
     UpdateMovementSpeed(DeltaTime);
     
-    float DistanceToTarget = (CurrentTargetPoint - GetActorLocation()).Size();
+    FVector ToTarget = CurrentTargetPoint - GetActorLocation();
+    float DistanceToTarget = ToTarget.Size();
     
-    if (DistanceToTarget < WaypointReachThreshold)
+    // 웨이포인트 도달 임계값 증가 (떨림 방지)
+    float AdjustedThreshold = WaypointReachThreshold * 2.0f;  // 2배 증가
+    
+    if (DistanceToTarget < AdjustedThreshold)
     {
         CurrentWaypointIndex = (CurrentWaypointIndex + 1) % PatrolWaypoints.Num();
         CurrentTargetPoint = PatrolWaypoints[CurrentWaypointIndex];
         
-        if (FMath::FRand() < PauseChance)
+        // 정지 확률 감소 (더 부드러운 움직임)
+        if (FMath::FRand() < PauseChance * 0.5f)
         {
             bIsPaused = true;
             NextPauseDuration = FMath::RandRange(MinPauseDuration, MaxPauseDuration);
         }
         
-        TargetSpeed = FMath::RandRange(MinSpeed, MaxSpeed);
+        TargetSpeed = FMath::RandRange(MinSpeed * 0.7f, MaxSpeed * 0.7f);  // 속도 감소
         
-        if (CurrentWaypointIndex == 0 && FMath::FRand() < 0.2f)
+        if (CurrentWaypointIndex == 0 && FMath::FRand() < 0.1f)  // 경로 재생성 확률 감소
         {
             GeneratePatrolWaypoints();
         }
     }
     
-    CrawlOnWall((CurrentTargetPoint - GetActorLocation()).GetSafeNormal(), CurrentSpeed);
+    // 부드러운 방향 전환
+    FVector CurrentDirection = ToTarget.GetSafeNormal();
+    CrawlOnWall(CurrentDirection, CurrentSpeed);
 }
 
 void AWallCrawler::UpdateMovementSpeed(float DeltaTime)

@@ -834,8 +834,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     }
 
     // =========================================================
-    // (B) Runtime: 비동기
-    // =========================================================
+ // (B) Runtime: 비동기
+ // =========================================================
     if (bAsyncWorking)
     {
         bRegenQueued = true;
@@ -852,7 +852,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
     TWeakObjectPtr<AMountainGenWorldActor> WeakThis(this);
 
-    Async(EAsyncExecution::ThreadPool,
+    AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask,
         [WeakThis,
         S, TerrainOriginWorld,
         WorldMin, WorldMax,
@@ -871,6 +871,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                         });
                 };
 
+            // ---- AutoTune ----
             if (WeakThis->bDebugPipeline)
             {
                 const FMGMetrics M0 = MGComputeMetricsQuick(S, TerrainOriginWorld, WorldMin, WorldMax);
@@ -891,6 +892,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 DebugPrint(TEXT("[AutoTune][After ] ") + WeakThis->MakeMetricsLine(S, M1, okO, okS), 5.0f, FColor::Cyan);
             }
 
+            // ---- Seed Search ----
             const int32 FinalSeed =
                 MGSearchSeedForTargets(
                     S,
@@ -917,21 +919,36 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 DebugPrint(Line, 6.0f, (okO && okS) ? FColor::Green : FColor::Orange);
             }
 
+            // ---- Density sampling ----
             FVoxelChunk Chunk;
             Chunk.Init(SampleX, SampleY, SampleZ);
 
             FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
 
+            // precompute offsets
+            TArray<float> XOff; XOff.SetNumUninitialized(SampleX);
+            TArray<float> YOff; YOff.SetNumUninitialized(SampleY);
+            TArray<float> ZOff; ZOff.SetNumUninitialized(SampleZ);
+
+            for (int32 x = 0; x < SampleX; ++x) XOff[x] = x * Voxel;
+            for (int32 y = 0; y < SampleY; ++y) YOff[y] = y * Voxel;
+            for (int32 z = 0; z < SampleZ; ++z) ZOff[z] = z * Voxel;
+
             ParallelFor(SampleZ, [&](int32 z)
                 {
+                    const float zc = ZOff[z];
                     for (int32 y = 0; y < SampleY; ++y)
+                    {
+                        const float yc = YOff[y];
                         for (int32 x = 0; x < SampleX; ++x)
                         {
-                            const FVector WorldPos = SampleOriginWorld + FVector(x * Voxel, y * Voxel, z * Voxel);
+                            const FVector WorldPos = SampleOriginWorld + FVector(XOff[x], yc, zc);
                             Chunk.Set(x, y, z, Gen.SampleDensity(WorldPos));
                         }
-                });
+                    }
+                }, EParallelForFlags::Unbalanced);
 
+            // ---- Meshing / Weld / Cull ----
             FChunkMeshData MeshData;
             FVoxelMesher::BuildMarchingCubes(
                 Chunk,
@@ -980,6 +997,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 );
             }
 
+            // ---- GameThread apply ----
             AsyncTask(ENamedThreads::GameThread,
                 [WeakThis, FinalS = S, MeshData = MoveTemp(MeshData), LocalBuildSerial]() mutable
                 {

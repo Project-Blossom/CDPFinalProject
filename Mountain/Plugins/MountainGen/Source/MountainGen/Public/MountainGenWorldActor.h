@@ -99,6 +99,16 @@ private:
     int32 InFlightBuildSerial = 0;
     FMGAsyncResult PendingResult;
 
+    TArray<FLinearColor> ReusableColors;
+
+#if WITH_EDITOR
+    FTimerHandle EditorRegenTimer;
+    float EditorRegenDebounceSeconds = 0.12f;
+
+    void RequestEditorRegen();
+    void DoEditorRegen();
+#endif
+
 #if WITH_EDITOR
     uint32 LastSettingsHash_Editor = 0;
 #endif

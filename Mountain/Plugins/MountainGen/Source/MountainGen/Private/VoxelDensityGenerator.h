@@ -14,6 +14,7 @@ struct FVoxelDensityGenerator
         , Seed(FMath::Max(1, InS.Seed))
     {
         InitSeedDomain();
+        InitCachedConstants();
     }
 
     float SampleDensity(const FVector& WorldPosCm) const;
@@ -37,6 +38,34 @@ private:
     float RidgedFBM01(const FVector& p, int32 Octaves, float Lacunarity, float Gain) const;
 
     void InitSeedDomain();
+    void InitCachedConstants();
+
+    struct FCached
+    {
+        float Iso = 0.f;
+        float Voxel = 1.f;
+
+        float BaseFieldAmp = 0.f;
+
+        float CliffH = 1000.f;
+        float FrontX = 200.f;
+
+        float OverhangBand = 0.f;
+        float OverhangScale = 200.f;
+        float OverhangBias = 0.f;
+        float OverhangAmp = 0.f;
+
+        float Base3DScale = 2000.f;
+        int32 Base3DOct = 1;
+
+        float DetailScale = 600.f;
+        int32 DetailOct = 1;
+
+        float RoughBand = 150.f;
+        float RoughScale = 300.f;
+    };
+
+    FCached C;
 
     FORCEINLINE FVector SeededDomain(const FVector& LocalCm) const
     {
