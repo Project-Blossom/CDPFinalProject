@@ -50,7 +50,7 @@ public:
     float FlyingMaxWallDistance = 500.0f;
     
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
-    bool bShowDebugInfo = true;
+    bool bShowDebugInfo = false;
     
     UFUNCTION(BlueprintCallable, Category = "Spawning")
     void SpawnMonsters();

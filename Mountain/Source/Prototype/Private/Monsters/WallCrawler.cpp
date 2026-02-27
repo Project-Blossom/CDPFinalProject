@@ -16,9 +16,25 @@ void AWallCrawler::BeginPlay()
 {
     Super::BeginPlay();
     
-    // Hearing만 사용 (방향 무관)
+    // CRITICAL: 스폰 시간 기록
+    SpawnTime = GetWorld()->GetTimeSeconds();
+    
+    // CRITICAL: TargetPlayer 명시적 초기화
+    TargetPlayer = nullptr;
+    DetectionGauge = 0.0f;
+    PotentialTarget = nullptr;
+    bAttachedToPlayer = false;
+    
+    UE_LOG(LogMonster, Warning, TEXT("%s BeginPlay: TargetPlayer = NULL, DetectionGauge = 0, SpawnTime = %.1f"), 
+        *GetName(), SpawnTime);
+    
+    // CRITICAL: MonsterBase의 OnPerceptionUpdated 바인딩 해제 후 WallCrawler 것으로 재바인딩
     if (PerceptionComponent)
     {
+        PerceptionComponent->OnTargetPerceptionUpdated.RemoveAll(this);
+        PerceptionComponent->OnTargetPerceptionUpdated.AddDynamic(this, &AWallCrawler::OnPerceptionUpdated);
+        
+        // Hearing만 사용 (방향 무관)
         UAISenseConfig_Hearing* HearingConfig = NewObject<UAISenseConfig_Hearing>(this);
         HearingConfig->HearingRange = 1000.0f;
         HearingConfig->SetMaxAge(0.2f);
@@ -28,6 +44,8 @@ void AWallCrawler::BeginPlay()
         
         PerceptionComponent->ConfigureSense(*HearingConfig);
         PerceptionComponent->SetDominantSense(HearingConfig->GetSenseImplementation());
+        
+        UE_LOG(LogMonster, Warning, TEXT("%s: Perception rebound to WallCrawler version"), *GetName());
     }
 
     FVector WallNormal, HitLocation;
@@ -48,6 +66,13 @@ void AWallCrawler::BeginPlay()
 void AWallCrawler::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+    
+    // CRITICAL: Tick 호출 확인
+    UE_LOG(LogMonster, Log, TEXT("%s Tick: bAttached=%s, TargetPlayer=%s, bIsOnWall=%s"), 
+        *GetName(),
+        bAttachedToPlayer ? TEXT("TRUE") : TEXT("FALSE"),
+        TargetPlayer ? TEXT("SET") : TEXT("NULL"),
+        bIsOnWall ? TEXT("TRUE") : TEXT("FALSE"));
 
     UpdateWallAlignment();
     UpdateDetectionGauge(DeltaTime);
@@ -63,16 +88,24 @@ void AWallCrawler::Tick(float DeltaTime)
         {
             float Distance = FVector::Dist(GetActorLocation(), TargetPlayer->GetActorLocation());
             
+            // CRITICAL: 매 프레임 거리 로그
+            UE_LOG(LogMonster, Log, TEXT("%s: HAS TargetPlayer! Distance: %.1fcm, AttachRange: %.1fcm"), 
+                *GetName(), Distance, AttachRange);
+            
             if (Distance > 1500.0f)
             {
                 TargetPlayer = nullptr;
+                UE_LOG(LogMonster, Warning, TEXT("%s: Player too far (%.1fcm) - TargetPlayer set to NULL"), *GetName(), Distance);
             }
             else if (Distance <= AttachRange)
             {
+                UE_LOG(LogMonster, Error, TEXT("%s: ATTACHING! Distance: %.1fcm <= AttachRange: %.1fcm"), 
+                    *GetName(), Distance, AttachRange);
                 AttachToPlayer(TargetPlayer);
             }
             else
             {
+                UE_LOG(LogMonster, Log, TEXT("%s: Pursuing player (Distance: %.1fcm)"), *GetName(), Distance);
                 PursuePlayer(DeltaTime);
             }
         }
@@ -83,7 +116,7 @@ void AWallCrawler::Tick(float DeltaTime)
     }
 
 #if !UE_BUILD_SHIPPING
-    if (!bAttachedToPlayer)
+    if (bShowDebug)
     {
         FVector ActorLoc = GetActorLocation();
         
@@ -365,6 +398,15 @@ void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
 {
     if (!Player || bAttachedToPlayer) return;
     
+    // CRITICAL: 스폰 직후 Attach 방지
+    float TimeSinceSpawn = GetWorld()->GetTimeSeconds() - SpawnTime;
+    if (TimeSinceSpawn < MinTimeBeforeAttach)
+    {
+        UE_LOG(LogMonster, Error, TEXT("%s ATTACH BLOCKED! Too soon after spawn (%.1fs < %.1fs)"), 
+            *GetName(), TimeSinceSpawn, MinTimeBeforeAttach);
+        return;
+    }
+    
     bAttachedToPlayer = true;
     TargetPlayer = Player;
     AccumulatedShake = 0.0f;
@@ -376,7 +418,7 @@ void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
     SetActorTickEnabled(true);
     SetActorLocation(Player->GetActorLocation() + FVector(0, 0, 100));
     
-    UE_LOG(LogMonster, Warning, TEXT("%s ATTACHED (debuff mode)"), *GetName());
+    UE_LOG(LogMonster, Warning, TEXT("%s ATTACHED (debuff mode) - Time since spawn: %.1fs"), *GetName(), TimeSinceSpawn);
 }
 
 void AWallCrawler::DetachFromPlayer()
@@ -516,10 +558,15 @@ void AWallCrawler::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
     if (Stimulus.WasSuccessfullySensed())
     {
         PotentialTarget = Player;
+        UE_LOG(LogMonster, Warning, TEXT("%s OnPerceptionUpdated: PotentialTarget SET (Noise detected)"), *GetName());
     }
     else
     {
-        if (PotentialTarget == Player) PotentialTarget = nullptr;
+        if (PotentialTarget == Player)
+        {
+            PotentialTarget = nullptr;
+            UE_LOG(LogMonster, Log, TEXT("%s OnPerceptionUpdated: PotentialTarget CLEARED"), *GetName());
+        }
     }
 }
 
@@ -533,7 +580,8 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
         if (DetectionGauge >= DetectionGaugeMax && !TargetPlayer)
         {
             TargetPlayer = Cast<ADownfallCharacter>(PotentialTarget);
-            UE_LOG(LogMonster, Warning, TEXT("%s DETECTED player"), *GetName());
+            UE_LOG(LogMonster, Error, TEXT("%s DETECTED player via GAUGE (Gauge: %.1f) - TargetPlayer SET!"), 
+                *GetName(), DetectionGauge);
         }
     }
     else
@@ -546,7 +594,7 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
             if (DetectionGauge <= 0.0f && TargetPlayer)
             {
                 TargetPlayer = nullptr;
-                UE_LOG(LogMonster, Warning, TEXT("%s LOST player"), *GetName());
+                UE_LOG(LogMonster, Warning, TEXT("%s LOST player (gauge empty)"), *GetName());
             }
         }
     }
@@ -559,6 +607,7 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
             TargetPlayer = nullptr;
             PotentialTarget = nullptr;
             DetectionGauge = 0.0f;
+            UE_LOG(LogMonster, Warning, TEXT("%s: Distance check in UpdateDetectionGauge - too far (%.1f)"), *GetName(), Distance);
         }
     }
 }

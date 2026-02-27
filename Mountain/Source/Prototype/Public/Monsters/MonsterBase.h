@@ -50,10 +50,12 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Stats")
     float CurrentHealth;
+    
+    // Debug
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+    bool bShowDebug = false;
 
-    // ============================================
     // Functions
-    // ============================================
     UFUNCTION()
     virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
 

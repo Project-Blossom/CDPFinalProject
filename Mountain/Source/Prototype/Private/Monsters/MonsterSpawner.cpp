@@ -25,6 +25,17 @@ void AMonsterSpawner::SpawnMonsters()
         return;
     }
     
+    // 플레이어 위치 확인
+    APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
+    if (!PlayerPawn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("MonsterSpawner: No player found!"));
+        return;
+    }
+    
+    FVector PlayerLocation = PlayerPawn->GetActorLocation();
+    UE_LOG(LogTemp, Warning, TEXT("MonsterSpawner: Player at %s"), *PlayerLocation.ToString());
+    
     ClearAllMonsters();
     
     int32 CountPerType = TotalMonsterCount / 3;
@@ -34,8 +45,8 @@ void AMonsterSpawner::SpawnMonsters()
     int32 FlyingPlatformCount = CountPerType + (Remainder > 1 ? 1 : 0);
     int32 FlyingAttackerCount = CountPerType;
     
-    UE_LOG(LogTemp, Warning, TEXT("MonsterSpawner: Spawning %d WallCrawlers, %d FlyingPlatforms, %d FlyingAttackers"),
-        WallCrawlerCount, FlyingPlatformCount, FlyingAttackerCount);
+    UE_LOG(LogTemp, Warning, TEXT("MonsterSpawner: Spawning %d WallCrawlers, %d FlyingPlatforms, %d FlyingAttackers (ShowDebug: %s)"),
+        WallCrawlerCount, FlyingPlatformCount, FlyingAttackerCount, bShowDebugInfo ? TEXT("TRUE") : TEXT("FALSE"));
     
     FVector SpawnerLocation = GetActorLocation();
     int32 MaxAttempts = TotalMonsterCount * 10;
@@ -60,6 +71,9 @@ void AMonsterSpawner::SpawnMonsters()
             GetDistanceToNearestWall(SpawnLocation, WallNormal);
             FRotator SpawnRotation = (-WallNormal).Rotation();
             
+            // 플레이어와 거리 확인
+            float DistanceToPlayer = FVector::Dist(SpawnLocation, PlayerLocation);
+            
             if (WallCrawlerClass)
             {
                 AWallCrawler* Monster = GetWorld()->SpawnActor<AWallCrawler>(
@@ -70,11 +84,20 @@ void AMonsterSpawner::SpawnMonsters()
                 
                 if (Monster)
                 {
+                    // 초기 상태 강제 설정
+                    Monster->TargetPlayer = nullptr;
+                    Monster->DetectionGauge = 0.0f;
+                    Monster->PotentialTarget = nullptr;
+                    
                     SpawnedMonsters.Add(Monster);
                     SuccessCount++;
                     
+                    UE_LOG(LogTemp, Log, TEXT("WallCrawler spawned at %s (%.1fcm from player)"), 
+                        *SpawnLocation.ToString(), DistanceToPlayer);
+                    
                     if (bShowDebugInfo)
                     {
+                        UE_LOG(LogTemp, Log, TEXT("MonsterSpawner: Debug sphere shown at %s"), *SpawnLocation.ToString());
                         DrawDebugSphere(GetWorld(), SpawnLocation, 30.0f, 8, FColor::Green, false, 5.0f);
                     }
                 }

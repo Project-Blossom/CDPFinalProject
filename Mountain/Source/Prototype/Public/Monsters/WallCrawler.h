@@ -133,6 +133,10 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
     FVector2D LastMousePosition;            // 이전 마우스 위치
+    
+    // CRITICAL: 스폰 직후 Attach 방지
+    float SpawnTime = 0.0f;
+    float MinTimeBeforeAttach = 2.0f;       // 스폰 후 2초 동안 Attach 불가
 
 
     // Functions
