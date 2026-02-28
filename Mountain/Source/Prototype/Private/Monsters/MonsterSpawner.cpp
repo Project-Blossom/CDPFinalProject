@@ -15,6 +15,11 @@ AMonsterSpawner::AMonsterSpawner()
 void AMonsterSpawner::BeginPlay()
 {
     Super::BeginPlay();
+    
+    if (bAutoSpawnOnBeginPlay)
+    {
+        SpawnMonsters();
+    }
 }
 
 void AMonsterSpawner::SpawnMonsters()
@@ -25,7 +30,6 @@ void AMonsterSpawner::SpawnMonsters()
         return;
     }
     
-    // 플레이어 위치 확인
     APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
     if (!PlayerPawn)
     {
@@ -34,10 +38,11 @@ void AMonsterSpawner::SpawnMonsters()
     }
     
     FVector PlayerLocation = PlayerPawn->GetActorLocation();
-    UE_LOG(LogTemp, Warning, TEXT("MonsterSpawner: Player at %s"), *PlayerLocation.ToString());
+    FVector SpawnerLocation = GetActorLocation();
     
     ClearAllMonsters();
     
+    // 몬스터 타입별 개수 계산 (1:1:1)
     int32 CountPerType = TotalMonsterCount / 3;
     int32 Remainder = TotalMonsterCount % 3;
     
@@ -45,19 +50,15 @@ void AMonsterSpawner::SpawnMonsters()
     int32 FlyingPlatformCount = CountPerType + (Remainder > 1 ? 1 : 0);
     int32 FlyingAttackerCount = CountPerType;
     
-    UE_LOG(LogTemp, Warning, TEXT("MonsterSpawner: Spawning %d WallCrawlers, %d FlyingPlatforms, %d FlyingAttackers (ShowDebug: %s)"),
-        WallCrawlerCount, FlyingPlatformCount, FlyingAttackerCount, bShowDebugInfo ? TEXT("TRUE") : TEXT("FALSE"));
+    UE_LOG(LogTemp, Log, TEXT("MonsterSpawner: Spawning %d WallCrawlers, %d FlyingPlatforms, %d FlyingAttackers"),
+        WallCrawlerCount, FlyingPlatformCount, FlyingAttackerCount);
     
-    FVector SpawnerLocation = GetActorLocation();
-    int32 MaxAttempts = TotalMonsterCount * 10;
+    int32 MaxAttempts = TotalMonsterCount * 20;
     
     // WallCrawler 스폰
     int32 SuccessCount = 0;
-    int32 Attempts = 0;
-    while (SuccessCount < WallCrawlerCount && Attempts < MaxAttempts)
+    for (int32 Attempt = 0; Attempt < MaxAttempts && SuccessCount < WallCrawlerCount; Attempt++)
     {
-        Attempts++;
-        
         FVector RandomOffset = FVector(
             FMath::RandRange(-SpawnRadius, SpawnRadius),
             FMath::RandRange(-SpawnRadius, SpawnRadius),
@@ -65,53 +66,38 @@ void AMonsterSpawner::SpawnMonsters()
         );
         FVector SpawnLocation = SpawnerLocation + RandomOffset;
         
-        if (IsValidSpawnLocation(SpawnLocation, true))
+        if (!IsValidSpawnLocation(SpawnLocation, true, PlayerLocation))
+            continue;
+        
+        FVector WallNormal;
+        GetDistanceToNearestWall(SpawnLocation, WallNormal);
+        FRotator SpawnRotation = (-WallNormal).Rotation();
+        
+        if (WallCrawlerClass)
         {
-            FVector WallNormal;
-            GetDistanceToNearestWall(SpawnLocation, WallNormal);
-            FRotator SpawnRotation = (-WallNormal).Rotation();
+            AWallCrawler* Monster = GetWorld()->SpawnActor<AWallCrawler>(
+                WallCrawlerClass, SpawnLocation, SpawnRotation);
             
-            // 플레이어와 거리 확인
-            float DistanceToPlayer = FVector::Dist(SpawnLocation, PlayerLocation);
-            
-            if (WallCrawlerClass)
+            if (Monster)
             {
-                AWallCrawler* Monster = GetWorld()->SpawnActor<AWallCrawler>(
-                    WallCrawlerClass,
-                    SpawnLocation,
-                    SpawnRotation
-                );
+                SpawnedMonsters.Add(Monster);
+                SuccessCount++;
                 
-                if (Monster)
+                if (bShowDebugSpheres)
                 {
-                    // 초기 상태 강제 설정
-                    Monster->TargetPlayer = nullptr;
-                    Monster->DetectionGauge = 0.0f;
-                    Monster->PotentialTarget = nullptr;
-                    
-                    SpawnedMonsters.Add(Monster);
-                    SuccessCount++;
-                    
-                    UE_LOG(LogTemp, Log, TEXT("WallCrawler spawned at %s (%.1fcm from player)"), 
-                        *SpawnLocation.ToString(), DistanceToPlayer);
-                    
-                    if (bShowDebugInfo)
-                    {
-                        UE_LOG(LogTemp, Log, TEXT("MonsterSpawner: Debug sphere shown at %s"), *SpawnLocation.ToString());
-                        DrawDebugSphere(GetWorld(), SpawnLocation, 30.0f, 8, FColor::Green, false, 5.0f);
-                    }
+                    DrawDebugSphere(GetWorld(), SpawnLocation, 50.0f, 12, FColor::Green, true, 10.0f, 0, 3.0f);
                 }
+                
+                UE_LOG(LogTemp, Log, TEXT("WallCrawler spawned at distance %.1fcm"), 
+                    FVector::Dist(SpawnLocation, PlayerLocation));
             }
         }
     }
     
     // FlyingPlatform 스폰
     SuccessCount = 0;
-    Attempts = 0;
-    while (SuccessCount < FlyingPlatformCount && Attempts < MaxAttempts)
+    for (int32 Attempt = 0; Attempt < MaxAttempts && SuccessCount < FlyingPlatformCount; Attempt++)
     {
-        Attempts++;
-        
         FVector RandomOffset = FVector(
             FMath::RandRange(-SpawnRadius, SpawnRadius),
             FMath::RandRange(-SpawnRadius, SpawnRadius),
@@ -119,25 +105,22 @@ void AMonsterSpawner::SpawnMonsters()
         );
         FVector SpawnLocation = SpawnerLocation + RandomOffset;
         
-        if (IsValidSpawnLocation(SpawnLocation, false))
+        if (!IsValidSpawnLocation(SpawnLocation, false, PlayerLocation))
+            continue;
+        
+        if (FlyingPlatformClass)
         {
-            if (FlyingPlatformClass)
+            AFlyingPlatform* Monster = GetWorld()->SpawnActor<AFlyingPlatform>(
+                FlyingPlatformClass, SpawnLocation, FRotator::ZeroRotator);
+            
+            if (Monster)
             {
-                AFlyingPlatform* Monster = GetWorld()->SpawnActor<AFlyingPlatform>(
-                    FlyingPlatformClass,
-                    SpawnLocation,
-                    FRotator::ZeroRotator
-                );
+                SpawnedMonsters.Add(Monster);
+                SuccessCount++;
                 
-                if (Monster)
+                if (bShowDebugSpheres)
                 {
-                    SpawnedMonsters.Add(Monster);
-                    SuccessCount++;
-                    
-                    if (bShowDebugInfo)
-                    {
-                        DrawDebugSphere(GetWorld(), SpawnLocation, 30.0f, 8, FColor::Blue, false, 5.0f);
-                    }
+                    DrawDebugSphere(GetWorld(), SpawnLocation, 50.0f, 12, FColor::Blue, true, 10.0f, 0, 3.0f);
                 }
             }
         }
@@ -145,11 +128,8 @@ void AMonsterSpawner::SpawnMonsters()
     
     // FlyingAttacker 스폰
     SuccessCount = 0;
-    Attempts = 0;
-    while (SuccessCount < FlyingAttackerCount && Attempts < MaxAttempts)
+    for (int32 Attempt = 0; Attempt < MaxAttempts && SuccessCount < FlyingAttackerCount; Attempt++)
     {
-        Attempts++;
-        
         FVector RandomOffset = FVector(
             FMath::RandRange(-SpawnRadius, SpawnRadius),
             FMath::RandRange(-SpawnRadius, SpawnRadius),
@@ -157,25 +137,22 @@ void AMonsterSpawner::SpawnMonsters()
         );
         FVector SpawnLocation = SpawnerLocation + RandomOffset;
         
-        if (IsValidSpawnLocation(SpawnLocation, false))
+        if (!IsValidSpawnLocation(SpawnLocation, false, PlayerLocation))
+            continue;
+        
+        if (FlyingAttackerClass)
         {
-            if (FlyingAttackerClass)
+            AFlyingAttacker* Monster = GetWorld()->SpawnActor<AFlyingAttacker>(
+                FlyingAttackerClass, SpawnLocation, FRotator::ZeroRotator);
+            
+            if (Monster)
             {
-                AFlyingAttacker* Monster = GetWorld()->SpawnActor<AFlyingAttacker>(
-                    FlyingAttackerClass,
-                    SpawnLocation,
-                    FRotator::ZeroRotator
-                );
+                SpawnedMonsters.Add(Monster);
+                SuccessCount++;
                 
-                if (Monster)
+                if (bShowDebugSpheres)
                 {
-                    SpawnedMonsters.Add(Monster);
-                    SuccessCount++;
-                    
-                    if (bShowDebugInfo)
-                    {
-                        DrawDebugSphere(GetWorld(), SpawnLocation, 30.0f, 8, FColor::Red, false, 5.0f);
-                    }
+                    DrawDebugSphere(GetWorld(), SpawnLocation, 50.0f, 12, FColor::Red, true, 10.0f, 0, 3.0f);
                 }
             }
         }
@@ -193,43 +170,35 @@ void AMonsterSpawner::ClearAllMonsters()
             Monster->Destroy();
         }
     }
-    
     SpawnedMonsters.Empty();
 }
 
-bool AMonsterSpawner::IsValidSpawnLocation(const FVector& Location, bool bIsWallCrawler)
+bool AMonsterSpawner::IsValidSpawnLocation(const FVector& Location, bool bIsWallCrawler, const FVector& PlayerLocation)
 {
-    if (IsInsideRock(Location))
-    {
+    // 1. 플레이어와 거리 체크
+    float DistanceToPlayer = FVector::Dist(Location, PlayerLocation);
+    if (DistanceToPlayer < MinDistanceFromPlayer)
         return false;
-    }
     
+    // 2. 암벽 안 체크
+    if (IsInsideRock(Location))
+        return false;
+    
+    // 3. 벽 거리 체크
     FVector WallNormal;
     float DistanceToWall = GetDistanceToNearestWall(Location, WallNormal);
     
     if (bIsWallCrawler)
     {
+        // WallCrawler: 벽 근처여야 함
         if (DistanceToWall < WallCrawlerMinWallDistance || DistanceToWall > WallCrawlerMaxWallDistance)
-        {
             return false;
-        }
     }
     else
     {
+        // Flying: 벽이 너무 멀면 안 됨
         if (DistanceToWall > FlyingMaxWallDistance)
-        {
             return false;
-        }
-    }
-    
-    APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
-    if (PlayerPawn)
-    {
-        float DistanceToPlayer = FVector::Dist(Location, PlayerPawn->GetActorLocation());
-        if (DistanceToPlayer < MinDistanceFromPlayer)
-        {
-            return false;
-        }
     }
     
     return true;
@@ -238,15 +207,12 @@ bool AMonsterSpawner::IsValidSpawnLocation(const FVector& Location, bool bIsWall
 float AMonsterSpawner::GetDistanceToNearestWall(const FVector& Location, FVector& OutWallNormal)
 {
     TArray<FVector> Directions = {
-        FVector::ForwardVector,
-        -FVector::ForwardVector,
-        FVector::RightVector,
-        -FVector::RightVector,
-        FVector::UpVector,
-        -FVector::UpVector
+        FVector::ForwardVector, -FVector::ForwardVector,
+        FVector::RightVector, -FVector::RightVector,
+        FVector::UpVector, -FVector::UpVector
     };
     
-    float MinDistance = 999999.0f;
+    float MinDistance = 10000.0f;
     FVector BestNormal = FVector::UpVector;
     
     FCollisionQueryParams Params;
@@ -283,10 +249,9 @@ bool AMonsterSpawner::IsInsideRock(const FVector& Location)
     bool bHitUp = GetWorld()->LineTraceSingleByChannel(HitUp, Location, TraceUp, ECC_WorldStatic, Params);
     bool bHitDown = GetWorld()->LineTraceSingleByChannel(HitDown, Location, TraceDown, ECC_WorldStatic, Params);
     
+    // 위아래 둘 다 가까이 막혀 있으면 암벽 안
     if (bHitUp && bHitDown && HitUp.Distance < 50.0f && HitDown.Distance < 50.0f)
-    {
         return true;
-    }
     
     return false;
 }

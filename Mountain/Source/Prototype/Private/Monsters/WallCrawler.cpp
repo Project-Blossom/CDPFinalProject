@@ -116,7 +116,7 @@ void AWallCrawler::Tick(float DeltaTime)
     }
 
 #if !UE_BUILD_SHIPPING
-    if (bShowDebug)
+    if (!bAttachedToPlayer)
     {
         FVector ActorLoc = GetActorLocation();
         
