@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
-#include "Engine/PrimaryDataAsset.h"
+#include "Engine/DataAsset.h"
 #include "ItemDefinition.generated.h"
 
 UENUM(BlueprintType)
@@ -14,19 +14,22 @@ enum class EItemType : uint8
 };
 
 UCLASS(BlueprintType)
-class Prototype_API UItemDefinition : public UPrimaryDataAsset
+class PROTOTYPE_API UItemDefinition : public UPrimaryDataAsset
 {
     GENERATED_BODY()
+
 public:
+    UItemDefinition();
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
     FText DisplayName;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
-    EItemType Type = EItemType::Material;
+    EItemType Type;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
-    bool bStackable = true;
+    bool bStackable;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
-    int32 MaxStack = 99;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (ClampMin = "1"))
+    int32 MaxStack;
 };
