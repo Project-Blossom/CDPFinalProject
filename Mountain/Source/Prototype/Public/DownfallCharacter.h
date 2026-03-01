@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
 #include "Climbing/IClimbableSurface.h"
+#include "Engine/PostProcessVolume.h"
 #include "DownfallCharacter.generated.h"
 
 class UInputMappingContext;
@@ -174,6 +175,22 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Insanity")
     void UpdateInsanityEffects();
     
+    // GlitchFX
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
+    TObjectPtr<APostProcessVolume> GlitchPostProcessVolume;
+
+    UPROPERTY(EditAnywhere, Category = "Insanity")
+    float InsanityGlitchThreshold = 70.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Insanity")
+    float MaxGlitchIntensity = 1.0f;
+    
+    UPROPERTY(EditAnywhere, Category = "Insanity")
+    float GlitchTransitionSpeed = 2.0f;     // 전환 속도
+    
+    UPROPERTY(BlueprintReadOnly, Category = "Insanity")
+    float CurrentGlitchIntensity = 0.0f;    // 현재 글리치 강도
+    
 protected:
 
     // Input Handlers
@@ -207,4 +224,7 @@ protected:
 #if !UE_BUILD_SHIPPING
     void DrawDebugInfo();
 #endif
+    
+private:
+    void UpdateGlitchEffect();
 };
