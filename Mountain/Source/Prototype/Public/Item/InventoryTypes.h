@@ -1,8 +1,9 @@
 #pragma once
 #include "CoreMinimal.h"
-#include "InventoryTypes.generated.h"
 
 class UItemDefinition;
+
+#include "InventoryTypes.generated.h"
 
 USTRUCT(BlueprintType)
 struct FItemStack

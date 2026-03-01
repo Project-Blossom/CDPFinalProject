@@ -20,7 +20,8 @@ public class Prototype : ModuleRules
             "UMG",
             "Slate",
             "ProceduralMeshComponent",
-            "PhysicsCore"
+            "PhysicsCore",
+            "SlateCore"
         });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
