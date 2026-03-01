@@ -15,6 +15,7 @@
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
+#include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -30,7 +31,6 @@ ADownfallCharacter::ADownfallCharacter()
 
     // AI Perception Stimuli Source (몬스터가 감지할 수 있게)
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
-    // BeginPlay에서 등록
 
     // Grip Finder
     GripFinder = CreateDefaultSubobject<UGripPointFinderComponent>(TEXT("GripFinder"));
@@ -116,6 +116,34 @@ void ADownfallCharacter::BeginPlay()
     // 초기 스태미나
     LeftHand.Stamina = MaxStamina;
     RightHand.Stamina = MaxStamina;
+    
+    if (!GlitchPostProcessVolume)
+    {
+        TArray<AActor*> FoundActors;
+        UGameplayStatics::GetAllActorsOfClass(GetWorld(), APostProcessVolume::StaticClass(), FoundActors);
+        
+        if (FoundActors.Num() > 0)
+        {
+            GlitchPostProcessVolume = Cast<APostProcessVolume>(FoundActors[0]);
+            UE_LOG(LogTemp, Warning, TEXT("DownfallCharacter: PostProcessVolume auto-found: %s"), 
+                *GlitchPostProcessVolume->GetName());
+            
+            // 초기 Blend Weight를 0으로 설정
+            if (GlitchPostProcessVolume->Settings.WeightedBlendables.Array.Num() > 0)
+            {
+                GlitchPostProcessVolume->Settings.WeightedBlendables.Array[0].Weight = 0.0f;
+                UE_LOG(LogTemp, Log, TEXT("DownfallCharacter: Glitch effect initialized to 0"));
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("DownfallCharacter: PostProcessVolume has no materials!"));
+            }
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("DownfallCharacter: No PostProcessVolume found in level!"));
+        }
+    }
 }
 
 void ADownfallCharacter::Tick(float DeltaTime)
@@ -126,6 +154,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateInsanity(DeltaTime);
     UpdateClimbingState();
     CheckForPlatformAbduction();  // 납치 체크 추가
+    UpdateGlitchEffect();
     
     // AI Hearing: 의도적인 움직임만 소음 발생
     FVector Velocity = GetVelocity();
@@ -1006,3 +1035,36 @@ void ADownfallCharacter::DrawDebugInfo()
     );
 }
 #endif
+
+void ADownfallCharacter::UpdateGlitchEffect()
+{
+    if (!GlitchPostProcessVolume)
+        return;
+    
+    float TargetIntensity = 0.0f;
+    
+    // Insanity 70 이상일 때만 효과 적용
+    if (Insanity >= InsanityGlitchThreshold)
+    {
+        // 70~100 범위를 0~1로 정규화
+        float NormalizedInsanity = (Insanity - InsanityGlitchThreshold) / (MaxInsanity - InsanityGlitchThreshold);
+        TargetIntensity = FMath::Clamp(NormalizedInsanity * MaxGlitchIntensity, 0.0f, 1.0f);
+    }
+    
+    // 부드러운 전환
+    CurrentGlitchIntensity = FMath::FInterpTo(CurrentGlitchIntensity, TargetIntensity, 
+        GetWorld()->GetDeltaSeconds(), GlitchTransitionSpeed);
+    
+    // Post Process Material Blend Weight 적용
+    if (GlitchPostProcessVolume->Settings.WeightedBlendables.Array.Num() > 0)
+    {
+        GlitchPostProcessVolume->Settings.WeightedBlendables.Array[0].Weight = CurrentGlitchIntensity;
+    }
+    
+    // 디버그 로그 (필요시 제거)
+    if (CurrentGlitchIntensity > 0.01f)
+    {
+        UE_LOG(LogTemp, VeryVerbose, TEXT("Glitch Intensity: %.2f (Insanity: %.1f)"), 
+            CurrentGlitchIntensity, Insanity);
+    }
+}

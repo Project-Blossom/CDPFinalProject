@@ -17,34 +17,48 @@ protected:
 
 public:
 	virtual void Tick(float DeltaTime) override;
-
-	// ============================================
+    
 	// Flight Settings
-	// ============================================
 	UPROPERTY(EditAnywhere, Category = "Flight")
 	float FlightSpeed = 300.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Flight")
-	float FlightHeight = 200.0f;        // 지면으로부터 높이
+	float FlightHeight = 200.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Flight")
-	float PatrolRadius = 500.0f;        // 배회 반경
-	
+	float PatrolRadius = 500.0f;
+    
 	UPROPERTY(EditAnywhere, Category = "Flight")
-	float VerticalPatrolRange = 1000.0f;  // 수직 배회 범위
-
-	// ============================================
-	// Idle Location (암벽 근처 "둥지")
-	// ============================================
+	float VerticalPatrolRange = 1000.0f;
+    
+	// Obstacle Avoidance
+	UPROPERTY(EditAnywhere, Category = "Flight")
+	float ObstacleAvoidanceDistance = 300.0f;  // 장애물 감지 시작 거리
+    
+	UPROPERTY(EditAnywhere, Category = "Flight")
+	float ObstacleCheckDistance = 500.0f;      // 전방 체크 거리
+    
+	// Idle Location 
 	UPROPERTY(BlueprintReadOnly, Category = "Flight")
 	FVector IdleLocation;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Flight")
 	bool bIsIdling = true;
-
-	// ============================================
+	
+	// Avoidance State
+	UPROPERTY(BlueprintReadOnly, Category = "Flight")
+	bool bIsAvoiding = false;
+    
+	UPROPERTY(BlueprintReadOnly, Category = "Flight")
+	FVector AvoidanceDirection;
+    
+	UPROPERTY(BlueprintReadOnly, Category = "Flight")
+	float AvoidanceTimer = 0.0f;
+    
+	UPROPERTY(EditAnywhere, Category = "Flight")
+	float AvoidanceDuration = 1.0f;  // 회피 지속 시간
+	
 	// Functions
-	// ============================================
 	UFUNCTION(BlueprintCallable, Category = "Flight")
 	void FlyToLocation(FVector TargetLocation, float Speed);
 
@@ -56,4 +70,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	FVector GetRandomPatrolLocation() const;
+	
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	bool IsLocationValid(const FVector& Location) const;
+
+private:
+	// Obstacle Avoidance
+	bool CheckForObstacles(const FVector& Direction, float Distance, FVector& OutHitLocation);
+	FVector GetAvoidanceDirection(const FVector& DesiredDirection, const FVector& ObstacleNormal);
 };
