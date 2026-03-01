@@ -1,10 +1,9 @@
 #pragma once
+
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "InventoryTypes.h"
 #include "InventoryComponent.generated.h"
-
-class UItemDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
 
@@ -14,34 +13,25 @@ class PROTOTYPE_API UInventoryComponent : public UActorComponent
     GENERATED_BODY()
 
 public:
-    UInventoryComponent();
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
-    int32 Capacity = 24;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
-    TArray<FItemStack> Slots;
-
-    UPROPERTY(BlueprintAssignable, Category = "Inventory")
+    UPROPERTY(BlueprintAssignable)
     FOnInventoryChanged OnInventoryChanged;
 
-    UFUNCTION(BlueprintCallable, Category = "Inventory")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
+    int32 SlotCount = 24;
+
+    UFUNCTION(BlueprintCallable)
     const TArray<FItemStack>& GetSlots() const { return Slots; }
 
-    UFUNCTION(BlueprintCallable, Category = "Inventory")
-    int32 GetTotalCount(const UItemDefinition* Def) const;
+    UFUNCTION(BlueprintCallable)
+    bool AddItem(const UItemDefinition* Def, int32 Count);
 
-    UFUNCTION(BlueprintCallable, Category = "Inventory")
-    bool AddItem(const UItemDefinition* Def, int32 Count, int32& OutAdded);
+    UFUNCTION(BlueprintCallable)
+    bool RemoveItem(const UItemDefinition* Def, int32 Count);
 
-    UFUNCTION(BlueprintCallable, Category = "Inventory")
-    bool RemoveItem(const UItemDefinition* Def, int32 Count, int32& OutRemoved);
-
-    UFUNCTION(BlueprintCallable, Category = "Inventory")
-    bool SwapSlots(int32 A, int32 B);
+protected:
+    virtual void BeginPlay() override;
 
 private:
-    void EnsureSlotsSize();
-    int32 AddToExistingStacks(const UItemDefinition* Def, int32 Count);
-    int32 AddToEmptySlots(const UItemDefinition* Def, int32 Count);
+    UPROPERTY()
+    TArray<FItemStack> Slots;
 };

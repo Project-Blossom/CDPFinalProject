@@ -174,6 +174,11 @@ void ADownfallCharacter::BeginPlay()
     {
         UE_LOG(LogDownFall, Warning, TEXT("InventoryWidgetClass is null or not locally controlled"));
     }
+
+    if (Inventory && TestAnchorItemDef)
+    {
+        Inventory->AddItem(TestAnchorItemDef, 1);
+    }
 }
 
 void ADownfallCharacter::Tick(float DeltaTime)

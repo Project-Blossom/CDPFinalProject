@@ -203,6 +203,9 @@ public:
 
     UPROPERTY()
     TObjectPtr<UInventoryWidget> InventoryWidget;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Inventory|Test")
+    TObjectPtr<const UItemDefinition> TestAnchorItemDef;
     
 protected:
 

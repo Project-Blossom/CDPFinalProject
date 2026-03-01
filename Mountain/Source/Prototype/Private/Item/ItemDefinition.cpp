@@ -2,7 +2,8 @@
 
 UItemDefinition::UItemDefinition()
 {
-    Type = EItemType::Material;
-    bStackable = true;
-    MaxStack = 99;
+    ItemId = NAME_None;
+    DisplayName = FText::FromString(TEXT("Unknown Item"));
+    Type = EItemType::Etc;
+    MaxStack = 1;
 }
