@@ -1039,32 +1039,50 @@ void ADownfallCharacter::DrawDebugInfo()
 void ADownfallCharacter::UpdateGlitchEffect()
 {
     if (!GlitchPostProcessVolume)
+    {
         return;
+    }
+    
+    if (GlitchPostProcessVolume->Settings.WeightedBlendables.Array.Num() == 0)
+    {
+        return;
+    }
     
     float TargetIntensity = 0.0f;
     
-    // Insanity 70 이상일 때만 효과 적용
+    // Insanity 70 이상일 때 점진적으로 강화
     if (Insanity >= InsanityGlitchThreshold)
     {
         // 70~100 범위를 0~1로 정규화
         float NormalizedInsanity = (Insanity - InsanityGlitchThreshold) / (MaxInsanity - InsanityGlitchThreshold);
-        TargetIntensity = FMath::Clamp(NormalizedInsanity * MaxGlitchIntensity, 0.0f, 1.0f);
+        
+        // 곡선 적용 (제곱하면 처음엔 천천히, 나중엔 급격히)
+        float CurvedIntensity = NormalizedInsanity * NormalizedInsanity;
+        
+        // 최종 강도 계산
+        TargetIntensity = FMath::Clamp(CurvedIntensity * MaxGlitchIntensity, 0.0f, 1.0f);
     }
     
-    // 부드러운 전환
-    CurrentGlitchIntensity = FMath::FInterpTo(CurrentGlitchIntensity, TargetIntensity, 
-        GetWorld()->GetDeltaSeconds(), GlitchTransitionSpeed);
+    // 부드러운 전환 (보간)
+    CurrentGlitchIntensity = FMath::FInterpTo(
+        CurrentGlitchIntensity, 
+        TargetIntensity, 
+        GetWorld()->GetDeltaSeconds(), 
+        GlitchTransitionSpeed
+    );
     
     // Post Process Material Blend Weight 적용
-    if (GlitchPostProcessVolume->Settings.WeightedBlendables.Array.Num() > 0)
-    {
-        GlitchPostProcessVolume->Settings.WeightedBlendables.Array[0].Weight = CurrentGlitchIntensity;
-    }
+    GlitchPostProcessVolume->Settings.WeightedBlendables.Array[0].Weight = CurrentGlitchIntensity;
     
-    // 디버그 로그 (필요시 제거)
-    if (CurrentGlitchIntensity > 0.01f)
+    // 디버그 로그 (화면에 표시)
+    if (GEngine && CurrentGlitchIntensity > 0.01f)
     {
-        UE_LOG(LogTemp, VeryVerbose, TEXT("Glitch Intensity: %.2f (Insanity: %.1f)"), 
-            CurrentGlitchIntensity, Insanity);
+        GEngine->AddOnScreenDebugMessage(
+            1, // Key (같은 키면 덮어씀)
+            0.0f, 
+            FColor::Red,
+            FString::Printf(TEXT("Glitch: %.0f%% (Insanity: %.1f)"), 
+                CurrentGlitchIntensity * 100.0f, Insanity)
+        );
     }
 }
