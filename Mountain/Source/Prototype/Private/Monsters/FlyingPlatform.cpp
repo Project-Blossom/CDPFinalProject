@@ -97,8 +97,8 @@ void AFlyingPlatform::UpdatePatrol(float DeltaTime)
 
     if (Distance > ArrivalThreshold)
     {
-        // 아직 도착 안 함 - 계속 이동
-        FlyToLocation(CurrentTargetLocation, FlightSpeed);
+        // 아직 도착 안 함 - 계속 이동 (암벽 회피 ON)
+        FlyToLocation(CurrentTargetLocation, FlightSpeed, true);  // ← 수정: true 추가
     }
     else
     {

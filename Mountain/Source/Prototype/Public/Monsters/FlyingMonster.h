@@ -60,7 +60,7 @@ public:
 	
 	// Functions
 	UFUNCTION(BlueprintCallable, Category = "Flight")
-	void FlyToLocation(FVector TargetLocation, float Speed);
+	void FlyToLocation(FVector TargetLocation, float Speed, bool bAvoidObstacles = true);
 
 	UFUNCTION(BlueprintCallable, Category = "Flight")
 	void PatrolRandomly();

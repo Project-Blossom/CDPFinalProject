@@ -23,55 +23,58 @@ void AFlyingMonster::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
 }
 
-void AFlyingMonster::FlyToLocation(FVector TargetLocation, float Speed)
+void AFlyingMonster::FlyToLocation(FVector TargetLocation, float Speed, bool bAvoidObstacles)
 {
     FVector CurrentLocation = GetActorLocation();
     FVector DesiredDirection = (TargetLocation - CurrentLocation).GetSafeNormal();
     FVector FinalDirection = DesiredDirection;
     
-    // 회피 중이면 회피 방향 유지
-    if (bIsAvoiding)
+    // 암벽 회피가 활성화된 경우에만
+    if (bAvoidObstacles)
     {
-        AvoidanceTimer -= GetWorld()->GetDeltaSeconds();
-        
-        if (AvoidanceTimer <= 0.0f)
+        // 회피 중이면 회피 방향 유지
+        if (bIsAvoiding)
         {
-            // 회피 종료 - 다시 체크
-            bIsAvoiding = false;
+            AvoidanceTimer -= GetWorld()->GetDeltaSeconds();
+            
+            if (AvoidanceTimer <= 0.0f)
+            {
+                bIsAvoiding = false;
+            }
+            else
+            {
+                FinalDirection = AvoidanceDirection;
+                
+#if !UE_BUILD_SHIPPING
+                DrawDebugLine(GetWorld(), CurrentLocation, CurrentLocation + FinalDirection * 200.0f, 
+                    FColor::Orange, false, 0.1f, 0, 5.0f);
+#endif
+            }
         }
         else
         {
-            // 회피 방향 유지
-            FinalDirection = AvoidanceDirection;
-            
+            // 정상 비행 중 - 장애물 체크
+            FVector HitLocation;
+            if (CheckForObstacles(DesiredDirection, ObstacleCheckDistance, HitLocation))
+            {
+                // 장애물 발견 - 회피 시작
+                FVector ObstacleNormal = (CurrentLocation - HitLocation).GetSafeNormal();
+                AvoidanceDirection = GetAvoidanceDirection(DesiredDirection, ObstacleNormal);
+                
+                bIsAvoiding = true;
+                AvoidanceTimer = AvoidanceDuration;
+                FinalDirection = AvoidanceDirection;
+                
+                UE_LOG(LogMonster, Warning, TEXT("%s: Obstacle detected! Starting avoidance"), *GetName());
+                
 #if !UE_BUILD_SHIPPING
-            DrawDebugLine(GetWorld(), CurrentLocation, CurrentLocation + FinalDirection * 200.0f, 
-                FColor::Orange, false, 0.1f, 0, 5.0f);
+                DrawDebugLine(GetWorld(), CurrentLocation, HitLocation, FColor::Red, false, 1.0f, 0, 3.0f);
+                DrawDebugSphere(GetWorld(), HitLocation, 30.0f, 8, FColor::Red, false, 1.0f);
 #endif
+            }
         }
     }
-    else
-    {
-        // 정상 비행 중 - 장애물 체크
-        FVector HitLocation;
-        if (CheckForObstacles(DesiredDirection, ObstacleCheckDistance, HitLocation))
-        {
-            // 장애물 발견 - 회피 시작
-            FVector ObstacleNormal = (CurrentLocation - HitLocation).GetSafeNormal();
-            AvoidanceDirection = GetAvoidanceDirection(DesiredDirection, ObstacleNormal);
-            
-            bIsAvoiding = true;
-            AvoidanceTimer = AvoidanceDuration;
-            FinalDirection = AvoidanceDirection;
-            
-            UE_LOG(LogMonster, Warning, TEXT("%s: Obstacle detected! Starting avoidance"), *GetName());
-            
-#if !UE_BUILD_SHIPPING
-            DrawDebugLine(GetWorld(), CurrentLocation, HitLocation, FColor::Red, false, 1.0f, 0, 3.0f);
-            DrawDebugSphere(GetWorld(), HitLocation, 30.0f, 8, FColor::Red, false, 1.0f);
-#endif
-        }
-    }
+    // else: bAvoidObstacles == false, 회피 없이 직진
     
     // 이동
     FVector NewLocation = CurrentLocation + FinalDirection * Speed * GetWorld()->GetDeltaSeconds();
@@ -91,15 +94,14 @@ void AFlyingMonster::PatrolRandomly()
 {
     bIsIdling = false;
     FVector TargetLocation = GetRandomPatrolLocation();
-    FlyToLocation(TargetLocation, FlightSpeed);
+    FlyToLocation(TargetLocation, FlightSpeed, true);
 }
 
 void AFlyingMonster::ReturnToIdle()
 {
     bIsIdling = true;
-    FlyToLocation(IdleLocation, FlightSpeed * 0.5f);
+    FlyToLocation(IdleLocation, FlightSpeed * 0.5f, true);
 }
-
 FVector AFlyingMonster::GetRandomPatrolLocation() const
 {
     int32 MaxAttempts = 10;

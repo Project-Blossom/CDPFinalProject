@@ -22,12 +22,21 @@ AMonsterBase::AMonsterBase()
     HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
     
     PerceptionComponent->ConfigureSense(*HearingConfig);
+    
+    // Sight Config (시야 감지 활성화)
+    UAISenseConfig_Sight* SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
+    SightConfig->SightRadius = SightRadius;
+    SightConfig->LoseSightRadius = LoseSightRadius;
+    SightConfig->PeripheralVisionAngleDegrees = SightAngle;
+    SightConfig->SetMaxAge(5.0f);
+    SightConfig->DetectionByAffiliation.bDetectEnemies = true;
+    SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
+    SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
+    
+    PerceptionComponent->ConfigureSense(*SightConfig);
     PerceptionComponent->SetDominantSense(HearingConfig->GetSenseImplementation());
     
-    // Sight Config (Flying 몬스터용 - 자식 클래스에서 선택적으로 추가 가능)
-    // WallCrawler는 Hearing만 사용하므로 여기서는 설정 안 함
-    
-    UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured (Hearing)"));
+    UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured (Hearing + Sight)"));
 }
 
 void AMonsterBase::BeginPlay()

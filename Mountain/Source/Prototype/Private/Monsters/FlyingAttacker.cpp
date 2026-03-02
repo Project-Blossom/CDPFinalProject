@@ -15,7 +15,7 @@ void AFlyingAttacker::BeginPlay()
     AttackState = EAttackState::Idle;
     LastAttackTime = -AttackCooldown;  // 시작 시 즉시 공격 가능
 
-    UE_LOG(LogMonster, Log, TEXT("%s (Flying Attacker) ready to hunt!"), *GetName());
+    UE_LOG(LogMonster, Log, TEXT("%s (Flying Attacker) ready to hunt"), *GetName());
 }
 
 void AFlyingAttacker::Tick(float DeltaTime)
@@ -158,7 +158,7 @@ void AFlyingAttacker::UpdateAttackBehavior(float DeltaTime)
                 float Distance = GetDistanceToPlayer();
                 if (Distance <= PursuitDistance && Distance > 0)
                 {
-                    // 추격 시작!
+                    // 추격 시작
                     SetAttackState(EAttackState::Pursuing);
                     UE_LOG(LogMonster, Warning, TEXT("%s detected player at %.1f cm! PURSUING!"), *GetName(), Distance);
                 }
@@ -195,14 +195,14 @@ void AFlyingAttacker::UpdateAttackBehavior(float DeltaTime)
             }
             else if (Distance <= AttackRange && CanAttack())
             {
-                // 공격 범위 진입!
+                // 공격 범위 진입
                 Attack();
             }
             else
             {
-                // 계속 추격
+                // 계속 추격 - 암벽 회피 OFF
                 FVector PlayerLocation = TargetPlayer->GetActorLocation();
-                FlyToLocation(PlayerLocation, FlightSpeed);
+                FlyToLocation(PlayerLocation, FlightSpeed, false);  // ← 추가: false
             }
         }
         break;
@@ -214,7 +214,7 @@ void AFlyingAttacker::UpdateAttackBehavior(float DeltaTime)
             
             if (ChargeElapsed >= ChargeTime)
             {
-                // 준비 완료 - 돌진 실행!
+                // 준비 완료 - 돌진 실행
                 ExecuteCharge();
             }
             else
@@ -236,9 +236,9 @@ void AFlyingAttacker::UpdateAttackBehavior(float DeltaTime)
 
     case EAttackState::Attacking:
         {
-            // 돌진 중!
+            // 돌진 중 - 암벽 회피 OFF
             FVector Direction = (AttackTargetLocation - GetActorLocation()).GetSafeNormal();
-            FlyToLocation(AttackTargetLocation, AttackSpeed);
+            FlyToLocation(AttackTargetLocation, AttackSpeed, false);  // ← 추가: false
 
             // 충돌 체크
             if (TargetPlayer)
@@ -278,7 +278,7 @@ void AFlyingAttacker::UpdateAttackBehavior(float DeltaTime)
             }
             else
             {
-                // 안전 거리 유지
+                // 안전 거리 유지 - 암벽 회피 ON (후퇴)
                 if (TargetPlayer)
                 {
                     float Distance = GetDistanceToPlayer();
@@ -287,7 +287,7 @@ void AFlyingAttacker::UpdateAttackBehavior(float DeltaTime)
                         // 플레이어에게서 멀어지기
                         FVector AwayDirection = (GetActorLocation() - TargetPlayer->GetActorLocation()).GetSafeNormal();
                         FVector SafeLocation = GetActorLocation() + AwayDirection * 200.0f;
-                        FlyToLocation(SafeLocation, FlightSpeed * 0.5f);
+                        FlyToLocation(SafeLocation, FlightSpeed * 0.5f, true);  // ← 추가: true (또는 생략 가능)
                     }
                 }
             }
@@ -308,18 +308,18 @@ void AFlyingAttacker::UpdateIdlePatrol(float DeltaTime)
         UE_LOG(LogMonster, Log, TEXT("%s new patrol target: %s"), *GetName(), *CurrentPatrolTarget.ToString());
     }
 
-    // 목표로 이동
+    // 목표로 이동 - 암벽 회피 ON (배회)
     FVector CurrentLocation = GetActorLocation();
     float Distance = FVector::Dist(CurrentLocation, CurrentPatrolTarget);
 
     if (Distance > PatrolArrivalThreshold)
     {
         // 아직 도착 안 함 - 계속 이동
-        FlyToLocation(CurrentPatrolTarget, FlightSpeed);
+        FlyToLocation(CurrentPatrolTarget, FlightSpeed, true);  // ← 추가: true (또는 생략 가능)
     }
     else
     {
-        // 도착! - 대기
+        // 도착 - 대기
         PatrolIdleTimer += DeltaTime;
         
         if (PatrolIdleTimer >= PatrolIdleWaitTime)
