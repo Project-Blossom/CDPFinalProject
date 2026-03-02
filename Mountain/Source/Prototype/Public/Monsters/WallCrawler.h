@@ -134,9 +134,22 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
     FVector2D LastMousePosition;            // 이전 마우스 위치
     
-    // CRITICAL: 스폰 직후 Attach 방지
+    // Detach & Stun System
+    UPROPERTY(EditAnywhere, Category = "Attack")
+    float StunDuration = 3.0f;              // 떨어진 후 Stun 시간
+    
+    UPROPERTY(BlueprintReadOnly, Category = "Attack")
+    bool bIsStunned = false;                // Stun 상태
+    
+    UPROPERTY(BlueprintReadOnly, Category = "Attack")
+    float StunTimer = 0.0f;                 // Stun 타이머
+    
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float GravityScale = 1.0f;              // 중력 배율 (NoWall 시)
+    
+    // 스폰 직후 Attach 방지
     float SpawnTime = 0.0f;
-    float MinTimeBeforeAttach = 2.0f;       // 스폰 후 2초 동안 Attach 불가
+    float MinTimeBeforeAttach = 2.0f;
 
 
     // Functions
@@ -157,6 +170,9 @@ public:
     void GeneratePatrolWaypoints();         // 불규칙 경로 생성
     void UpdateMovementSpeed(float DeltaTime);  // 속도 업데이트
 
+    // Gravity
+    void ApplyGravity(float DeltaTime);
+    
     // Attack
     UFUNCTION(BlueprintCallable, Category = "Attack")
     void PursuePlayer(float DeltaTime);         // 플레이어 추적
@@ -183,3 +199,5 @@ public:
     virtual void Attack() override {}
     virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus) override;  // 게이지 방식
 };
+
+

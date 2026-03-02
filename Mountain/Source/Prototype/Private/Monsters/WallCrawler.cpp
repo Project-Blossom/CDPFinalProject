@@ -24,6 +24,8 @@ void AWallCrawler::BeginPlay()
     DetectionGauge = 0.0f;
     PotentialTarget = nullptr;
     bAttachedToPlayer = false;
+    bIsStunned = false;  // 추가
+    StunTimer = 0.0f;    // 추가
     
     UE_LOG(LogMonster, Warning, TEXT("%s BeginPlay: TargetPlayer = NULL, DetectionGauge = 0, SpawnTime = %.1f"), 
         *GetName(), SpawnTime);
@@ -67,15 +69,34 @@ void AWallCrawler::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
     
-    // CRITICAL: Tick 호출 확인
-    UE_LOG(LogMonster, Log, TEXT("%s Tick: bAttached=%s, TargetPlayer=%s, bIsOnWall=%s"), 
-        *GetName(),
-        bAttachedToPlayer ? TEXT("TRUE") : TEXT("FALSE"),
-        TargetPlayer ? TEXT("SET") : TEXT("NULL"),
-        bIsOnWall ? TEXT("TRUE") : TEXT("FALSE"));
+    // Stun 처리 (새로 추가)
+    if (bIsStunned)
+    {
+        StunTimer -= DeltaTime;
+        if (StunTimer <= 0.0f)
+        {
+            bIsStunned = false;
+            UE_LOG(LogMonster, Log, TEXT("%s recovered from stun"), *GetName());
+        }
+        
+        // Stun 중에는 중력 적용 (벽에 없으면)
+        if (!bIsOnWall)
+        {
+            ApplyGravity(DeltaTime);
+        }
+        
+        // Stun 중에는 다른 행동 안 함
+        return;
+    }
 
     UpdateWallAlignment();
     UpdateDetectionGauge(DeltaTime);
+    
+    // 벽에 없으면 중력 적용 (새로 추가)
+    if (!bIsOnWall)
+    {
+        ApplyGravity(DeltaTime);
+    }
 
     if (bAttachedToPlayer)
     {
@@ -87,10 +108,6 @@ void AWallCrawler::Tick(float DeltaTime)
         if (TargetPlayer)
         {
             float Distance = FVector::Dist(GetActorLocation(), TargetPlayer->GetActorLocation());
-            
-            // CRITICAL: 매 프레임 거리 로그
-            UE_LOG(LogMonster, Log, TEXT("%s: HAS TargetPlayer! Distance: %.1fcm, AttachRange: %.1fcm"), 
-                *GetName(), Distance, AttachRange);
             
             if (Distance > 1500.0f)
             {
@@ -105,7 +122,6 @@ void AWallCrawler::Tick(float DeltaTime)
             }
             else
             {
-                UE_LOG(LogMonster, Log, TEXT("%s: Pursuing player (Distance: %.1fcm)"), *GetName(), Distance);
                 PursuePlayer(DeltaTime);
             }
         }
@@ -124,9 +140,21 @@ void AWallCrawler::Tick(float DeltaTime)
         DrawDebugSphere(GetWorld(), ActorLoc, 1000.0f, 16, FColor::Yellow, false, 0.1f, 0, 1.0f);
         
         // 상태 텍스트
+        FString StatusText = bIsStunned ? TEXT("STUNNED") : 
+                            bIsOnWall ? TEXT("ON WALL") : TEXT("NO WALL");
+        FColor StatusColor = bIsStunned ? FColor::Purple : 
+                            bIsOnWall ? FColor::Green : FColor::Red;
+        
         DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 50), 
-            bIsOnWall ? TEXT("ON WALL") : TEXT("NO WALL"),
-            nullptr, bIsOnWall ? FColor::Green : FColor::Red, 0.0f, true);
+            StatusText, nullptr, StatusColor, 0.0f, true);
+        
+        // Stun 타이머
+        if (bIsStunned)
+        {
+            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 70), 
+                FString::Printf(TEXT("Stun: %.1fs"), StunTimer), 
+                nullptr, FColor::Purple, 0.0f, true);
+        }
         
         // 감지 게이지
         if (DetectionGauge > 0.0f || PotentialTarget)
@@ -142,7 +170,7 @@ void AWallCrawler::Tick(float DeltaTime)
         // Target 상태
         if (TargetPlayer)
         {
-            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 70), 
+            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 110), 
                 FString::Printf(TEXT("TARGET: %.0fcm"), FVector::Dist(ActorLoc, TargetPlayer->GetActorLocation())), 
                 nullptr, FColor::Red, 0.0f, true);
         }
@@ -257,9 +285,6 @@ void AWallCrawler::CrawlOnWall(FVector Direction, float Speed)
     FVector Movement = ProjectedDir * Speed * GetWorld()->GetDeltaSeconds();
     FVector NewLocation = GetActorLocation() + Movement;
     SetActorLocation(NewLocation);
-    
-    // 재정렬 제거 (UpdateWallAlignment에서 처리)
-    // 매 이동마다 재정렬하면 떨림 발생
 }
 
 FVector AWallCrawler::ProjectToWallSurface(FVector WorldDirection)
@@ -282,7 +307,7 @@ FVector AWallCrawler::ProjectToWallSurface(FVector WorldDirection)
 void AWallCrawler::GeneratePatrolWaypoints()
 {
     PatrolWaypoints.Empty();
-    int32 NumWaypoints = FMath::RandRange(6, 8);  // 웨이포인트 수 감소 (더 안정적)
+    int32 NumWaypoints = FMath::RandRange(6, 8);
     
     FVector Up = FVector::UpVector;
     FVector Right = FVector::CrossProduct(CurrentWallNormal, Up).GetSafeNormal();
@@ -290,29 +315,27 @@ void AWallCrawler::GeneratePatrolWaypoints()
     
     for (int32 i = 0; i < NumWaypoints; i++)
     {
-        float Angle = (float)i / NumWaypoints * 2.0f * PI + FMath::RandRange(-0.2f, 0.2f);  // 변형 감소
-        float Radius = CircleRadius * FMath::RandRange(0.7f, 1.3f);  // 반경 변화 감소
+        float Angle = (float)i / NumWaypoints * 2.0f * PI + FMath::RandRange(-0.2f, 0.2f);
+        float Radius = CircleRadius * FMath::RandRange(0.7f, 1.3f);
         
         FVector Offset = Right * FMath::Cos(Angle) * Radius + ActualUp * FMath::Sin(Angle) * Radius;
         FVector TargetPoint = PatrolCenter + Offset;
         
-        // 벽면 투영 (더 넓은 범위)
+        // 벽면 투영
         FHitResult Hit;
         FCollisionQueryParams Params;
         Params.AddIgnoredActor(this);
         
-        FVector TraceStart = TargetPoint - CurrentWallNormal * 200.0f;  // 2m
+        FVector TraceStart = TargetPoint - CurrentWallNormal * 200.0f;
         FVector TraceEnd = TargetPoint + CurrentWallNormal * 200.0f;
         
         if (GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, Params))
         {
-            // 벽에서 더 멀리 떨어진 위치 (떨림 방지)
             FVector Waypoint = Hit.Location + Hit.Normal * (WallStickDistance + 10.0f);
             PatrolWaypoints.Add(Waypoint);
         }
         else
         {
-            // 벽을 못 찾으면 현재 위치 기준으로
             PatrolWaypoints.Add(PatrolCenter + Offset.GetSafeNormal() * (Radius * 0.5f));
         }
     }
@@ -346,30 +369,27 @@ void AWallCrawler::OrganicPatrol(float DeltaTime)
     FVector ToTarget = CurrentTargetPoint - GetActorLocation();
     float DistanceToTarget = ToTarget.Size();
     
-    // 웨이포인트 도달 임계값 증가 (떨림 방지)
-    float AdjustedThreshold = WaypointReachThreshold * 2.0f;  // 2배 증가
+    float AdjustedThreshold = WaypointReachThreshold * 2.0f;
     
     if (DistanceToTarget < AdjustedThreshold)
     {
         CurrentWaypointIndex = (CurrentWaypointIndex + 1) % PatrolWaypoints.Num();
         CurrentTargetPoint = PatrolWaypoints[CurrentWaypointIndex];
         
-        // 정지 확률 감소 (더 부드러운 움직임)
         if (FMath::FRand() < PauseChance * 0.5f)
         {
             bIsPaused = true;
             NextPauseDuration = FMath::RandRange(MinPauseDuration, MaxPauseDuration);
         }
         
-        TargetSpeed = FMath::RandRange(MinSpeed * 0.7f, MaxSpeed * 0.7f);  // 속도 감소
+        TargetSpeed = FMath::RandRange(MinSpeed * 0.7f, MaxSpeed * 0.7f);
         
-        if (CurrentWaypointIndex == 0 && FMath::FRand() < 0.1f)  // 경로 재생성 확률 감소
+        if (CurrentWaypointIndex == 0 && FMath::FRand() < 0.1f)
         {
             GeneratePatrolWaypoints();
         }
     }
     
-    // 부드러운 방향 전환
     FVector CurrentDirection = ToTarget.GetSafeNormal();
     CrawlOnWall(CurrentDirection, CurrentSpeed);
 }
@@ -396,7 +416,8 @@ void AWallCrawler::PursuePlayer(float DeltaTime)
 
 void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
 {
-    if (!Player || bAttachedToPlayer) return;
+    if (!Player || bAttachedToPlayer || bIsStunned)  // bIsStunned 체크 추가
+        return;
     
     // CRITICAL: 스폰 직후 Attach 방지
     float TimeSinceSpawn = GetWorld()->GetTimeSeconds() - SpawnTime;
@@ -428,6 +449,10 @@ void AWallCrawler::DetachFromPlayer()
     bAttachedToPlayer = false;
     AccumulatedShake = 0.0f;
     
+    // Stun 상태 시작 (새로 추가)
+    bIsStunned = true;
+    StunTimer = StunDuration;
+    
     SetActorHiddenInGame(false);
     SetActorEnableCollision(true);
     
@@ -436,7 +461,9 @@ void AWallCrawler::DetachFromPlayer()
         FVector PlayerLoc = TargetPlayer->GetActorLocation();
         FVector RandomDir = FVector(FMath::RandRange(-1.0f, 1.0f), FMath::RandRange(-1.0f, 1.0f), 
             FMath::RandRange(-0.5f, 0.5f)).GetSafeNormal();
-        FVector TestLocation = PlayerLoc + RandomDir * FMath::RandRange(100.0f, 150.0f);
+        
+        float SpawnDistance = FMath::RandRange(100.0f, 300.0f);  // 100~300cm 거리
+        FVector TestLocation = PlayerLoc + RandomDir * SpawnDistance;
         
         // 가까운 벽 찾기
         TArray<FVector> SearchDirections = {RandomDir, -RandomDir, FVector::UpVector, 
@@ -480,12 +507,50 @@ void AWallCrawler::DetachFromPlayer()
             CurrentWallNormal = BestWallNormal;
             WallHitLocation = BestWallLocation;
             bIsOnWall = true;
+            
+            UE_LOG(LogMonster, Warning, TEXT("%s DETACHED to wall, STUNNED for %.1fs at distance %.1fcm"), 
+                *GetName(), StunDuration, SpawnDistance);
         }
         else
         {
+            // 벽 못 찾음 - 허공에 스폰
             SetActorLocation(TestLocation);
             bIsOnWall = false;
+            
+            UE_LOG(LogMonster, Warning, TEXT("%s DETACHED to air (NoWall), STUNNED for %.1fs, will fall"), 
+                *GetName(), StunDuration);
         }
+    }
+}
+
+// 중력 적용 (새로 추가)
+void AWallCrawler::ApplyGravity(float DeltaTime)
+{
+    FVector CurrentLocation = GetActorLocation();
+    FVector Gravity = FVector(0, 0, -980.0f) * GravityScale; // 중력 가속도
+    FVector NewLocation = CurrentLocation + Gravity * DeltaTime;
+    
+    // 지면 체크
+    FHitResult Hit;
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);
+    
+    if (GetWorld()->LineTraceSingleByChannel(Hit, CurrentLocation, NewLocation, ECC_WorldStatic, Params))
+    {
+        // 지면 도달
+        SetActorLocation(Hit.Location + Hit.Normal * WallStickDistance);
+        
+        // 벽으로 간주
+        CurrentWallNormal = Hit.Normal;
+        WallHitLocation = Hit.Location;
+        bIsOnWall = true;
+        
+        UE_LOG(LogMonster, Log, TEXT("%s hit ground, now on wall"), *GetName());
+    }
+    else
+    {
+        // 계속 낙하
+        SetActorLocation(NewLocation);
     }
 }
 
@@ -536,15 +601,6 @@ void AWallCrawler::UpdateShakeDetection(float DeltaTime)
         UE_LOG(LogMonster, Warning, TEXT("%s shaken off!"), *GetName());
         DetachFromPlayer();
     }
-    
-#if !UE_BUILD_SHIPPING
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 0.0f, 
-            AccumulatedShake > ShakeThreshold * 0.7f ? FColor::Red : FColor::Yellow,
-            FString::Printf(TEXT("Shake: %.0f / %.0f"), AccumulatedShake, ShakeThreshold));
-    }
-#endif
 }
 
 // Detection Gauge
