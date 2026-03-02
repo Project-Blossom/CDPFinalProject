@@ -190,15 +190,30 @@ bool AMonsterSpawner::IsValidSpawnLocation(const FVector& Location, bool bIsWall
     
     if (bIsWallCrawler)
     {
-        // WallCrawler: 벽 근처여야 함
+        // WallCrawler: 벽 근처여야 함 (100~300cm)
         if (DistanceToWall < WallCrawlerMinWallDistance || DistanceToWall > WallCrawlerMaxWallDistance)
             return false;
     }
     else
     {
-        // Flying: 벽이 너무 멀면 안 됨
-        if (DistanceToWall > FlyingMaxWallDistance)
+        // Flying: 벽에서 적절한 거리 (300~1500cm)
+        if (DistanceToWall < FlyingMinWallDistance || DistanceToWall > FlyingMaxWallDistance)
             return false;
+        
+        // 4. Flying 몬스터: 최소 높이 체크
+        FHitResult Hit;
+        FVector GroundCheckStart = Location;
+        FVector GroundCheckEnd = Location - FVector(0, 0, 5000.0f); // 50m 아래까지
+        
+        FCollisionQueryParams Params;
+        Params.AddIgnoredActor(this);
+        
+        if (GetWorld()->LineTraceSingleByChannel(Hit, GroundCheckStart, GroundCheckEnd, ECC_WorldStatic, Params))
+        {
+            float HeightAboveGround = Hit.Distance;
+            if (HeightAboveGround < FlyingMinHeight)
+                return false; // 너무 낮음
+        }
     }
     
     return true;
