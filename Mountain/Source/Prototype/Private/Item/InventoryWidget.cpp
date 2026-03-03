@@ -1,8 +1,14 @@
 #include "Item/InventoryWidget.h"
+
 #include "Components/TextBlock.h"
 #include "Item/InventoryComponent.h"
 #include "Item/InventoryTypes.h"
+
+#include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
+
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 
 void UInventoryWidget::NativeConstruct()
 {
@@ -56,6 +62,15 @@ void UInventoryWidget::Refresh()
         return;
     }
 
+    UItemSubsystem* IS = nullptr;
+    if (UWorld* W = GetWorld())
+    {
+        if (UGameInstance* GI = W->GetGameInstance())
+        {
+            IS = GI->GetSubsystem<UItemSubsystem>();
+        }
+    }
+
     const TArray<FItemStack>& Slots = Inventory->GetSlots();
 
     FString Out;
@@ -66,14 +81,27 @@ void UInventoryWidget::Refresh()
     {
         const FItemStack& S = Slots[i];
 
-        if (!S.IsValid())
+        if (S.IsEmpty())
         {
             Out += FString::Printf(TEXT("[%02d] (empty)\n"), i);
             continue;
         }
 
-        const FString Name = (S.Def ? S.Def->DisplayName.ToString() : TEXT("(null def)"));
-        Out += FString::Printf(TEXT("[%02d] %s x%d\n"), i, *Name, S.Count);
+        UItemDefinition* Def = IS ? IS->GetItemDefinition(S.ItemAssetId) : nullptr;
+
+        const FString Name = Def ? Def->DisplayName.ToString() : S.ItemAssetId.ToString();
+
+        if (S.bHasInstance)
+        {
+            Out += FString::Printf(TEXT("[%02d] %s x%d  (Inst:%s, Upg:%d)\n"),
+                i, *Name, S.Count,
+                *S.Instance.InstanceId.ToString(EGuidFormats::Short),
+                S.Instance.UpgradeLevel);
+        }
+        else
+        {
+            Out += FString::Printf(TEXT("[%02d] %s x%d\n"), i, *Name, S.Count);
+        }
     }
 
     SlotsText->SetText(FText::FromString(Out));

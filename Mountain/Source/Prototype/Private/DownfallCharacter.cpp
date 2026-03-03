@@ -19,6 +19,8 @@
 #include "Item/InventoryWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
+#include "Item/InventoryComponent.h"
+#include "Item/ItemDefinition.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -177,7 +179,12 @@ void ADownfallCharacter::BeginPlay()
 
     if (Inventory && TestAnchorItemDef)
     {
-        Inventory->AddItem(TestAnchorItemDef, 1);
+        const bool bOK = Inventory->TryAddByDefinition(TestAnchorItemDef, 1);
+
+        UE_LOG(LogDownFall, Warning, TEXT("Test item add: %s (%s x%d)"),
+            bOK ? TEXT("OK") : TEXT("FAILED"),
+            *TestAnchorItemDef->GetName(),
+            1);
     }
 }
 

@@ -90,6 +90,15 @@ bool UInventoryComponent::TryAdd(const FPrimaryAssetId& ItemId, int32 Count, boo
     return (Remaining == 0);
 }
 
+bool UInventoryComponent::TryAddByDefinition(const UItemDefinition* Def, int32 Count, bool bForceInstance)
+{
+    if (!Def || Count <= 0) return false;
+
+    const FPrimaryAssetId AssetId(FPrimaryAssetType(TEXT("Item")), Def->ItemId);
+
+    return TryAdd(AssetId, Count, bForceInstance);
+}
+
 bool UInventoryComponent::TryRemove(const FPrimaryAssetId& ItemId, int32 Count)
 {
     if (!ItemId.IsValid() || Count <= 0) return false;

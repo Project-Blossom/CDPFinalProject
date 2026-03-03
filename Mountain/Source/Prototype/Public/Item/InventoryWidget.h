@@ -2,11 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "InventoryWidget.generated.h"
 
 class UTextBlock;
 class UInventoryComponent;
-
-#include "InventoryWidget.generated.h"
 
 UCLASS(BlueprintType, Blueprintable)
 class PROTOTYPE_API UInventoryWidget : public UUserWidget

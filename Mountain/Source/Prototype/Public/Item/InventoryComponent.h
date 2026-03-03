@@ -43,6 +43,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool UseItem(int32 Index, AActor* User);
 
+    UFUNCTION(BlueprintCallable, Category = "Inventory")
+    bool TryAddByDefinition(const UItemDefinition* Def, int32 Count, bool bForceInstance = false);
+
     UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
     void BP_OnConsume(AActor* User, const UItemDefinition* Def, int32 Count);
 
