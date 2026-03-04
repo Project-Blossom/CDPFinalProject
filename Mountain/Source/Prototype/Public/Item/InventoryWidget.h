@@ -17,7 +17,6 @@ public:
     void BindInventory(UInventoryComponent* InInventory);
 
 protected:
-    virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
 
     UFUNCTION()
@@ -30,4 +29,7 @@ protected:
 private:
     UPROPERTY()
     TObjectPtr<UInventoryComponent> Inventory = nullptr;
+
+    UFUNCTION()
+    void HandleInventoryChanged();
 };

@@ -7,23 +7,22 @@
 UENUM(BlueprintType)
 enum class EItemType : uint8
 {
-    Anchor      UMETA(DisplayName = "Anchor"),
+    Placeable   UMETA(DisplayName = "Placeable"),
     Consumable  UMETA(DisplayName = "Consumable"),
-    Equipment   UMETA(DisplayName = "Equipment"),
-    Etc         UMETA(DisplayName = "Etc"),
+    Weapon      UMETA(DisplayName = "Weapon"),
 };
 
 UENUM(BlueprintType)
 enum class EItemUseType : uint8
 {
     None        UMETA(DisplayName = "None"),
-    Consume     UMETA(DisplayName = "Consume"),      // 회복/버프
-    PlaceActor  UMETA(DisplayName = "PlaceActor"),   // 설치형
-    Equip       UMETA(DisplayName = "Equip"),        // 무기/장비
+    Consume     UMETA(DisplayName = "Consume"),
+    Equip       UMETA(DisplayName = "Equip"),   
+    PlaceActor  UMETA(DisplayName = "PlaceActor"),
 };
 
 UCLASS(BlueprintType)
-class PROTOTYPE_API UItemDefinition : public UPrimaryDataAsset
+class PROTOTYPE_API UItemDefinition : public UDataAsset
 {
     GENERATED_BODY()
 
@@ -35,32 +34,14 @@ public:
     FText DisplayName;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
-    EItemType Type = EItemType::Etc;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stack", meta = (ClampMin = "1"))
-    int32 MaxStack = 1;
+    EItemType Type = EItemType::Consumable;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Use")
     EItemUseType UseType = EItemUseType::None;
 
-    // ---------- UI ----------
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
-    TObjectPtr<UTexture2D> Icon = nullptr;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stack", meta = (ClampMin = "1"))
+    int32 MaxStack = 1;
 
-    // ---------- 설치형 ----------
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Place")
-    TSubclassOf<AActor> PlaceActorClass = nullptr;
-
-    // ---------- 소모형 ----------
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Consume")
-    float HealAmount = 0.f;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Consume")
-    float StaminaAmount = 0.f;
-
-    virtual FPrimaryAssetId GetPrimaryAssetId() const override
-    {
-        // 타입: "Item", 이름: ItemId
-        return FPrimaryAssetId(TEXT("Item"), ItemId);
-    }
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Place", meta = (EditCondition = "UseType==EItemUseType::PlaceActor"))
+    TSubclassOf<AActor> PlaceActorClass;
 };

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/AssetManager.h"
 #include "InventoryTypes.generated.h"
 
 USTRUCT(BlueprintType)
@@ -9,19 +8,11 @@ struct FItemInstanceData
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
     FGuid InstanceId;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance")
-    int32 Durability = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
     int32 UpgradeLevel = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance")
-    TMap<FName, int32> IntStats;
-
-    bool IsValid() const { return InstanceId.IsValid(); }
 };
 
 USTRUCT(BlueprintType)
@@ -29,27 +20,26 @@ struct FItemStack
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
-    FPrimaryAssetId ItemAssetId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    FName ItemId = NAME_None;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
     int32 Count = 0;
 
-    // 장비/무기/강화용
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
     bool bHasInstance = false;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item", meta = (EditCondition = "bHasInstance"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
     FItemInstanceData Instance;
 
-    bool IsEmpty() const { return !ItemAssetId.IsValid() || Count <= 0; }
-    bool IsValid() const { return ItemAssetId.IsValid() && Count > 0; }
+    FORCEINLINE bool IsValid() const { return ItemId != NAME_None && Count > 0; }
+    FORCEINLINE bool IsEmpty() const { return ItemId == NAME_None || Count <= 0; }
 
     void Reset()
     {
-        ItemAssetId = FPrimaryAssetId();
+        ItemId = NAME_None;
         Count = 0;
         bHasInstance = false;
-        Instance = FItemInstanceData{};
+        Instance = FItemInstanceData();
     }
 };

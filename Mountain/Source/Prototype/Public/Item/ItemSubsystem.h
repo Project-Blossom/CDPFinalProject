@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
-#include "Engine/AssetManager.h"
 #include "ItemSubsystem.generated.h"
 
 class UItemDefinition;
@@ -13,12 +12,15 @@ class PROTOTYPE_API UItemSubsystem : public UGameInstanceSubsystem
     GENERATED_BODY()
 
 public:
-    UFUNCTION(BlueprintCallable, Category = "Item")
-    UItemDefinition* GetItemDefinition(const FPrimaryAssetId& Id) const;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
+    TArray<TSoftObjectPtr<UItemDefinition>> ItemList;
 
     UFUNCTION(BlueprintCallable, Category = "Item")
-    static FPrimaryAssetId MakeItemId(FName ItemId)
-    {
-        return FPrimaryAssetId(TEXT("Item"), ItemId);
-    }
+    UItemDefinition* GetItemDefinitionById(FName ItemId);
+
+private:
+    UPROPERTY(Transient)
+    TMap<FName, TObjectPtr<UItemDefinition>> Cache;
+
+    void BuildCacheIfNeeded();
 };

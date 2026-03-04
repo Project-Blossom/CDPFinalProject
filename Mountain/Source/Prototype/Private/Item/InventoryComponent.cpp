@@ -3,6 +3,7 @@
 #include "Item/ItemDefinition.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Engine/GameInstance.h"
 
 void UInventoryComponent::BeginPlay()
 {
@@ -19,30 +20,32 @@ int32 UInventoryComponent::FindEmptySlot() const
     return INDEX_NONE;
 }
 
-int32 UInventoryComponent::FindPartialStack(const FPrimaryAssetId& ItemId, int32 MaxStack) const
+int32 UInventoryComponent::FindPartialStack(FName ItemId, int32 MaxStack) const
 {
-    if (MaxStack <= 1) return INDEX_NONE;
+    if (ItemId == NAME_None || MaxStack <= 1) return INDEX_NONE;
 
     for (int32 i = 0; i < Slots.Num(); ++i)
     {
         const FItemStack& S = Slots[i];
-        if (S.IsValid() && S.ItemAssetId == ItemId && !S.bHasInstance && S.Count < MaxStack)
+        if (S.IsValid() && S.ItemId == ItemId && !S.bHasInstance && S.Count < MaxStack)
             return i;
     }
     return INDEX_NONE;
 }
 
-bool UInventoryComponent::TryAdd(const FPrimaryAssetId& ItemId, int32 Count, bool bForceInstance)
+bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
 {
-    if (!ItemId.IsValid() || Count <= 0) return false;
+    if (ItemId == NAME_None || Count <= 0) return false;
 
     UItemSubsystem* IS = GetWorld() ? GetWorld()->GetGameInstance()->GetSubsystem<UItemSubsystem>() : nullptr;
-    const UItemDefinition* Def = IS ? IS->GetItemDefinition(ItemId) : nullptr;
+    const UItemDefinition* Def = IS ? IS->GetItemDefinitionById(ItemId) : nullptr;
 
     const int32 MaxStack = Def ? FMath::Max(1, Def->MaxStack) : 1;
 
-    // 장비/무기/강화는 보통 인스턴스
-    const bool bShouldInstance = bForceInstance || (Def && Def->Type == EItemType::Equipment) || (MaxStack == 1);
+    const bool bShouldInstance =
+        bForceInstance ||
+        (Def && Def->Type == EItemType::Weapon) ||
+        (MaxStack == 1);
 
     int32 Remaining = Count;
 
@@ -69,7 +72,7 @@ bool UInventoryComponent::TryAdd(const FPrimaryAssetId& ItemId, int32 Count, boo
 
         FItemStack& S = Slots[Empty];
         S.Reset();
-        S.ItemAssetId = ItemId;
+        S.ItemId = ItemId;
 
         if (bShouldInstance)
         {
@@ -93,95 +96,29 @@ bool UInventoryComponent::TryAdd(const FPrimaryAssetId& ItemId, int32 Count, boo
 bool UInventoryComponent::TryAddByDefinition(const UItemDefinition* Def, int32 Count, bool bForceInstance)
 {
     if (!Def || Count <= 0) return false;
-
-    const FPrimaryAssetId AssetId(FPrimaryAssetType(TEXT("Item")), Def->ItemId);
-
-    return TryAdd(AssetId, Count, bForceInstance);
+    return TryAdd(Def->ItemId, Count, bForceInstance);
 }
 
-bool UInventoryComponent::TryRemove(const FPrimaryAssetId& ItemId, int32 Count)
+bool UInventoryComponent::TryRemove(FName ItemId, int32 Count)
 {
-    if (!ItemId.IsValid() || Count <= 0) return false;
+    if (ItemId == NAME_None || Count <= 0) return false;
 
     int32 Remaining = Count;
 
     for (int32 i = Slots.Num() - 1; i >= 0 && Remaining > 0; --i)
     {
         FItemStack& S = Slots[i];
-        if (!S.IsValid() || S.ItemAssetId != ItemId) continue;
+        if (!S.IsValid() || S.ItemId != ItemId) continue;
 
         const int32 Take = FMath::Min(S.Count, Remaining);
         S.Count -= Take;
         Remaining -= Take;
 
-        if (S.Count <= 0)
-            S.Reset();
+        if (S.Count <= 0) S.Reset();
     }
 
     OnInventoryChanged.Broadcast();
     return (Remaining == 0);
-}
-
-bool UInventoryComponent::MoveOrSwap(int32 FromIndex, int32 ToIndex)
-{
-    if (!Slots.IsValidIndex(FromIndex) || !Slots.IsValidIndex(ToIndex) || FromIndex == ToIndex)
-        return false;
-
-    Swap(Slots[FromIndex], Slots[ToIndex]);
-    OnInventoryChanged.Broadcast();
-    return true;
-}
-
-bool UInventoryComponent::SplitStack(int32 FromIndex, int32 SplitCount)
-{
-    if (!Slots.IsValidIndex(FromIndex)) return false;
-
-    FItemStack& From = Slots[FromIndex];
-    if (!From.IsValid() || From.bHasInstance) return false;
-    if (SplitCount <= 0 || SplitCount >= From.Count) return false;
-
-    const int32 Empty = FindEmptySlot();
-    if (Empty == INDEX_NONE) return false;
-
-    FItemStack& NewS = Slots[Empty];
-    NewS = From;
-    NewS.Count = SplitCount;
-
-    From.Count -= SplitCount;
-
-    OnInventoryChanged.Broadcast();
-    return true;
-}
-
-bool UInventoryComponent::TransferTo(UInventoryComponent* Other, int32 FromIndex, int32 Count)
-{
-    if (!Other || !Slots.IsValidIndex(FromIndex)) return false;
-
-    FItemStack& From = Slots[FromIndex];
-    if (!From.IsValid()) return false;
-
-    const int32 MoveCount = FMath::Clamp(Count, 1, From.Count);
-
-    if (From.bHasInstance)
-    {
-        if (MoveCount != 1) return false;
-
-        const bool bAdded = Other->TryAdd(From.ItemAssetId, 1, true);
-        if (!bAdded) return false;
-
-        From.Reset();
-        OnInventoryChanged.Broadcast();
-        return true;
-    }
-
-    const bool bAdded = Other->TryAdd(From.ItemAssetId, MoveCount, false);
-    if (!bAdded) return false;
-
-    From.Count -= MoveCount;
-    if (From.Count <= 0) From.Reset();
-
-    OnInventoryChanged.Broadcast();
-    return true;
 }
 
 bool UInventoryComponent::UseItem(int32 Index, AActor* User)
@@ -192,7 +129,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
     if (!S.IsValid()) return false;
 
     UItemSubsystem* IS = GetWorld() ? GetWorld()->GetGameInstance()->GetSubsystem<UItemSubsystem>() : nullptr;
-    UItemDefinition* Def = IS ? IS->GetItemDefinition(S.ItemAssetId) : nullptr;
+    UItemDefinition* Def = IS ? IS->GetItemDefinitionById(S.ItemId) : nullptr;
     if (!Def) return false;
 
     switch (Def->UseType)
@@ -216,6 +153,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
         {
             S.bHasInstance = true;
             S.Instance.InstanceId = FGuid::NewGuid();
+            S.Instance.UpgradeLevel = 0;
             S.Count = 1;
         }
         BP_OnEquip(User, Def, S.Instance);
@@ -224,4 +162,28 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
     default:
         return false;
     }
+}
+
+bool UInventoryComponent::TransferTo(UInventoryComponent* Target, int32 FromIndex, int32 Count)
+{
+    if (!Target) return false;
+    if (!Slots.IsValidIndex(FromIndex)) return false;
+    if (Count <= 0) return false;
+
+    FItemStack& From = Slots[FromIndex];
+    if (!From.IsValid()) return false;
+
+    const int32 MoveCount = FMath::Min(From.Count, Count);
+
+    const bool bInstance = From.bHasInstance;
+    if (bInstance && MoveCount != 1) return false;
+
+    const bool bAdded = Target->TryAdd(From.ItemId, MoveCount, bInstance);
+    if (!bAdded) return false;
+
+    From.Count -= MoveCount;
+    if (From.Count <= 0) From.Reset();
+
+    OnInventoryChanged.Broadcast();
+    return true;
 }

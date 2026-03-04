@@ -1,18 +1,26 @@
 #include "Item/InventoryWidget.h"
-
 #include "Components/TextBlock.h"
 #include "Item/InventoryComponent.h"
 #include "Item/InventoryTypes.h"
-
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
-
-#include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
 
-void UInventoryWidget::NativeConstruct()
+void UInventoryWidget::BindInventory(UInventoryComponent* InInventory)
 {
-    Super::NativeConstruct();
+    if (Inventory)
+    {
+        Inventory->OnInventoryChanged.RemoveDynamic(this, &UInventoryWidget::HandleInventoryChanged);
+    }
+
+    Inventory = InInventory;
+
+    if (Inventory)
+    {
+        Inventory->OnInventoryChanged.AddDynamic(this, &UInventoryWidget::HandleInventoryChanged);
+    }
+
     Refresh();
 }
 
@@ -20,41 +28,21 @@ void UInventoryWidget::NativeDestruct()
 {
     if (Inventory)
     {
-        Inventory->OnInventoryChanged.RemoveAll(this);
+        Inventory->OnInventoryChanged.RemoveDynamic(this, &UInventoryWidget::HandleInventoryChanged);
+        Inventory = nullptr;
     }
 
     Super::NativeDestruct();
 }
 
-void UInventoryWidget::BindInventory(UInventoryComponent* InInventory)
+void UInventoryWidget::HandleInventoryChanged()
 {
-    if (Inventory == InInventory)
-    {
-        Refresh();
-        return;
-    }
-
-    if (Inventory)
-    {
-        Inventory->OnInventoryChanged.RemoveAll(this);
-    }
-
-    Inventory = InInventory;
-
-    if (Inventory)
-    {
-        Inventory->OnInventoryChanged.AddDynamic(this, &UInventoryWidget::Refresh);
-    }
-
     Refresh();
 }
 
 void UInventoryWidget::Refresh()
 {
-    if (!SlotsText)
-    {
-        return;
-    }
+    if (!SlotsText) return;
 
     if (!Inventory)
     {
@@ -62,16 +50,8 @@ void UInventoryWidget::Refresh()
         return;
     }
 
-    UItemSubsystem* IS = nullptr;
-    if (UWorld* W = GetWorld())
-    {
-        if (UGameInstance* GI = W->GetGameInstance())
-        {
-            IS = GI->GetSubsystem<UItemSubsystem>();
-        }
-    }
-
     const TArray<FItemStack>& Slots = Inventory->GetSlots();
+    UItemSubsystem* IS = GetWorld() ? GetWorld()->GetGameInstance()->GetSubsystem<UItemSubsystem>() : nullptr;
 
     FString Out;
     Out += FString::Printf(TEXT("Inventory (%d slots)\n"), Slots.Num());
@@ -87,21 +67,10 @@ void UInventoryWidget::Refresh()
             continue;
         }
 
-        UItemDefinition* Def = IS ? IS->GetItemDefinition(S.ItemAssetId) : nullptr;
+        UItemDefinition* Def = IS ? IS->GetItemDefinitionById(S.ItemId) : nullptr;
+        const FString Name = Def ? Def->DisplayName.ToString() : S.ItemId.ToString();
 
-        const FString Name = Def ? Def->DisplayName.ToString() : S.ItemAssetId.ToString();
-
-        if (S.bHasInstance)
-        {
-            Out += FString::Printf(TEXT("[%02d] %s x%d  (Inst:%s, Upg:%d)\n"),
-                i, *Name, S.Count,
-                *S.Instance.InstanceId.ToString(EGuidFormats::Short),
-                S.Instance.UpgradeLevel);
-        }
-        else
-        {
-            Out += FString::Printf(TEXT("[%02d] %s x%d\n"), i, *Name, S.Count);
-        }
+        Out += FString::Printf(TEXT("[%02d] %s x%d\n"), i, *Name, S.Count);
     }
 
     SlotsText->SetText(FText::FromString(Out));

@@ -24,27 +24,20 @@ public:
     UFUNCTION(BlueprintCallable)
     const TArray<FItemStack>& GetSlots() const { return Slots; }
 
-    // ---------- ÇÙ½É API ----------
     UFUNCTION(BlueprintCallable, Category = "Inventory")
-    bool TryAdd(const FPrimaryAssetId& ItemId, int32 Count, bool bForceInstance = false);
+    bool TryAdd(FName ItemId, int32 Count, bool bForceInstance = false);
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
-    bool TryRemove(const FPrimaryAssetId& ItemId, int32 Count);
+    bool TryAddByDefinition(const UItemDefinition* Def, int32 Count, bool bForceInstance = false);
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
-    bool MoveOrSwap(int32 FromIndex, int32 ToIndex);
-
-    UFUNCTION(BlueprintCallable, Category = "Inventory")
-    bool SplitStack(int32 FromIndex, int32 SplitCount);
-
-    UFUNCTION(BlueprintCallable, Category = "Inventory")
-    bool TransferTo(UInventoryComponent* Other, int32 FromIndex, int32 Count);
+    bool TryRemove(FName ItemId, int32 Count);
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool UseItem(int32 Index, AActor* User);
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
-    bool TryAddByDefinition(const UItemDefinition* Def, int32 Count, bool bForceInstance = false);
+    bool TransferTo(UInventoryComponent* Target, int32 FromIndex, int32 Count);
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
     void BP_OnConsume(AActor* User, const UItemDefinition* Def, int32 Count);
@@ -63,5 +56,5 @@ private:
     TArray<FItemStack> Slots;
 
     int32 FindEmptySlot() const;
-    int32 FindPartialStack(const FPrimaryAssetId& ItemId, int32 MaxStack) const;
+    int32 FindPartialStack(FName ItemId, int32 MaxStack) const;
 };

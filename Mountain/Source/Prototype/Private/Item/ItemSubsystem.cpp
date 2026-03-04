@@ -1,27 +1,33 @@
+// Item/ItemSubsystem.cpp
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
-#include "Engine/AssetManager.h"
-#include "Engine/StreamableManager.h"
 
-UItemDefinition* UItemSubsystem::GetItemDefinition(const FPrimaryAssetId& Id) const
+void UItemSubsystem::BuildCacheIfNeeded()
 {
-    if (!Id.IsValid()) return nullptr;
+    if (Cache.Num() > 0) return;
 
-    UAssetManager& AM = UAssetManager::Get();
-
-    if (UObject* LoadedObj = AM.GetPrimaryAssetObject(Id))
+    for (const TSoftObjectPtr<UItemDefinition>& SoftDef : ItemList)
     {
-        return Cast<UItemDefinition>(LoadedObj);
-    }
+        if (SoftDef.IsNull()) continue;
 
-    TSharedPtr<FStreamableHandle> Handle = AM.LoadPrimaryAsset(Id);
-    if (!Handle.IsValid())
+        UItemDefinition* Def = SoftDef.LoadSynchronous();
+        if (!Def) continue;
+
+        if (Def->ItemId == NAME_None) continue;
+
+        Cache.Add(Def->ItemId, Def);
+    }
+}
+
+UItemDefinition* UItemSubsystem::GetItemDefinitionById(FName ItemId)
+{
+    if (ItemId == NAME_None) return nullptr;
+
+    BuildCacheIfNeeded();
+
+    if (TObjectPtr<UItemDefinition>* Found = Cache.Find(ItemId))
     {
-        return nullptr;
+        return Found->Get();
     }
-
-    Handle->WaitUntilComplete();
-
-    UObject* LoadedObj = AM.GetPrimaryAssetObject(Id);
-    return Cast<UItemDefinition>(LoadedObj);
+    return nullptr;
 }

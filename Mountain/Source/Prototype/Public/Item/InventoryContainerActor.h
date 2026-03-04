@@ -14,6 +14,6 @@ class PROTOTYPE_API AInventoryContainerActor : public AActor
 public:
     AInventoryContainerActor();
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     TObjectPtr<UInventoryComponent> Inventory;
 };
