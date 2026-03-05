@@ -1,31 +1,36 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Item/InventoryContainerActor.h"
+#include "GameFramework/Actor.h"
 #include "ItemDropActor.generated.h"
 
 class USphereComponent;
-class UItemDefinition;
 
 UCLASS()
-class PROTOTYPE_API AItemDropActor : public AInventoryContainerActor
+class PROTOTYPE_API AItemDropActor : public AActor
 {
     GENERATED_BODY()
 
 public:
     AItemDropActor();
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
-    TObjectPtr<USphereComponent> Sphere;
+protected:
+    virtual void BeginPlay() override;
 
+protected:
+    UPROPERTY(VisibleAnywhere)
+    TObjectPtr<USphereComponent> Sphere = nullptr;
+
+public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Drop")
-    TObjectPtr<UItemDefinition> ItemDef;
+    FName ItemId = NAME_None;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Drop", meta = (ClampMin = "1"))
     int32 Count = 1;
 
-protected:
+private:
     UFUNCTION()
-    void OnOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
-        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+    void OnSphereBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
+        bool bFromSweep, const FHitResult& SweepResult);
 };

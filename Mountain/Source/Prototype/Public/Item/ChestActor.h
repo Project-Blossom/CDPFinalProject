@@ -1,21 +1,23 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Item/InventoryContainerActor.h"
+#include "GameFramework/Actor.h"
 #include "ChestActor.generated.h"
 
+class UInventoryComponent;
+
 UCLASS()
-class PROTOTYPE_API AChestActor : public AInventoryContainerActor
+class PROTOTYPE_API AChestActor : public AActor
 {
     GENERATED_BODY()
 
 public:
     AChestActor();
 
-protected:
-    virtual void BeginPlay() override;
-
 public:
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Chest")
+    TObjectPtr<UInventoryComponent> Inventory = nullptr;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest", meta = (ClampMin = "1"))
     int32 ChestSlotCount = 24;
 };

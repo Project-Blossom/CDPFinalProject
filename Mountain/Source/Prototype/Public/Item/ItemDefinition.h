@@ -2,24 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Item/InventoryTypes.h"
 #include "ItemDefinition.generated.h"
-
-UENUM(BlueprintType)
-enum class EItemType : uint8
-{
-    Placeable   UMETA(DisplayName = "Placeable"),
-    Consumable  UMETA(DisplayName = "Consumable"),
-    Weapon      UMETA(DisplayName = "Weapon"),
-};
-
-UENUM(BlueprintType)
-enum class EItemUseType : uint8
-{
-    None        UMETA(DisplayName = "None"),
-    Consume     UMETA(DisplayName = "Consume"),
-    Equip       UMETA(DisplayName = "Equip"),   
-    PlaceActor  UMETA(DisplayName = "PlaceActor"),
-};
 
 UCLASS(BlueprintType)
 class PROTOTYPE_API UItemDefinition : public UDataAsset

@@ -6,7 +6,6 @@
 #include "InputActionValue.h"
 #include "Climbing/IClimbableSurface.h"
 #include "Engine/PostProcessVolume.h"
-#include "Item/InventoryComponent.h"
 #include "DownfallCharacter.generated.h"
 
 class UInputMappingContext;
@@ -192,20 +191,6 @@ public:
     
     UPROPERTY(BlueprintReadOnly, Category = "Insanity")
     float CurrentGlitchIntensity = 0.0f;    // 현재 글리치 강도
-
-    // Inventory
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
-    TObjectPtr<UInventoryComponent> Inventory;
-
-    // Inventory UI
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
-    TSubclassOf<UInventoryWidget> InventoryWidgetClass;
-
-    UPROPERTY()
-    TObjectPtr<UInventoryWidget> InventoryWidget;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Inventory|Test")
-    TObjectPtr<const UItemDefinition> TestAnchorItemDef;
     
 protected:
 

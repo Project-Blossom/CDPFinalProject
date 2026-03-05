@@ -1,13 +1,25 @@
 #include "Item/InventoryComponent.h"
+
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
+#include "Item/InventorySaveGame.h"
+
 #include "Engine/World.h"
-#include "GameFramework/Actor.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
+
+UInventoryComponent::UInventoryComponent()
+{
+    PrimaryComponentTick.bCanEverTick = false;
+}
 
 void UInventoryComponent::BeginPlay()
 {
     Super::BeginPlay();
+
     Slots.SetNum(SlotCount);
     OnInventoryChanged.Broadcast();
 }
@@ -15,8 +27,10 @@ void UInventoryComponent::BeginPlay()
 int32 UInventoryComponent::FindEmptySlot() const
 {
     for (int32 i = 0; i < Slots.Num(); ++i)
+    {
         if (Slots[i].IsEmpty())
             return i;
+    }
     return INDEX_NONE;
 }
 
@@ -42,15 +56,14 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
 
     const int32 MaxStack = Def ? FMath::Max(1, Def->MaxStack) : 1;
 
-    const bool bShouldInstance =
-        bForceInstance ||
-        (Def && Def->Type == EItemType::Weapon) ||
-        (MaxStack == 1);
+    const bool bUniqueSlot = bForceInstance || (MaxStack == 1);
+
+    const bool bShouldInstance = bForceInstance || (Def && Def->UseType == EItemUseType::Equip);
 
     int32 Remaining = Count;
 
     // 1) 스택형이면 기존 스택 채우기
-    if (!bShouldInstance && MaxStack > 1)
+    if (!bUniqueSlot && MaxStack > 1)
     {
         while (Remaining > 0)
         {
@@ -74,18 +87,15 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
         S.Reset();
         S.ItemId = ItemId;
 
+        S.Count = bUniqueSlot ? 1 : FMath::Min(MaxStack, Remaining);
+        Remaining -= S.Count;
+
         if (bShouldInstance)
         {
-            S.Count = 1;
             S.bHasInstance = true;
             S.Instance.InstanceId = FGuid::NewGuid();
-            Remaining -= 1;
-        }
-        else
-        {
-            const int32 AddNow = FMath::Min(MaxStack, Remaining);
-            S.Count = AddNow;
-            Remaining -= AddNow;
+            S.Instance.UpgradeLevel = 0;
+            S.Count = 1;
         }
     }
 
@@ -121,6 +131,72 @@ bool UInventoryComponent::TryRemove(FName ItemId, int32 Count)
     return (Remaining == 0);
 }
 
+bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const
+{
+    if (!User)
+    {
+        OutFailReason = FText::FromString(TEXT("Invalid user"));
+        return false;
+    }
+
+    if (!Def || Def->UseType != EItemUseType::PlaceActor)
+    {
+        OutFailReason = FText::FromString(TEXT("Item cannot be placed"));
+        return false;
+    }
+
+    if (!Def->PlaceActorClass)
+    {
+        OutFailReason = FText::FromString(TEXT("No actor assigned for placement"));
+        return false;
+    }
+
+    // ---- 카메라 기준 라인트레이스 ----
+    FVector ViewLoc = User->GetActorLocation();
+    FRotator ViewRot = User->GetActorRotation();
+
+    if (const APawn* P = Cast<APawn>(User))
+    {
+        if (APlayerController* PC = Cast<APlayerController>(P->GetController()))
+        {
+            PC->GetPlayerViewPoint(ViewLoc, ViewRot);
+        }
+    }
+
+    const FVector Start = ViewLoc;
+    const FVector Dir = ViewRot.Vector();
+    const FVector End = Start + Dir * PlaceTraceDistanceCm;
+
+    FHitResult Hit;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(PlaceTrace), false, User);
+    Params.bReturnPhysicalMaterial = false;
+
+    const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params);
+
+    if (!bHit || !Hit.bBlockingHit)
+    {
+        OutFailReason = FText::FromString(TEXT("No valid surface to place the item"));
+        return false;
+    }
+
+    const float Dist = FVector::Dist(Start, Hit.ImpactPoint);
+    if (Dist > PlaceRangeCm)
+    {
+        OutFailReason = FText::FromString(TEXT("Target is too far away"));
+        return false;
+    }
+
+    // ---- 법선 정렬 ----
+    const FVector Normal = Hit.ImpactNormal.GetSafeNormal();
+    const FVector Forward = -Normal; 
+    const FRotator Rot = FRotationMatrix::MakeFromX(Forward).Rotator();
+
+    const FVector Pos = Hit.ImpactPoint + Normal * (-PlaceEmbedCm);
+
+    OutXform = FTransform(Rot, Pos);
+    return true;
+}
+
 bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 {
     if (!Slots.IsValidIndex(Index) || !User) return false;
@@ -135,20 +211,42 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
     switch (Def->UseType)
     {
     case EItemUseType::Consume:
+    {
         BP_OnConsume(User, Def, 1);
+
         S.Count -= 1;
         if (S.Count <= 0) S.Reset();
+
         OnInventoryChanged.Broadcast();
         return true;
+    }
 
     case EItemUseType::PlaceActor:
-        BP_OnPlace(User, Def);
+    {
+        FTransform SpawnXform;
+        FText Fail;
+        if (!BuildPlaceTransform(User, Def, SpawnXform, Fail))
+        {
+            BP_OnUseFailed(User, Fail);
+            return false;
+        }
+
+        const bool bPlaced = BP_OnPlace(User, Def, SpawnXform);
+        if (!bPlaced)
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("Failed to place the item")));
+            return false;
+        }
+
         S.Count -= 1;
         if (S.Count <= 0) S.Reset();
+
         OnInventoryChanged.Broadcast();
         return true;
+    }
 
     case EItemUseType::Equip:
+    {
         if (!S.bHasInstance)
         {
             S.bHasInstance = true;
@@ -156,8 +254,10 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             S.Instance.UpgradeLevel = 0;
             S.Count = 1;
         }
+
         BP_OnEquip(User, Def, S.Instance);
         return true;
+    }
 
     default:
         return false;
@@ -175,14 +275,39 @@ bool UInventoryComponent::TransferTo(UInventoryComponent* Target, int32 FromInde
 
     const int32 MoveCount = FMath::Min(From.Count, Count);
 
-    const bool bInstance = From.bHasInstance;
-    if (bInstance && MoveCount != 1) return false;
+    if (From.bHasInstance && MoveCount != 1) return false;
 
-    const bool bAdded = Target->TryAdd(From.ItemId, MoveCount, bInstance);
+    const bool bAdded = Target->TryAdd(From.ItemId, MoveCount, From.bHasInstance);
     if (!bAdded) return false;
 
     From.Count -= MoveCount;
     if (From.Count <= 0) From.Reset();
+
+    OnInventoryChanged.Broadcast();
+    return true;
+}
+
+bool UInventoryComponent::SaveToSlot(const FString& SlotName, int32 UserIndex)
+{
+    UInventorySaveGame* SaveObj = Cast<UInventorySaveGame>(UGameplayStatics::CreateSaveGameObject(UInventorySaveGame::StaticClass()));
+    if (!SaveObj) return false;
+
+    SaveObj->SlotCount = SlotCount;
+    SaveObj->Slots = Slots;
+
+    return UGameplayStatics::SaveGameToSlot(SaveObj, SlotName, UserIndex);
+}
+
+bool UInventoryComponent::LoadFromSlot(const FString& SlotName, int32 UserIndex)
+{
+    if (!UGameplayStatics::DoesSaveGameExist(SlotName, UserIndex)) return false;
+
+    UInventorySaveGame* SaveObj = Cast<UInventorySaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, UserIndex));
+    if (!SaveObj) return false;
+
+    SlotCount = FMath::Max(1, SaveObj->SlotCount);
+    Slots = SaveObj->Slots;
+    Slots.SetNum(SlotCount);
 
     OnInventoryChanged.Broadcast();
     return true;

@@ -12,15 +12,16 @@ class PROTOTYPE_API UItemSubsystem : public UGameInstanceSubsystem
     GENERATED_BODY()
 
 public:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
-    TArray<TSoftObjectPtr<UItemDefinition>> ItemList;
+    virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
     UFUNCTION(BlueprintCallable, Category = "Item")
-    UItemDefinition* GetItemDefinitionById(FName ItemId);
+    UItemDefinition* GetItemDefinitionById(FName ItemId) const;
+
+public:
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
+    TArray<TObjectPtr<UItemDefinition>> ItemList;
 
 private:
     UPROPERTY(Transient)
-    TMap<FName, TObjectPtr<UItemDefinition>> Cache;
-
-    void BuildCacheIfNeeded();
+    TMap<FName, TObjectPtr<UItemDefinition>> ItemMap;
 };

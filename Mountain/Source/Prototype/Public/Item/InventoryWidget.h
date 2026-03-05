@@ -22,6 +22,9 @@ protected:
     UFUNCTION()
     void Refresh();
 
+    UFUNCTION()
+    void HandleInventoryChanged();
+
 protected:
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UTextBlock> SlotsText = nullptr;
@@ -29,7 +32,4 @@ protected:
 private:
     UPROPERTY()
     TObjectPtr<UInventoryComponent> Inventory = nullptr;
-
-    UFUNCTION()
-    void HandleInventoryChanged();
 };

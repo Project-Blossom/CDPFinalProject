@@ -16,11 +16,7 @@
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "Kismet/GameplayStatics.h"
-#include "Item/InventoryWidget.h"
-#include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
-#include "Item/InventoryComponent.h"
-#include "Item/ItemDefinition.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -70,16 +66,13 @@ ADownfallCharacter::ADownfallCharacter()
     GetCapsuleComponent()->SetEnableGravity(true);
     GetCapsuleComponent()->SetLinearDamping(0.5f);
     GetCapsuleComponent()->SetAngularDamping(0.8f);
-
-    // Inventory
-    Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 }
 
 void ADownfallCharacter::BeginPlay()
 {
     Super::BeginPlay();
 
-    UE_LOG(LogDownFall, Warning, TEXT("DownfallCharacter BeginPlay called!"));
+    UE_LOG(LogDownFall, Log, TEXT("DownfallCharacter BeginPlay called!"));
 
     // StimuliSource 등록
     if (StimuliSource)
@@ -151,40 +144,6 @@ void ADownfallCharacter::BeginPlay()
         {
             UE_LOG(LogTemp, Error, TEXT("DownfallCharacter: No PostProcessVolume found in level!"));
         }
-    }
-
-    // Inventory UI
-    if (IsLocallyControlled() && InventoryWidgetClass)
-    {
-        if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        {
-            InventoryWidget = CreateWidget<UInventoryWidget>(PC, InventoryWidgetClass);
-            if (InventoryWidget)
-            {
-                InventoryWidget->AddToViewport(10);
-                InventoryWidget->BindInventory(Inventory);
-
-                UE_LOG(LogDownFall, Warning, TEXT("Inventory UI created + bound"));
-            }
-            else
-            {
-                UE_LOG(LogDownFall, Error, TEXT("CreateWidget failed (InventoryWidgetClass set?)"));
-            }
-        }
-    }
-    else
-    {
-        UE_LOG(LogDownFall, Warning, TEXT("InventoryWidgetClass is null or not locally controlled"));
-    }
-
-    if (Inventory && TestAnchorItemDef)
-    {
-        const bool bOK = Inventory->TryAddByDefinition(TestAnchorItemDef, 1);
-
-        UE_LOG(LogDownFall, Warning, TEXT("Test item add: %s (%s x%d)"),
-            bOK ? TEXT("OK") : TEXT("FAILED"),
-            *TestAnchorItemDef->GetName(),
-            1);
     }
 }
 

@@ -1,31 +1,26 @@
-// Item/ItemSubsystem.cpp
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
 
-void UItemSubsystem::BuildCacheIfNeeded()
+void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
-    if (Cache.Num() > 0) return;
+    Super::Initialize(Collection);
 
-    for (const TSoftObjectPtr<UItemDefinition>& SoftDef : ItemList)
+    ItemMap.Reset();
+
+    for (UItemDefinition* Def : ItemList)
     {
-        if (SoftDef.IsNull()) continue;
-
-        UItemDefinition* Def = SoftDef.LoadSynchronous();
         if (!Def) continue;
-
         if (Def->ItemId == NAME_None) continue;
 
-        Cache.Add(Def->ItemId, Def);
+        ItemMap.Add(Def->ItemId, Def);
     }
 }
 
-UItemDefinition* UItemSubsystem::GetItemDefinitionById(FName ItemId)
+UItemDefinition* UItemSubsystem::GetItemDefinitionById(FName ItemId) const
 {
     if (ItemId == NAME_None) return nullptr;
 
-    BuildCacheIfNeeded();
-
-    if (TObjectPtr<UItemDefinition>* Found = Cache.Find(ItemId))
+    if (const TObjectPtr<UItemDefinition>* Found = ItemMap.Find(ItemId))
     {
         return Found->Get();
     }

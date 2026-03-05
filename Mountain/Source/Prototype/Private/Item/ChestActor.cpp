@@ -4,14 +4,7 @@
 AChestActor::AChestActor()
 {
     PrimaryActorTick.bCanEverTick = false;
-}
 
-void AChestActor::BeginPlay()
-{
-    Super::BeginPlay();
-
-    if (Inventory)
-    {
-        Inventory->SlotCount = ChestSlotCount;
-    }
+    Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
+    Inventory->SlotCount = 24;
 }

@@ -2,26 +2,40 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "InventoryTypes.h"
+#include "Item/InventoryTypes.h"
 #include "InventoryComponent.generated.h"
-
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
 
 class UItemDefinition;
 
-UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
+
+UCLASS(BlueprintType, Blueprintable, ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class PROTOTYPE_API UInventoryComponent : public UActorComponent
 {
     GENERATED_BODY()
 
 public:
-    UPROPERTY(BlueprintAssignable)
+    UInventoryComponent();
+
+    virtual void BeginPlay() override;
+
+    UPROPERTY(BlueprintAssignable, Category = "Inventory")
     FOnInventoryChanged OnInventoryChanged;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
     int32 SlotCount = 24;
 
-    UFUNCTION(BlueprintCallable)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
+    float PlaceRangeCm = 600.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
+    float PlaceTraceDistanceCm = 5000.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "0.0"))
+    float PlaceEmbedCm = 5.f;
+
+public:
+    UFUNCTION(BlueprintCallable, Category = "Inventory")
     const TArray<FItemStack>& GetSlots() const { return Slots; }
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
@@ -39,22 +53,33 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool TransferTo(UInventoryComponent* Target, int32 FromIndex, int32 Count);
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
-    void BP_OnConsume(AActor* User, const UItemDefinition* Def, int32 Count);
+    // ---- Save/Load ----
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Save")
+    bool SaveToSlot(const FString& SlotName, int32 UserIndex = 0);
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
-    void BP_OnEquip(AActor* User, const UItemDefinition* Def, const FItemInstanceData& Instance);
-
-    UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
-    void BP_OnPlace(AActor* User, const UItemDefinition* Def);
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Save")
+    bool LoadFromSlot(const FString& SlotName, int32 UserIndex = 0);
 
 protected:
-    virtual void BeginPlay() override;
+    UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
+    void BP_OnConsume(AActor* User, UItemDefinition* Def, int32 Count);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
+    void BP_OnEquip(AActor* User, UItemDefinition* Def, const FItemInstanceData& Instance);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
+    bool BP_OnPlace(AActor* User, UItemDefinition* Def, const FTransform& SpawnTransform);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
+    void BP_OnUseFailed(AActor* User, const FText& Reason);
 
 private:
     UPROPERTY()
     TArray<FItemStack> Slots;
 
+private:
     int32 FindEmptySlot() const;
     int32 FindPartialStack(FName ItemId, int32 MaxStack) const;
+
+    bool BuildPlaceTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const;
 };
