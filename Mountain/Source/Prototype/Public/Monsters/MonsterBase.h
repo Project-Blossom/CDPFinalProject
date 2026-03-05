@@ -21,30 +21,40 @@ protected:
 public:
     virtual void Tick(float DeltaTime) override;
 
-    // ============================================
     // AI Perception
-    // ============================================
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
     UAIPerceptionComponent* PerceptionComponent;
 
     UPROPERTY(BlueprintReadOnly, Category = "AI")
     class ADownfallCharacter* TargetPlayer;
 
-    // ============================================
+    UPROPERTY(BlueprintReadOnly, Category = "AI")
+    AActor* PotentialTarget = nullptr;
+    
     // Perception Settings
-    // ============================================
     UPROPERTY(EditAnywhere, Category = "AI|Perception")
-    float SightRadius = 1000.0f;      // 인식 거리 10m
+    float SightRadius = 1000.0f;
 
     UPROPERTY(EditAnywhere, Category = "AI|Perception")
-    float SightAngle = 60.0f;         // 시야각 반값 (120도)
+    float SightAngle = 60.0f;
 
     UPROPERTY(EditAnywhere, Category = "AI|Perception")
-    float LoseSightRadius = 1500.0f;  // 인식 해제 거리 15m
+    float LoseSightRadius = 1500.0f;
 
-    // ============================================
+    // Detection Gauge
+    UPROPERTY(BlueprintReadOnly, Category = "AI|Detection")
+    float DetectionGauge = 0.0f;
+
+    UPROPERTY(EditAnywhere, Category = "AI|Detection")
+    float DetectionGaugeMax = 100.0f;
+
+    UPROPERTY(EditAnywhere, Category = "AI|Detection")
+    float DetectionGainRate = 20.0f;
+
+    UPROPERTY(EditAnywhere, Category = "AI|Detection")
+    float DetectionDecayRate = 10.0f;
+    
     // Health
-    // ============================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
     float MaxHealth = 100.0f;
 
@@ -67,6 +77,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Monster")
     bool IsPlayerDetected() const { return TargetPlayer != nullptr; }
+    
+    UFUNCTION(BlueprintPure, Category = "Monster")
+    float GetDetectionGauge() const { return DetectionGauge; }
 
     // 순수 가상 함수 (자식 클래스에서 필수 구현)
     UFUNCTION(BlueprintCallable, Category = "Monster")
