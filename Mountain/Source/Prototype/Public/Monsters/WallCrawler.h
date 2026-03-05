@@ -20,132 +20,119 @@ public:
     
     // Wall Movement
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float CrawlSpeed = 200.0f;              // 기어가는 속도
+    float CrawlSpeed = 200.0f;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float CircleRadius = 300.0f;            // 원형 배회 반경
+    float CircleRadius = 300.0f;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float WallTraceDistance = 100.0f;       // 벽 감지 거리
+    float WallTraceDistance = 100.0f;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float WallStickDistance = 20.0f;        // 벽에서 떨어진 거리
+    float WallStickDistance = 20.0f;
     
     // Wall State
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    FVector CurrentWallNormal;              // 현재 벽 Normal
+    FVector CurrentWallNormal;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    bool bIsOnWall = false;                 // 벽에 붙어있는지
+    bool bIsOnWall = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    FVector WallHitLocation;                // 벽 접촉 위치
+    FVector WallHitLocation;
     
     // Patrol State
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    FVector PatrolCenter;                   // 배회 중심점
+    FVector PatrolCenter;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    float PatrolAngle = 0.0f;               // 원형 배회 각도
+    float PatrolAngle = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    float PatrolAngularSpeed = 30.0f;       // 각속도 (도/초)
+    float PatrolAngularSpeed = 30.0f;
 
-    // Organic Movement (유기적 움직임)
+    // Organic Movement
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    FVector CurrentTargetPoint;             // 현재 목표 지점
-
-    UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    float CurrentSpeed = 0.0f;              // 현재 속도
+    FVector CurrentTargetPoint;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    float TargetSpeed = 200.0f;             // 목표 속도
+    float CurrentSpeed = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    bool bIsPaused = false;                 // 일시 정지 중
+    float TargetSpeed = 200.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    float PauseTimer = 0.0f;                // 정지 타이머
+    bool bIsPaused = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    float NextPauseDuration = 0.0f;         // 다음 정지 시간
+    float PauseTimer = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    TArray<FVector> PatrolWaypoints;        // 불규칙 경로 웨이포인트
+    float NextPauseDuration = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    int32 CurrentWaypointIndex = 0;         // 현재 웨이포인트
+    TArray<FVector> PatrolWaypoints;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    int32 CurrentWaypointIndex = 0;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float WaypointReachThreshold = 50.0f;   // 웨이포인트 도착 거리
+    float WaypointReachThreshold = 50.0f;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float MinSpeed = 50.0f;                 // 최소 속도
+    float MinSpeed = 50.0f;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float MaxSpeed = 250.0f;                // 최대 속도
+    float MaxSpeed = 250.0f;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float SpeedChangeRate = 100.0f;         // 속도 변화율
+    float SpeedChangeRate = 100.0f;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float MinPauseDuration = 0.5f;          // 최소 정지 시간
+    float MinPauseDuration = 0.5f;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float MaxPauseDuration = 3.0f;          // 최대 정지 시간
+    float MaxPauseDuration = 3.0f;
 
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float PauseChance = 0.1f;               // 정지 확률 (10%)
+    float PauseChance = 0.1f;
     
     // Attack State
-    UPROPERTY(EditAnywhere, Category = "Attack")
-    float DetectionGaugeMax = 100.0f;       // 감지 게이지 최대값
-
-    UPROPERTY(EditAnywhere, Category = "Attack")
-    float DetectionGainRate = 20.0f;        // 게이지 증가율 (초당)
-
-    UPROPERTY(EditAnywhere, Category = "Attack")
-    float DetectionDecayRate = 10.0f;       // 게이지 감소율 (초당)
-
-    UPROPERTY(BlueprintReadOnly, Category = "Attack")
-    float DetectionGauge = 0.0f;            // 현재 감지 게이지
-
-    UPROPERTY(BlueprintReadOnly, Category = "Attack")
-    AActor* PotentialTarget = nullptr;      // 감지 중인 대상
+    // DetectionGaugeMax, DetectionGainRate, DetectionDecayRate, DetectionGauge, PotentialTarget는 MonsterBase로 이동
     
     UPROPERTY(EditAnywhere, Category = "Attack")
-    float AttachRange = 150.0f;              // 달라붙기 범위
+    float AttachRange = 150.0f;
 
     UPROPERTY(EditAnywhere, Category = "Attack")
-    float StaminaDrainRate = 10.0f;         // Stamina 흡수율
+    float StaminaDrainRate = 10.0f;
 
     UPROPERTY(EditAnywhere, Category = "Attack")
-    float ShakeThreshold = 1000.0f;          // 떨쳐내기 임계값
+    float ShakeThreshold = 1000.0f;
 
     UPROPERTY(EditAnywhere, Category = "Attack")
-    float PursuitSpeed = 300.0f;            // 추격 속도
+    float PursuitSpeed = 300.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
-    bool bAttachedToPlayer = false;         // 플레이어에 달라붙음
+    bool bAttachedToPlayer = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
-    float AccumulatedShake = 0.0f;          // 누적된 흔들기
+    float AccumulatedShake = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
-    FVector2D LastMousePosition;            // 이전 마우스 위치
+    FVector2D LastMousePosition;
     
     // Detach & Stun System
     UPROPERTY(EditAnywhere, Category = "Attack")
-    float StunDuration = 3.0f;              // 떨어진 후 Stun 시간
+    float StunDuration = 3.0f;
     
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
-    bool bIsStunned = false;                // Stun 상태
+    bool bIsStunned = false;
     
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
-    float StunTimer = 0.0f;                 // Stun 타이머
+    float StunTimer = 0.0f;
     
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float GravityScale = 1.0f;              // 중력 배율 (NoWall 시)
+    float GravityScale = 1.0f;
     
     // 스폰 직후 Attach 방지
     float SpawnTime = 0.0f;
@@ -158,46 +145,43 @@ public:
     bool DetectWall(FVector& OutWallNormal, FVector& OutHitLocation);
 
     UFUNCTION(BlueprintCallable, Category = "Movement")
-    void UpdateWallAlignment();             // 벽에 맞춰 회전
+    void UpdateWallAlignment();
 
     // Movement
     UFUNCTION(BlueprintCallable, Category = "Movement")
     void CrawlOnWall(FVector Direction, float Speed);
 
     UFUNCTION(BlueprintCallable, Category = "Movement")
-    // void CirclePatrol(float DeltaTime);     // 원형 배회
-    void OrganicPatrol(float DeltaTime);    // 유기적 배회 (신규)
-    void GeneratePatrolWaypoints();         // 불규칙 경로 생성
-    void UpdateMovementSpeed(float DeltaTime);  // 속도 업데이트
+    void OrganicPatrol(float DeltaTime);
+    void GeneratePatrolWaypoints();
+    void UpdateMovementSpeed(float DeltaTime);
 
     // Gravity
     void ApplyGravity(float DeltaTime);
     
     // Attack
     UFUNCTION(BlueprintCallable, Category = "Attack")
-    void PursuePlayer(float DeltaTime);         // 플레이어 추적
+    void PursuePlayer(float DeltaTime);
 
     UFUNCTION(BlueprintCallable, Category = "Attack")
-    void AttachToPlayer(class ADownfallCharacter* Player);  // 달라붙기
+    void AttachToPlayer(class ADownfallCharacter* Player);
 
     UFUNCTION(BlueprintCallable, Category = "Attack")
-    void DetachFromPlayer();                    // 떨어지기
+    void DetachFromPlayer();
 
     UFUNCTION(BlueprintCallable, Category = "Attack")
-    void DrainStamina(float DeltaTime);         // Stamina 흡수
+    void DrainStamina(float DeltaTime);
 
     UFUNCTION(BlueprintCallable, Category = "Attack")
-    void UpdateShakeDetection(float DeltaTime); // 흔들기 감지
+    void UpdateShakeDetection(float DeltaTime);
     
     UFUNCTION(BlueprintCallable, Category = "Attack")
-    void UpdateDetectionGauge(float DeltaTime); // 감지 게이지 업데이트
+    void UpdateDetectionGauge(float DeltaTime);
 
     UFUNCTION(BlueprintCallable, Category = "Movement")
-    FVector ProjectToWallSurface(FVector WorldDirection);  // 벽 표면에 방향 투영
+    FVector ProjectToWallSurface(FVector WorldDirection);
 
     // Override
     virtual void Attack() override {}
-    virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus) override;  // 게이지 방식
+    virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus) override;
 };
-
-

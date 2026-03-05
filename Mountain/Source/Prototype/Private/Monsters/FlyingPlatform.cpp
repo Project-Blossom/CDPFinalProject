@@ -2,6 +2,8 @@
 #include "DownfallCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
+#include "AIController.h"
+#include "BrainComponent.h"
 
 AFlyingPlatform::AFlyingPlatform()
 {
@@ -17,6 +19,14 @@ void AFlyingPlatform::BeginPlay()
 void AFlyingPlatform::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+    
+    // Behavior Tree가 실행 중이면 기존 로직 스킵
+    AAIController* AIController = Cast<AAIController>(GetController());
+    if (AIController && AIController->BrainComponent && AIController->BrainComponent->IsRunning())
+    {
+        // Behavior Tree가 제어 중 - 기존 로직 전부 스킵
+        return;
+    }
 
 #if !UE_BUILD_SHIPPING
     // ===== 디버그 시각화 =====
@@ -26,7 +36,7 @@ void AFlyingPlatform::Tick(float DeltaTime)
     DrawDebugSphere(
         GetWorld(),
         GrabLoc,
-        500.0f,  // GripFinder 감지 범위
+        500.0f,
         16,
         bPlayerAttached ? FColor::Yellow : FColor::Green,
         false,
@@ -44,7 +54,7 @@ void AFlyingPlatform::Tick(float DeltaTime)
     DrawDebugSphere(
         GetWorld(),
         GrabLoc,
-        300.0f,  // TryGrip Sweep 범위
+        300.0f,
         12,
         FColor::Cyan,
         false,
@@ -54,6 +64,7 @@ void AFlyingPlatform::Tick(float DeltaTime)
     );
 #endif
 
+    // 기존 배회 로직 (Behavior Tree 없을 때만)
     if (bPlayerAttached)
     {
         AttachedTime += DeltaTime;

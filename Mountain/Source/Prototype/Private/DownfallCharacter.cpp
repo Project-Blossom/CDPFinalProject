@@ -17,6 +17,7 @@
 #include "Perception/AISense_Hearing.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
+#include "Item/InventoryComponent.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -66,6 +67,9 @@ ADownfallCharacter::ADownfallCharacter()
     GetCapsuleComponent()->SetEnableGravity(true);
     GetCapsuleComponent()->SetLinearDamping(0.5f);
     GetCapsuleComponent()->SetAngularDamping(0.8f);
+
+    // Inventory
+    Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 }
 
 void ADownfallCharacter::BeginPlay()

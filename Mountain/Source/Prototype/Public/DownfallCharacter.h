@@ -6,6 +6,7 @@
 #include "InputActionValue.h"
 #include "Climbing/IClimbableSurface.h"
 #include "Engine/PostProcessVolume.h"
+#include "Item/InventoryComponent.h"
 #include "DownfallCharacter.generated.h"
 
 class UInputMappingContext;
@@ -191,6 +192,10 @@ public:
     
     UPROPERTY(BlueprintReadOnly, Category = "Insanity")
     float CurrentGlitchIntensity = 0.0f;    // 현재 글리치 강도
+
+    // Inventory
+    UFUNCTION(BlueprintCallable, Category = "Inventory")
+    UInventoryComponent* GetInventory() const { return Inventory; }
     
 protected:
 
@@ -220,7 +225,10 @@ protected:
     void AbductByPlatform(bool bIsLeftHand, class AFlyingPlatform* Platform);  // 납치 실행
     bool AreBothHandsFree() const;
     
-    
+    // Inventory
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+    TObjectPtr<UInventoryComponent> Inventory;
+
     // Debug
 #if !UE_BUILD_SHIPPING
     void DrawDebugInfo();
