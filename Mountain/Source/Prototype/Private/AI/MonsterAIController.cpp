@@ -33,30 +33,50 @@ void AMonsterAIController::OnPossess(APawn* InPawn)
     }
 
     UE_LOG(LogTemp, Warning, TEXT("MonsterAIController possessed: %s"), *InPawn->GetName());
+    
+    // CRITICAL: Blackboard & BehaviorTree status check
+    UE_LOG(LogTemp, Warning, TEXT("  BlackboardAsset: %s"), BlackboardAsset ? *BlackboardAsset->GetName() : TEXT("NULL"));
+    UE_LOG(LogTemp, Warning, TEXT("  BehaviorTree: %s"), BehaviorTree ? *BehaviorTree->GetName() : TEXT("NULL"));
+    UE_LOG(LogTemp, Warning, TEXT("  BlackboardComp: %s"), BlackboardComp ? TEXT("Valid") : TEXT("NULL"));
 
-    // Blackboard와 BehaviorTree 시작
-    if (BlackboardAsset && BehaviorTree)
+    // Blackboard initialization (independent from BehaviorTree)
+    if (BlackboardAsset)
     {
-        // Blackboard 초기화
-        if (BlackboardComp->InitializeBlackboard(*BlackboardAsset))
+        bool bInitSuccess = BlackboardComp->InitializeBlackboard(*BlackboardAsset);
+        UE_LOG(LogTemp, Warning, TEXT("  InitializeBlackboard result: %s"), bInitSuccess ? TEXT("SUCCESS") : TEXT("FAILED"));
+        
+        if (bInitSuccess)
         {
-            UE_LOG(LogTemp, Log, TEXT("Blackboard initialized for %s"), *InPawn->GetName());
-            
-            // Behavior Tree 실행
-            RunBehaviorTree(BehaviorTree);
-            UE_LOG(LogTemp, Warning, TEXT("Behavior Tree started for %s"), *InPawn->GetName());
+            UE_LOG(LogTemp, Warning, TEXT("SUCCESS: Blackboard initialized for %s"), *InPawn->GetName());
         }
         else
         {
-            UE_LOG(LogTemp, Error, TEXT("Failed to initialize Blackboard for %s"), *InPawn->GetName());
+            UE_LOG(LogTemp, Error, TEXT("FAILED: Could not initialize Blackboard for %s"), *InPawn->GetName());
         }
     }
     else
     {
-        if (!BlackboardAsset)
-            UE_LOG(LogTemp, Error, TEXT("MonsterAIController: BlackboardAsset is NULL for %s"), *InPawn->GetName());
-        if (!BehaviorTree)
-            UE_LOG(LogTemp, Error, TEXT("MonsterAIController: BehaviorTree is NULL for %s"), *InPawn->GetName());
+        UE_LOG(LogTemp, Error, TEXT("ERROR: BlackboardAsset is NULL for %s"), *InPawn->GetName());
+    }
+
+    // Behavior Tree execution (after Blackboard initialization)
+    if (BehaviorTree)
+    {
+        bool bRunSuccess = RunBehaviorTree(BehaviorTree);
+        UE_LOG(LogTemp, Warning, TEXT("  RunBehaviorTree result: %s"), bRunSuccess ? TEXT("SUCCESS") : TEXT("FAILED"));
+        
+        if (bRunSuccess)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("SUCCESS: Behavior Tree started for %s"), *InPawn->GetName());
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("FAILED: Could not start Behavior Tree for %s"), *InPawn->GetName());
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("INFO: BehaviorTree is NULL for %s (will add later)"), *InPawn->GetName());
     }
 }
 
