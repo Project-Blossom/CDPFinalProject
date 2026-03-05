@@ -50,4 +50,6 @@ private:
     void GiveTestItemsIfNeeded();
 
     void OnUseItemTriggered(const FInputActionValue& Value);
+
+    int32 FindFirstUsableSlot(const UInventoryComponent* Inv) const;
 };

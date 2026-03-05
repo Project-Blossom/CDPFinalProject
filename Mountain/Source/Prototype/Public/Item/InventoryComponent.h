@@ -18,6 +18,8 @@ public:
     UInventoryComponent();
 
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
     UPROPERTY(BlueprintAssignable, Category = "Inventory")
     FOnInventoryChanged OnInventoryChanged;
@@ -25,6 +27,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
     int32 SlotCount = 24;
 
+    // ---------- Place settings ----------
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
     float PlaceRangeCm = 600.f;
 
@@ -60,7 +63,33 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory|Save")
     bool LoadFromSlot(const FString& SlotName, int32 UserIndex = 0);
 
+    // =========================================================
+    // Preview API
+    // =========================================================
+public:
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
+    void SetPreviewEnabled(bool bEnabled);
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
+    bool IsPreviewEnabled() const { return bPreviewEnabled; }
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
+    void SetPreviewSlotIndex(int32 NewIndex);
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
+    int32 GetPreviewSlotIndex() const { return PreviewSlotIndex; }
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
+    void SetPreviewActorClass(TSubclassOf<AActor> InClass);
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
+    AActor* GetPreviewActor() const { return PreviewActor; }
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
+    bool GetLastPreviewState(bool& bOutValid, FText& OutReason) const;
+
 protected:
+    // ----- BP hooks -----
     UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
     void BP_OnConsume(AActor* User, UItemDefinition* Def, int32 Count);
 
@@ -77,9 +106,41 @@ private:
     UPROPERTY()
     TArray<FItemStack> Slots;
 
+    // ----------------- Preview internals -----------------
+    UPROPERTY(EditDefaultsOnly, Category = "Inventory|Preview")
+    TSubclassOf<AActor> DefaultPreviewActorClass;
+
+    UPROPERTY(Transient)
+    TObjectPtr<AActor> PreviewActor;
+
+    UPROPERTY(Transient)
+    bool bPreviewEnabled = true;
+
+    UPROPERTY(Transient)
+    int32 PreviewSlotIndex = 0;
+
+    UPROPERTY(Transient)
+    bool bLastPreviewValid = false;
+
+    UPROPERTY(Transient)
+    FText LastPreviewReason;
+
+    UPROPERTY(EditAnywhere, Category = "Inventory|Preview", meta = (ClampMin = "0.0"))
+    float PreviewUpdateInterval = 0.0f;
+
+    float PreviewAccum = 0.0f;
+
 private:
     int32 FindEmptySlot() const;
     int32 FindPartialStack(FName ItemId, int32 MaxStack) const;
 
     bool BuildPlaceTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const;
+
+    // ---- preview helpers ----
+    bool ShouldRunPreview() const;
+    AActor* GetPreviewUserActor() const;
+    void EnsurePreviewActor();
+    void DestroyPreviewActor();
+    void UpdatePreview(float DeltaTime);
+    bool ComputePreviewTransform(int32 Index, AActor* User, FTransform& OutXform, FText& OutFailReason) const;
 };

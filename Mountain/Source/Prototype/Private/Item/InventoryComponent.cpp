@@ -13,7 +13,8 @@
 
 UInventoryComponent::UInventoryComponent()
 {
-    PrimaryComponentTick.bCanEverTick = false;
+    PrimaryComponentTick.bCanEverTick = true;
+    PrimaryComponentTick.bStartWithTickEnabled = true;
 }
 
 void UInventoryComponent::BeginPlay()
@@ -22,7 +23,208 @@ void UInventoryComponent::BeginPlay()
 
     Slots.SetNum(SlotCount);
     OnInventoryChanged.Broadcast();
+
+    if (bPreviewEnabled && ShouldRunPreview())
+    {
+        EnsurePreviewActor();
+    }
 }
+
+void UInventoryComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    DestroyPreviewActor();
+    Super::EndPlay(EndPlayReason);
+}
+
+void UInventoryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+    if (!bPreviewEnabled) return;
+    if (!ShouldRunPreview()) return;
+
+    if (PreviewUpdateInterval > 0.f)
+    {
+        PreviewAccum += DeltaTime;
+        if (PreviewAccum < PreviewUpdateInterval) return;
+        PreviewAccum = 0.f;
+    }
+
+    UpdatePreview(DeltaTime);
+}
+
+// =========================================================
+// Preview API
+// =========================================================
+
+void UInventoryComponent::SetPreviewEnabled(bool bEnabled)
+{
+    bPreviewEnabled = bEnabled;
+
+    if (!bPreviewEnabled)
+    {
+        DestroyPreviewActor();
+        bLastPreviewValid = false;
+        LastPreviewReason = FText::FromString(TEXT("Preview disabled"));
+        return;
+    }
+
+    if (ShouldRunPreview())
+    {
+        EnsurePreviewActor();
+    }
+}
+
+void UInventoryComponent::SetPreviewSlotIndex(int32 NewIndex)
+{
+    PreviewSlotIndex = NewIndex;
+}
+
+void UInventoryComponent::SetPreviewActorClass(TSubclassOf<AActor> InClass)
+{
+    DefaultPreviewActorClass = InClass;
+
+    DestroyPreviewActor();
+
+    if (bPreviewEnabled && ShouldRunPreview())
+    {
+        EnsurePreviewActor();
+    }
+}
+
+bool UInventoryComponent::GetLastPreviewState(bool& bOutValid, FText& OutReason) const
+{
+    bOutValid = bLastPreviewValid;
+    OutReason = LastPreviewReason;
+    return true;
+}
+
+// =========================================================
+// Preview internals
+// =========================================================
+
+bool UInventoryComponent::ShouldRunPreview() const
+{
+    const APawn* PawnOwner = Cast<APawn>(GetOwner());
+    if (!PawnOwner) return false;
+
+    const APlayerController* PC = Cast<APlayerController>(PawnOwner->GetController());
+    if (!PC) return false;
+
+    return PC->IsLocalController();
+}
+
+AActor* UInventoryComponent::GetPreviewUserActor() const
+{
+    return GetOwner();
+}
+
+void UInventoryComponent::EnsurePreviewActor()
+{
+    if (PreviewActor) return;
+
+    UWorld* W = GetWorld();
+    if (!W) return;
+
+    if (!DefaultPreviewActorClass)
+    {
+        return;
+    }
+
+    FActorSpawnParameters Params;
+    Params.Owner = GetOwner();
+    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    PreviewActor = W->SpawnActor<AActor>(DefaultPreviewActorClass, FTransform::Identity, Params);
+    if (!PreviewActor) return;
+
+    PreviewActor->SetReplicates(false);
+    PreviewActor->SetReplicateMovement(false);
+    PreviewActor->SetActorEnableCollision(false);
+    PreviewActor->SetActorHiddenInGame(true);
+}
+
+void UInventoryComponent::DestroyPreviewActor()
+{
+    if (PreviewActor)
+    {
+        PreviewActor->Destroy();
+        PreviewActor = nullptr;
+    }
+}
+
+void UInventoryComponent::UpdatePreview(float)
+{
+    EnsurePreviewActor();
+    if (!PreviewActor)
+    {
+        bLastPreviewValid = false;
+        LastPreviewReason = FText::FromString(TEXT("No preview actor class"));
+        return;
+    }
+
+    AActor* User = GetPreviewUserActor();
+    if (!User)
+    {
+        PreviewActor->SetActorHiddenInGame(true);
+        bLastPreviewValid = false;
+        LastPreviewReason = FText::FromString(TEXT("No user"));
+        return;
+    }
+
+    FTransform Xf;
+    FText Fail;
+    const bool bOK = ComputePreviewTransform(PreviewSlotIndex, User, Xf, Fail);
+
+    bLastPreviewValid = bOK;
+    LastPreviewReason = bOK ? FText::GetEmpty() : Fail;
+
+    if (bOK)
+    {
+        PreviewActor->SetActorTransform(Xf);
+        PreviewActor->SetActorHiddenInGame(false);
+    }
+    else
+    {
+        PreviewActor->SetActorHiddenInGame(true);
+    }
+}
+
+bool UInventoryComponent::ComputePreviewTransform(int32 Index, AActor* User, FTransform& OutXform, FText& OutFailReason) const
+{
+    if (!Slots.IsValidIndex(Index) || !User)
+    {
+        OutFailReason = FText::FromString(TEXT("Invalid slot/user"));
+        return false;
+    }
+
+    const FItemStack& S = Slots[Index];
+    if (!S.IsValid())
+    {
+        OutFailReason = FText::FromString(TEXT("Empty slot"));
+        return false;
+    }
+
+    UItemSubsystem* IS = GetWorld() ? GetWorld()->GetGameInstance()->GetSubsystem<UItemSubsystem>() : nullptr;
+    const UItemDefinition* Def = IS ? IS->GetItemDefinitionById(S.ItemId) : nullptr;
+    if (!Def)
+    {
+        OutFailReason = FText::FromString(TEXT("No definition"));
+        return false;
+    }
+
+    if (Def->UseType == EItemUseType::PlaceActor)
+    {
+        return BuildPlaceTransform(User, Def, OutXform, OutFailReason);
+    }
+
+    OutFailReason = FText::FromString(TEXT("No preview for this item type"));
+    return false;
+}
+
+// =========================================================
+// Inventory core
+// =========================================================
 
 int32 UInventoryComponent::FindEmptySlot() const
 {
@@ -57,7 +259,6 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
     const int32 MaxStack = Def ? FMath::Max(1, Def->MaxStack) : 1;
 
     const bool bUniqueSlot = bForceInstance || (MaxStack == 1);
-
     const bool bShouldInstance = bForceInstance || (Def && Def->UseType == EItemUseType::Equip);
 
     int32 Remaining = Count;
@@ -188,7 +389,7 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
 
     // ---- 법선 정렬 ----
     const FVector Normal = Hit.ImpactNormal.GetSafeNormal();
-    const FVector Forward = -Normal; 
+    const FVector Forward = -Normal;
     const FRotator Rot = FRotationMatrix::MakeFromX(Forward).Rotator();
 
     const FVector Pos = Hit.ImpactPoint + Normal * (-PlaceEmbedCm);

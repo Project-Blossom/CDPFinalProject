@@ -25,8 +25,7 @@ void ADownfallPlayerController::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (!IsLocalController())
-        return;
+    if (!IsLocalController()) return;
 
     ULocalPlayer* LP = GetLocalPlayer();
     if (!LP) return;
@@ -34,8 +33,7 @@ void ADownfallPlayerController::BeginPlay()
     UEnhancedInputLocalPlayerSubsystem* Subsys = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
     if (!Subsys) return;
 
-    if (!PlayerMappingContext)
-        return;
+    if (!PlayerMappingContext) return;
 
     Subsys->ClearAllMappings();
     Subsys->AddMappingContext(PlayerMappingContext, 0);
@@ -101,11 +99,27 @@ void ADownfallPlayerController::GiveTestItemsIfNeeded()
     }
 }
 
+int32 ADownfallPlayerController::FindFirstUsableSlot(const UInventoryComponent* Inv) const
+{
+    if (!Inv) return INDEX_NONE;
+
+    const TArray<FItemStack>& Slots = Inv->GetSlots();
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        if (Slots[i].IsValid())
+            return i;
+    }
+    return INDEX_NONE;
+}
+
 void ADownfallPlayerController::OnUseItemTriggered(const FInputActionValue& Value)
 {
     UInventoryComponent* Inv = GetInventoryFromPawn();
     APawn* P = GetPawn();
     if (!Inv || !P) return;
 
-    const bool bOK = Inv->UseItem(0, P);
+    const int32 Slot = FindFirstUsableSlot(Inv);
+    if (Slot == INDEX_NONE) return;
+
+    Inv->UseItem(Slot, P);
 }
