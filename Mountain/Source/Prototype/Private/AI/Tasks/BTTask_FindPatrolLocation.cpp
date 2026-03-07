@@ -1,12 +1,12 @@
 #include "AI/Tasks/BTTask_FindPatrolLocation.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
+#include "Monsters/FlyingAttacker.h"
 
 UBTTask_FindPatrolLocation::UBTTask_FindPatrolLocation()
 {
     NodeName = "Find Patrol Location";
     
-    // Task 속성 설정
     bNotifyTick = false;
     bNotifyTaskFinished = false;
 }
@@ -27,14 +27,27 @@ EBTNodeResult::Type UBTTask_FindPatrolLocation::ExecuteTask(UBehaviorTreeCompone
         return EBTNodeResult::Failed;
     }
 
-    // 현재 위치 기준으로 랜덤 배회 위치 생성
-    FVector Origin = Pawn->GetActorLocation();
-    FVector RandomOffset = FVector(
-        FMath::RandRange(-PatrolRadius, PatrolRadius),
-        FMath::RandRange(-PatrolRadius, PatrolRadius),
-        FMath::RandRange(-VerticalRange * 0.5f, VerticalRange * 0.5f)
-    );
-    FVector PatrolLocation = Origin + RandomOffset;
+    FVector PatrolLocation;
+    
+    // FlyingAttacker인 경우 Territory 시스템 사용
+    AFlyingAttacker* Attacker = Cast<AFlyingAttacker>(Pawn);
+    if (Attacker)
+    {
+        PatrolLocation = Attacker->GetRandomPatrolLocationInTerritory();
+        UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Using Territory system for %s"), 
+            *Pawn->GetName());
+    }
+    else
+    {
+        // 일반 Flying Monster (FlyingPlatform 등) - 기존 방식
+        FVector Origin = Pawn->GetActorLocation();
+        FVector RandomOffset = FVector(
+            FMath::RandRange(-PatrolRadius, PatrolRadius),
+            FMath::RandRange(-PatrolRadius, PatrolRadius),
+            FMath::RandRange(-VerticalRange * 0.5f, VerticalRange * 0.5f)
+        );
+        PatrolLocation = Origin + RandomOffset;
+    }
 
     // Blackboard에 저장
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();

@@ -98,4 +98,29 @@ public:
     float PatrolArrivalThreshold = 100.0f;
     float PatrolIdleTimer = 0.0f;
     float PatrolIdleWaitTime = 2.0f;
+    
+    // Territory System (영역 기반 배회)
+    UPROPERTY(BlueprintReadOnly, Category = "AI|Territory")
+    FVector TerritoryCenter;  // 스폰 위치 (영역 중심)
+    
+    UPROPERTY(EditAnywhere, Category = "AI|Territory")
+    float TerritoryRadius = 1000.0f;  // 10m (WallCrawler SightRadius와 동일)
+    
+    UPROPERTY(EditAnywhere, Category = "AI|Territory")
+    int32 TerritorySectors = 8;  // 섹터 수 (8방향)
+    
+    UPROPERTY(BlueprintReadOnly, Category = "AI|Territory")
+    TArray<float> SectorMaxDistances;  // 각 섹터별 최대 거리
+    
+    UPROPERTY(BlueprintReadOnly, Category = "AI|Territory")
+    TArray<FVector> SectorDirections;  // 각 섹터 방향 벡터
+    
+    UPROPERTY(BlueprintReadOnly, Category = "AI|Territory")
+    int32 CurrentSector = -1;  // 현재 위치한 섹터
+    
+    // Territory Functions
+    void InitializeTerritory();  // BeginPlay에서 호출
+    int32 GetCurrentSector() const;  // 현재 섹터 계산
+    FVector GetRandomPatrolLocationInTerritory();  // 영역 내 배회 위치 생성
+    bool IsInTerritory(const FVector& Location) const;  // 영역 내 여부 체크
 };

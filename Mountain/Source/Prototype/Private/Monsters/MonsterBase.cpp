@@ -3,6 +3,7 @@
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISenseConfig_Hearing.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "DrawDebugHelpers.h"
 
 DEFINE_LOG_CATEGORY(LogMonster);
 
@@ -28,15 +29,15 @@ AMonsterBase::AMonsterBase()
     SightConfig->SightRadius = SightRadius;
     SightConfig->LoseSightRadius = LoseSightRadius;
     SightConfig->PeripheralVisionAngleDegrees = SightAngle;
-    SightConfig->SetMaxAge(5.0f);
+    SightConfig->SetMaxAge(0.5f);  // 더 빠른 반응 (5.0 → 0.5)
     SightConfig->DetectionByAffiliation.bDetectEnemies = true;
     SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
     SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
     
     PerceptionComponent->ConfigureSense(*SightConfig);
-    PerceptionComponent->SetDominantSense(HearingConfig->GetSenseImplementation());
+    PerceptionComponent->SetDominantSense(SightConfig->GetSenseImplementation());
     
-    UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured (Hearing + Sight)"));
+    UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured (Sight DOMINANT + Hearing)"));
 }
 
 void AMonsterBase::BeginPlay()
@@ -110,9 +111,22 @@ void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
     }
     else
     {
-        // 플레이어 놓침
-        TargetPlayer = nullptr;
-        UE_LOG(LogMonster, Warning, TEXT("%s LOST player"), *GetName());
+        // 플레이어 놓침 - 하지만 실제 거리로 재확인
+        float Distance = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
+        
+        // LoseSightRadius 밖으로 나갔을 때만 null 설정
+        if (Distance > LoseSightRadius)
+        {
+            TargetPlayer = nullptr;
+            UE_LOG(LogMonster, Warning, TEXT("%s LOST player (distance: %.1f > %.1f)"), 
+                *GetName(), Distance, LoseSightRadius);
+        }
+        else
+        {
+            // 아직 범위 내 - TargetPlayer 유지
+            UE_LOG(LogMonster, Log, TEXT("%s Sight temporarily lost but player still in range (%.1f)"), 
+                *GetName(), Distance);
+        }
     }
 }
 

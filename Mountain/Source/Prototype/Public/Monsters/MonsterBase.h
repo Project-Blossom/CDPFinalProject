@@ -36,7 +36,7 @@ public:
     float SightRadius = 1000.0f;
 
     UPROPERTY(EditAnywhere, Category = "AI|Perception")
-    float SightAngle = 60.0f;
+    float SightAngle = 90.0f;  // 90도 (더 넓은 시야각)
 
     UPROPERTY(EditAnywhere, Category = "AI|Perception")
     float LoseSightRadius = 1500.0f;
