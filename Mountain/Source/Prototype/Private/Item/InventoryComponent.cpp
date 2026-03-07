@@ -59,10 +59,15 @@ void UInventoryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 void UInventoryComponent::SetPreviewEnabled(bool bEnabled)
 {
+    UE_LOG(LogTemp, Warning, TEXT("[Preview] SetPreviewEnabled %s"),
+        bEnabled ? TEXT("TRUE") : TEXT("FALSE"));
+
     bPreviewEnabled = bEnabled;
 
     if (!bPreviewEnabled)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] DestroyPreviewActor"));
+
         DestroyPreviewActor();
         bLastPreviewValid = false;
         LastPreviewReason = FText::FromString(TEXT("Preview disabled"));
@@ -71,6 +76,7 @@ void UInventoryComponent::SetPreviewEnabled(bool bEnabled)
 
     if (ShouldRunPreview())
     {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] EnsurePreviewActor"));
         EnsurePreviewActor();
     }
 }
@@ -121,22 +127,41 @@ AActor* UInventoryComponent::GetPreviewUserActor() const
 
 void UInventoryComponent::EnsurePreviewActor()
 {
-    if (PreviewActor) return;
+    if (PreviewActor)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] Already has PreviewActor"));
+        return;
+    }
 
     UWorld* W = GetWorld();
-    if (!W) return;
+    if (!W)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[Preview] GetWorld NULL"));
+        return;
+    }
 
     if (!DefaultPreviewActorClass)
     {
+        UE_LOG(LogTemp, Error, TEXT("[Preview] DefaultPreviewActorClass NULL"));
         return;
     }
+
+    UE_LOG(LogTemp, Warning, TEXT("[Preview] Spawning preview actor: %s"),
+        *DefaultPreviewActorClass->GetName());
 
     FActorSpawnParameters Params;
     Params.Owner = GetOwner();
     Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
     PreviewActor = W->SpawnActor<AActor>(DefaultPreviewActorClass, FTransform::Identity, Params);
-    if (!PreviewActor) return;
+
+    if (!PreviewActor)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[Preview] SpawnActor FAILED"));
+        return;
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("[Preview] Spawned preview actor"));
 
     PreviewActor->SetReplicates(false);
     PreviewActor->SetReplicateMovement(false);
@@ -156,16 +181,22 @@ void UInventoryComponent::DestroyPreviewActor()
 void UInventoryComponent::UpdatePreview(float)
 {
     EnsurePreviewActor();
+
     if (!PreviewActor)
     {
+        UE_LOG(LogTemp, Error, TEXT("[Preview] PreviewActor NULL"));
+
         bLastPreviewValid = false;
         LastPreviewReason = FText::FromString(TEXT("No preview actor class"));
         return;
     }
 
     AActor* User = GetPreviewUserActor();
+
     if (!User)
     {
+        UE_LOG(LogTemp, Error, TEXT("[Preview] No User Actor"));
+
         PreviewActor->SetActorHiddenInGame(true);
         bLastPreviewValid = false;
         LastPreviewReason = FText::FromString(TEXT("No user"));
@@ -174,6 +205,7 @@ void UInventoryComponent::UpdatePreview(float)
 
     FTransform Xf;
     FText Fail;
+
     const bool bOK = ComputePreviewTransform(PreviewSlotIndex, User, Xf, Fail);
 
     bLastPreviewValid = bOK;
@@ -181,11 +213,16 @@ void UInventoryComponent::UpdatePreview(float)
 
     if (bOK)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] Transform VALID"));
+
         PreviewActor->SetActorTransform(Xf);
         PreviewActor->SetActorHiddenInGame(false);
     }
     else
     {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] Transform INVALID: %s"),
+            *Fail.ToString());
+
         PreviewActor->SetActorHiddenInGame(true);
     }
 }
@@ -336,23 +373,25 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
 {
     if (!User)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: Invalid user"));
         OutFailReason = FText::FromString(TEXT("Invalid user"));
         return false;
     }
 
     if (!Def || Def->UseType != EItemUseType::PlaceActor)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: Invalid item type"));
         OutFailReason = FText::FromString(TEXT("Item cannot be placed"));
         return false;
     }
 
     if (!Def->PlaceActorClass)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: No PlaceActorClass"));
         OutFailReason = FText::FromString(TEXT("No actor assigned for placement"));
         return false;
     }
 
-    // ---- 카메라 기준 라인트레이스 ----
     FVector ViewLoc = User->GetActorLocation();
     FRotator ViewRot = User->GetActorRotation();
 
@@ -370,29 +409,42 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
 
     FHitResult Hit;
     FCollisionQueryParams Params(SCENE_QUERY_STAT(PlaceTrace), false, User);
-    Params.bReturnPhysicalMaterial = false;
 
-    const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params);
+    const bool bHit = GetWorld()->LineTraceSingleByChannel(
+        Hit,
+        Start,
+        End,
+        ECC_Visibility,
+        Params
+    );
 
     if (!bHit || !Hit.bBlockingHit)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: No surface hit"));
+
         OutFailReason = FText::FromString(TEXT("No valid surface to place the item"));
         return false;
     }
 
     const float Dist = FVector::Dist(Start, Hit.ImpactPoint);
+
     if (Dist > PlaceRangeCm)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: Too far (%.0f / %.0f)"),
+            Dist, PlaceRangeCm);
+
         OutFailReason = FText::FromString(TEXT("Target is too far away"));
         return false;
     }
 
-    // ---- 법선 정렬 ----
     const FVector Normal = Hit.ImpactNormal.GetSafeNormal();
     const FVector Forward = -Normal;
+
     const FRotator Rot = FRotationMatrix::MakeFromX(Forward).Rotator();
 
     const FVector Pos = Hit.ImpactPoint + Normal * (-PlaceEmbedCm);
+
+    UE_LOG(LogTemp, Warning, TEXT("[Preview] SUCCESS BuildPlaceTransform"));
 
     OutXform = FTransform(Rot, Pos);
     return true;

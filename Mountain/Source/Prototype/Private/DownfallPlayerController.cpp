@@ -11,12 +11,17 @@
 #include "Item/InventoryComponent.h"
 #include "Item/InventoryWidget.h"
 #include "Item/ItemDefinition.h"
+#include "Item/InventoryTypes.h"
+
 #include "Blueprint/UserWidget.h"
 
 UInventoryComponent* ADownfallPlayerController::GetInventoryFromPawn() const
 {
     APawn* P = GetPawn();
-    if (!P) return nullptr;
+    if (!P)
+    {
+        return nullptr;
+    }
 
     return P->FindComponentByClass<UInventoryComponent>();
 }
@@ -25,15 +30,27 @@ void ADownfallPlayerController::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (!IsLocalController()) return;
+    if (!IsLocalController())
+    {
+        return;
+    }
 
     ULocalPlayer* LP = GetLocalPlayer();
-    if (!LP) return;
+    if (!LP)
+    {
+        return;
+    }
 
     UEnhancedInputLocalPlayerSubsystem* Subsys = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
-    if (!Subsys) return;
+    if (!Subsys)
+    {
+        return;
+    }
 
-    if (!PlayerMappingContext) return;
+    if (!PlayerMappingContext)
+    {
+        return;
+    }
 
     Subsys->ClearAllMappings();
     Subsys->AddMappingContext(PlayerMappingContext, 0);
@@ -50,6 +67,13 @@ void ADownfallPlayerController::DeferredInitAfterPossess()
 {
     CreateAndBindInventoryUI();
     GiveTestItemsIfNeeded();
+
+    if (UInventoryComponent* Inv = GetInventoryFromPawn())
+    {
+        Inv->SetPreviewEnabled(false);
+    }
+
+    bPlacementMode = false;
 }
 
 void ADownfallPlayerController::SetupInputComponent()
@@ -63,7 +87,9 @@ void ADownfallPlayerController::SetupInputComponent()
     }
 
     if (!UseItemAction)
+    {
         return;
+    }
 
     EIC->BindAction(UseItemAction, ETriggerEvent::Started, this, &ADownfallPlayerController::OnUseItemTriggered);
 }
@@ -101,14 +127,20 @@ void ADownfallPlayerController::GiveTestItemsIfNeeded()
 
 int32 ADownfallPlayerController::FindFirstUsableSlot(const UInventoryComponent* Inv) const
 {
-    if (!Inv) return INDEX_NONE;
+    if (!Inv)
+    {
+        return INDEX_NONE;
+    }
 
     const TArray<FItemStack>& Slots = Inv->GetSlots();
     for (int32 i = 0; i < Slots.Num(); ++i)
     {
         if (Slots[i].IsValid())
+        {
             return i;
+        }
     }
+
     return INDEX_NONE;
 }
 
@@ -116,10 +148,39 @@ void ADownfallPlayerController::OnUseItemTriggered(const FInputActionValue& Valu
 {
     UInventoryComponent* Inv = GetInventoryFromPawn();
     APawn* P = GetPawn();
-    if (!Inv || !P) return;
+    if (!Inv || !P)
+    {
+        return;
+    }
 
     const int32 Slot = FindFirstUsableSlot(Inv);
-    if (Slot == INDEX_NONE) return;
+    if (Slot == INDEX_NONE)
+    {
+        return;
+    }
 
-    Inv->UseItem(Slot, P);
+    // 1회차 Q: 배치 모드 진입 + 프리뷰 켜기
+    if (!bPlacementMode)
+    {
+        bPlacementMode = true;
+        Inv->SetPreviewSlotIndex(Slot);
+        Inv->SetPreviewEnabled(true);
+        return;
+    }
+
+    // 2회차 Q: 실제 사용 시도
+    const bool bUsed = Inv->UseItem(Slot, P);
+
+    if (bUsed)
+    {
+        // 설치 성공 -> 배치 모드 종료
+        bPlacementMode = false;
+        Inv->SetPreviewEnabled(false);
+    }
+    else
+    {
+        // 설치 실패 -> 배치 모드 유지, 프리뷰 계속
+        Inv->SetPreviewSlotIndex(Slot);
+        Inv->SetPreviewEnabled(true);
+    }
 }

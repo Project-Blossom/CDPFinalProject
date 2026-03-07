@@ -42,6 +42,10 @@ protected:
     TObjectPtr<const UItemDefinition> TestAnchorItemDef;
 
 private:
+    UPROPERTY(Transient)
+    bool bPlacementMode = false;
+
+private:
     UInventoryComponent* GetInventoryFromPawn() const;
 
     void DeferredInitAfterPossess();

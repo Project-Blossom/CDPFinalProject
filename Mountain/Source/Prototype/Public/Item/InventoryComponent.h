@@ -29,7 +29,7 @@ public:
 
     // ---------- Place settings ----------
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
-    float PlaceRangeCm = 600.f;
+    float PlaceRangeCm = 5000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
     float PlaceTraceDistanceCm = 5000.f;
@@ -107,25 +107,25 @@ private:
     TArray<FItemStack> Slots;
 
     // ----------------- Preview internals -----------------
-    UPROPERTY(EditDefaultsOnly, Category = "Inventory|Preview")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true"))
     TSubclassOf<AActor> DefaultPreviewActorClass;
 
-    UPROPERTY(Transient)
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true"))
     TObjectPtr<AActor> PreviewActor;
 
-    UPROPERTY(Transient)
-    bool bPreviewEnabled = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true"))
+    bool bPreviewEnabled = false;
 
-    UPROPERTY(Transient)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
     int32 PreviewSlotIndex = 0;
 
-    UPROPERTY(Transient)
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true"))
     bool bLastPreviewValid = false;
 
-    UPROPERTY(Transient)
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true"))
     FText LastPreviewReason;
 
-    UPROPERTY(EditAnywhere, Category = "Inventory|Preview", meta = (ClampMin = "0.0"))
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
     float PreviewUpdateInterval = 0.0f;
 
     float PreviewAccum = 0.0f;
