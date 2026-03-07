@@ -1,6 +1,8 @@
 #include "Monsters/FlyingAttacker.h"
 #include "DownfallCharacter.h"
 #include "DrawDebugHelpers.h"
+#include "AIController.h"
+#include "BrainComponent.h"
 
 AFlyingAttacker::AFlyingAttacker()
 {
@@ -21,8 +23,16 @@ void AFlyingAttacker::BeginPlay()
 void AFlyingAttacker::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+    
+    // Behavior Tree가 실행 중이면 기존 로직 스킵
+    AAIController* AIController = Cast<AAIController>(GetController());
+    if (AIController && AIController->BrainComponent && AIController->BrainComponent->IsRunning())
+    {
+        // Behavior Tree가 제어 중
+        return;
+    }
 
-    // 공격 행동 업데이트
+    // 기존 로직 (Behavior Tree 없을 때만)
     UpdateAttackBehavior(DeltaTime);
 
 #if !UE_BUILD_SHIPPING
