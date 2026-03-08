@@ -43,6 +43,9 @@ EBTNodeResult::Type UBTTask_FlyToTarget::ExecuteTask(UBehaviorTreeComponent& Own
         return EBTNodeResult::Failed;
     }
 
+    // Task 시작 시 충돌 플래그 초기화
+    bHasHitPlayerThisTask = false;
+
     UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Flying to target"));
     
     return EBTNodeResult::InProgress;
@@ -69,9 +72,11 @@ void UBTTask_FlyToTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Nod
     FVector TargetLocation;
     UObject* TargetObject = BlackboardComp->GetValueAsObject(TargetKey.SelectedKeyName);
     
+    AActor* TargetActor = nullptr;
+    
     if (TargetObject)
     {
-        AActor* TargetActor = Cast<AActor>(TargetObject);
+        TargetActor = Cast<AActor>(TargetObject);
         if (TargetActor)
         {
             TargetLocation = TargetActor->GetActorLocation();
@@ -90,6 +95,24 @@ void UBTTask_FlyToTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Nod
 
     FVector CurrentLocation = FlyingMonster->GetActorLocation();
     float Distance = FVector::Dist(CurrentLocation, TargetLocation);
+    
+    // 플레이어와의 충돌 체크 (FlyingAttacker용)
+    if (!bHasHitPlayerThisTask && TargetActor)
+    {
+        ADownfallCharacter* Player = Cast<ADownfallCharacter>(TargetActor);
+        if (Player)
+        {
+            float PlayerDistance = FVector::Dist(CurrentLocation, Player->GetActorLocation());
+            if (PlayerDistance <= HitCheckRadius)
+            {
+                // 플레이어 타격!
+                Player->AddInsanity(InsanityDamage);
+                bHasHitPlayerThisTask = true;
+                
+                UE_LOG(LogTemp, Warning, TEXT("BTTask_FlyToTarget: HIT player! (+%.1f Insanity)"), InsanityDamage);
+            }
+        }
+    }
     
     if (Distance <= AcceptanceRadius)
     {

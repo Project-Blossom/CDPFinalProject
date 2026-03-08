@@ -31,4 +31,14 @@ protected:
     
     UPROPERTY(EditAnywhere, Category = "Movement")
     bool bAvoidObstacles = true;
+
+    // Attack (FlyingAttacker용)
+    UPROPERTY(EditAnywhere, Category = "Attack")
+    float InsanityDamage = 10.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Attack")
+    float HitCheckRadius = 150.0f;
+
+    // 이번 Task 실행 중 이미 플레이어를 타격했는지 여부
+    bool bHasHitPlayerThisTask = false;
 };
