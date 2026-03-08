@@ -4,6 +4,9 @@
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Perception/AISenseConfig_Hearing.h"
+#include "AIController.h"
+#include "BrainComponent.h"
+#include "BehaviorTree/BlackboardComponent.h"
 
 AWallCrawler::AWallCrawler()
 {
@@ -24,8 +27,23 @@ void AWallCrawler::BeginPlay()
     DetectionGauge = 0.0f;
     PotentialTarget = nullptr;
     bAttachedToPlayer = false;
-    bIsStunned = false;  // 추가
-    StunTimer = 0.0f;    // 추가
+    bIsStunned = false;
+    StunTimer = 0.0f;
+    
+    // Blackboard 초기화 (BT 사용 시)
+    AAIController* AIController = Cast<AAIController>(GetController());
+    if (AIController && AIController->GetBlackboardComponent())
+    {
+        UBlackboardComponent* Blackboard = AIController->GetBlackboardComponent();
+        
+        // LastAttachTime을 과거로 설정 (즉시 attach 가능)
+        Blackboard->SetValueAsFloat("LastAttachTime", -100.0f);
+        
+        // bCanAttach을 true로 설정
+        Blackboard->SetValueAsBool("bCanAttach", true);
+        
+        UE_LOG(LogMonster, Log, TEXT("%s Blackboard initialized (bCanAttach: true)"), *GetName());
+    }
     
     UE_LOG(LogMonster, Warning, TEXT("%s BeginPlay: TargetPlayer = NULL, DetectionGauge = 0, SpawnTime = %.1f"), 
         *GetName(), SpawnTime);
@@ -63,13 +81,55 @@ void AWallCrawler::BeginPlay()
         CurrentSpeed = FMath::RandRange(MinSpeed, MaxSpeed);
         TargetSpeed = CurrentSpeed;
     }
+    
+    UE_LOG(LogMonster, Log, TEXT("%s (Wall Crawler) ready to crawl"), *GetName());
 }
 
 void AWallCrawler::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
     
-    // Stun 처리 (새로 추가)
+    // Behavior Tree가 실행 중이면 기존 로직 스킵
+    AAIController* AIController = Cast<AAIController>(GetController());
+    if (AIController && AIController->BrainComponent && AIController->BrainComponent->IsRunning())
+    {
+        // BT가 실행 중일 때는 기본 AI 로직 스킵
+        // Stun 처리와 DetectionGauge만 업데이트
+        if (bIsStunned)
+        {
+            StunTimer -= DeltaTime;
+            if (StunTimer <= 0.0f)
+            {
+                bIsStunned = false;
+                UE_LOG(LogMonster, Log, TEXT("%s recovered from stun"), *GetName());
+            }
+            
+            if (!bIsOnWall)
+            {
+                ApplyGravity(DeltaTime);
+            }
+        }
+        
+        UpdateWallAlignment();
+        UpdateDetectionGauge(DeltaTime);
+        
+        if (!bIsOnWall)
+        {
+            ApplyGravity(DeltaTime);
+        }
+        
+        if (bAttachedToPlayer)
+        {
+            DrainStamina(DeltaTime);
+            UpdateShakeDetection(DeltaTime);
+        }
+        
+        return;
+    }
+    
+    // 이하 기존 로직 (BT 없을 때만 실행)
+    
+    // Stun 처리
     if (bIsStunned)
     {
         StunTimer -= DeltaTime;
