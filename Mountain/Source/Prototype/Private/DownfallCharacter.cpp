@@ -2,6 +2,8 @@
 #include "DownfallCharacter.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/PostProcessComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "EnhancedInputComponent.h"
@@ -30,6 +32,13 @@ ADownfallCharacter::ADownfallCharacter()
     FirstPersonCamera->SetupAttachment(GetCapsuleComponent());
     FirstPersonCamera->SetRelativeLocation(FVector(0.0f, 0.0f, 64.0f));
     FirstPersonCamera->bUsePawnControlRotation = true;
+
+    // Post Process Component (VFX용)
+    PostProcessComp = CreateDefaultSubobject<UPostProcessComponent>(TEXT("PostProcessComp"));
+    PostProcessComp->SetupAttachment(FirstPersonCamera);
+    PostProcessComp->bEnabled = true;
+    PostProcessComp->bUnbound = false;
+    PostProcessComp->BlendWeight = 1.0f;
 
     // AI Perception Stimuli Source (몬스터가 감지할 수 있게)
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -149,6 +158,22 @@ void ADownfallCharacter::BeginPlay()
             UE_LOG(LogTemp, Error, TEXT("DownfallCharacter: No PostProcessVolume found in level!"));
         }
     }
+
+    // Attach Desaturation Material Instance 생성
+    if (AttachDesaturationMaterial && PostProcessComp)
+    {
+        DesaturationMaterialInstance = UMaterialInstanceDynamic::Create(AttachDesaturationMaterial, this);
+        if (DesaturationMaterialInstance)
+        {
+            DesaturationMaterialInstance->SetScalarParameterValue(FName("DesaturationAmount"), 0.0f);
+            PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, DesaturationMaterialInstance));
+            UE_LOG(LogDownFall, Log, TEXT("Attach Desaturation Material Instance created"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("AttachDesaturationMaterial not assigned - set in Blueprint"));
+    }
 }
 
 void ADownfallCharacter::Tick(float DeltaTime)
@@ -158,8 +183,9 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateStamina(DeltaTime);
     UpdateInsanity(DeltaTime);
     UpdateClimbingState();
-    CheckForPlatformAbduction();  // 납치 체크 추가
+    CheckForPlatformAbduction();
     UpdateGlitchEffect();
+    UpdateAttachDesaturation(DeltaTime);
     
     // AI Hearing: 의도적인 움직임만 소음 발생
     FVector Velocity = GetVelocity();
@@ -1090,4 +1116,44 @@ void ADownfallCharacter::UpdateGlitchEffect()
                 CurrentGlitchIntensity * 100.0f, Insanity)
         );
     }
+}
+
+void ADownfallCharacter::ShowAttachDesaturation(float Amount)
+{
+    if (!DesaturationMaterialInstance)
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("ShowAttachDesaturation: DesaturationMaterialInstance is NULL"));
+        return;
+    }
+
+    bShowingDesaturation = true;
+    DesaturationAmount = Amount;
+    
+    UE_LOG(LogDownFall, Log, TEXT("ShowAttachDesaturation: Amount=%.2f"), Amount);
+}
+
+void ADownfallCharacter::HideAttachDesaturation()
+{
+    bShowingDesaturation = false;
+    
+    UE_LOG(LogDownFall, Log, TEXT("HideAttachDesaturation called"));
+}
+
+void ADownfallCharacter::UpdateAttachDesaturation(float DeltaTime)
+{
+    if (!DesaturationMaterialInstance)
+        return;
+
+    float TargetAmount = bShowingDesaturation ? DesaturationAmount : 0.0f;
+
+    // 부드러운 페이드 인/아웃
+    CurrentDesaturationAmount = FMath::FInterpTo(
+        CurrentDesaturationAmount,
+        TargetAmount,
+        DeltaTime,
+        DesaturationFadeSpeed
+    );
+
+    // Material Parameter 업데이트
+    DesaturationMaterialInstance->SetScalarParameterValue(FName("DesaturationAmount"), CurrentDesaturationAmount);
 }

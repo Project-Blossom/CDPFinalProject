@@ -476,7 +476,7 @@ void AWallCrawler::PursuePlayer(float DeltaTime)
 
 void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
 {
-    if (!Player || bAttachedToPlayer || bIsStunned)  // bIsStunned 체크 추가
+    if (!Player || bAttachedToPlayer || bIsStunned)
         return;
     
     // CRITICAL: 스폰 직후 Attach 방지
@@ -499,6 +499,9 @@ void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
     SetActorTickEnabled(true);
     SetActorLocation(Player->GetActorLocation() + FVector(0, 0, 100));
     
+    // Attach Desaturation VFX 표시
+    Player->ShowAttachDesaturation(0.8f);
+    
     UE_LOG(LogMonster, Warning, TEXT("%s ATTACHED (debuff mode) - Time since spawn: %.1fs"), *GetName(), TimeSinceSpawn);
 }
 
@@ -509,9 +512,15 @@ void AWallCrawler::DetachFromPlayer()
     bAttachedToPlayer = false;
     AccumulatedShake = 0.0f;
     
-    // Stun 상태 시작 (새로 추가)
+    // Stun 상태 시작
     bIsStunned = true;
     StunTimer = StunDuration;
+    
+    // Attach Desaturation VFX 숨김
+    if (TargetPlayer)
+    {
+        TargetPlayer->HideAttachDesaturation();
+    }
     
     SetActorHiddenInGame(false);
     SetActorEnableCollision(true);

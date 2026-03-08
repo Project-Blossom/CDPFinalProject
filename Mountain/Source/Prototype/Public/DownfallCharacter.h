@@ -65,6 +65,9 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
     TObjectPtr<UCameraComponent> FirstPersonCamera;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VFX")
+    TObjectPtr<class UPostProcessComponent> PostProcessComp;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
     TObjectPtr<class UAIPerceptionStimuliSourceComponent> StimuliSource;
 
@@ -176,6 +179,15 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Insanity")
     void UpdateInsanityEffects();
+
+    // Attach Desaturation VFX
+    UFUNCTION(BlueprintCallable, Category = "VFX")
+    void ShowAttachDesaturation(float Amount = 0.8f);
+
+    UFUNCTION(BlueprintCallable, Category = "VFX")
+    void HideAttachDesaturation();
+
+    void UpdateAttachDesaturation(float DeltaTime);
     
     // GlitchFX
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
@@ -192,6 +204,25 @@ public:
     
     UPROPERTY(BlueprintReadOnly, Category = "Insanity")
     float CurrentGlitchIntensity = 0.0f;    // 현재 글리치 강도
+
+    // Attach Desaturation VFX
+    UPROPERTY(EditAnywhere, Category = "VFX")
+    TObjectPtr<UMaterial> AttachDesaturationMaterial;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> DesaturationMaterialInstance;
+
+    UPROPERTY(EditAnywhere, Category = "VFX")
+    float DesaturationAmount = 0.8f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX")
+    float DesaturationFadeSpeed = 2.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX")
+    float CurrentDesaturationAmount = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX")
+    bool bShowingDesaturation = false;
 
     // Inventory
     UFUNCTION(BlueprintCallable, Category = "Inventory")
