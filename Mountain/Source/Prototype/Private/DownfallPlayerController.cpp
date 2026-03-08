@@ -1,19 +1,12 @@
 #include "DownfallPlayerController.h"
 
-#include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h"
-#include "InputMappingContext.h"
-#include "InputActionValue.h"
-
 #include "GameFramework/Pawn.h"
 #include "TimerManager.h"
+#include "Blueprint/UserWidget.h"
 
 #include "Item/InventoryComponent.h"
 #include "Item/InventoryWidget.h"
 #include "Item/ItemDefinition.h"
-#include "Item/InventoryTypes.h"
-
-#include "Blueprint/UserWidget.h"
 
 UInventoryComponent* ADownfallPlayerController::GetInventoryFromPawn() const
 {
@@ -30,37 +23,18 @@ void ADownfallPlayerController::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (!IsLocalController())
-    {
-        return;
-    }
-
-    ULocalPlayer* LP = GetLocalPlayer();
-    if (!LP)
-    {
-        return;
-    }
-
-    UEnhancedInputLocalPlayerSubsystem* Subsys = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
-    if (!Subsys)
-    {
-        return;
-    }
-
-    if (!PlayerMappingContext)
-    {
-        return;
-    }
-
-    Subsys->ClearAllMappings();
-    Subsys->AddMappingContext(PlayerMappingContext, 0);
+    SetInputMode(FInputModeGameOnly());
+    bShowMouseCursor = false;
 }
 
 void ADownfallPlayerController::OnPossess(APawn* InPawn)
 {
     Super::OnPossess(InPawn);
 
-    GetWorldTimerManager().SetTimerForNextTick(this, &ADownfallPlayerController::DeferredInitAfterPossess);
+    if (GetWorld())
+    {
+        GetWorldTimerManager().SetTimerForNextTick(this, &ADownfallPlayerController::DeferredInitAfterPossess);
+    }
 }
 
 void ADownfallPlayerController::DeferredInitAfterPossess()
@@ -72,26 +46,6 @@ void ADownfallPlayerController::DeferredInitAfterPossess()
     {
         Inv->SetPreviewEnabled(false);
     }
-
-    bPlacementMode = false;
-}
-
-void ADownfallPlayerController::SetupInputComponent()
-{
-    Super::SetupInputComponent();
-
-    UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent);
-    if (!EIC)
-    {
-        return;
-    }
-
-    if (!UseItemAction)
-    {
-        return;
-    }
-
-    EIC->BindAction(UseItemAction, ETriggerEvent::Started, this, &ADownfallPlayerController::OnUseItemTriggered);
 }
 
 void ADownfallPlayerController::CreateAndBindInventoryUI()
@@ -103,7 +57,10 @@ void ADownfallPlayerController::CreateAndBindInventoryUI()
     UInventoryComponent* Inv = GetInventoryFromPawn();
     if (!Inv)
     {
-        GetWorldTimerManager().SetTimerForNextTick(this, &ADownfallPlayerController::CreateAndBindInventoryUI);
+        if (GetWorld())
+        {
+            GetWorldTimerManager().SetTimerForNextTick(this, &ADownfallPlayerController::CreateAndBindInventoryUI);
+        }
         return;
     }
 
@@ -118,69 +75,7 @@ void ADownfallPlayerController::GiveTestItemsIfNeeded()
 {
     UInventoryComponent* Inv = GetInventoryFromPawn();
     if (!Inv) return;
+    if (!TestAnchorItemDef) return;
 
-    if (TestAnchorItemDef)
-    {
-        Inv->TryAddByDefinition(TestAnchorItemDef, 1);
-    }
-}
-
-int32 ADownfallPlayerController::FindFirstUsableSlot(const UInventoryComponent* Inv) const
-{
-    if (!Inv)
-    {
-        return INDEX_NONE;
-    }
-
-    const TArray<FItemStack>& Slots = Inv->GetSlots();
-    for (int32 i = 0; i < Slots.Num(); ++i)
-    {
-        if (Slots[i].IsValid())
-        {
-            return i;
-        }
-    }
-
-    return INDEX_NONE;
-}
-
-void ADownfallPlayerController::OnUseItemTriggered(const FInputActionValue& Value)
-{
-    UInventoryComponent* Inv = GetInventoryFromPawn();
-    APawn* P = GetPawn();
-    if (!Inv || !P)
-    {
-        return;
-    }
-
-    const int32 Slot = FindFirstUsableSlot(Inv);
-    if (Slot == INDEX_NONE)
-    {
-        return;
-    }
-
-    // 1회차 Q: 배치 모드 진입 + 프리뷰 켜기
-    if (!bPlacementMode)
-    {
-        bPlacementMode = true;
-        Inv->SetPreviewSlotIndex(Slot);
-        Inv->SetPreviewEnabled(true);
-        return;
-    }
-
-    // 2회차 Q: 실제 사용 시도
-    const bool bUsed = Inv->UseItem(Slot, P);
-
-    if (bUsed)
-    {
-        // 설치 성공 -> 배치 모드 종료
-        bPlacementMode = false;
-        Inv->SetPreviewEnabled(false);
-    }
-    else
-    {
-        // 설치 실패 -> 배치 모드 유지, 프리뷰 계속
-        Inv->SetPreviewSlotIndex(Slot);
-        Inv->SetPreviewEnabled(true);
-    }
+    Inv->TryAddByDefinition(TestAnchorItemDef, 1);
 }

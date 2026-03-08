@@ -227,6 +227,9 @@ public:
     // Inventory
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     UInventoryComponent* GetInventory() const { return Inventory; }
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr<UInputAction> UseItemAction;
     
 protected:
 
@@ -259,6 +262,10 @@ protected:
     // Inventory
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     TObjectPtr<UInventoryComponent> Inventory;
+
+    // Item
+    void OnUseItemTriggered(const FInputActionValue& Value);
+    void ApplyClimbingMappingContext();
 
     // Debug
 #if !UE_BUILD_SHIPPING

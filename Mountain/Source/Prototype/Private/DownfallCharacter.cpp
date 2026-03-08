@@ -20,6 +20,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "Item/InventoryComponent.h"
+#include "Item/ItemSubsystem.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -109,24 +110,6 @@ void ADownfallCharacter::BeginPlay()
         }
     }
 
-    // Enhanced Input 등록
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-    {
-        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = 
-            ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-        {
-            if (IsValid(ClimbingMappingContext))
-            {
-                Subsystem->AddMappingContext(ClimbingMappingContext, 0);
-                UE_LOG(LogDownFall, Log, TEXT("ClimbingMappingContext registered"));
-            }
-            else
-            {
-                UE_LOG(LogDownFall, Warning, TEXT("ClimbingMappingContext is null - assign in Blueprint"));
-            }
-        }
-    }
-
     // 초기 스태미나
     LeftHand.Stamina = MaxStamina;
     RightHand.Stamina = MaxStamina;
@@ -174,6 +157,8 @@ void ADownfallCharacter::BeginPlay()
     {
         UE_LOG(LogDownFall, Warning, TEXT("AttachDesaturationMaterial not assigned - set in Blueprint"));
     }
+
+    ApplyClimbingMappingContext();
 }
 
 void ADownfallCharacter::Tick(float DeltaTime)
@@ -272,6 +257,8 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 {
     Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+    UE_LOG(LogTemp, Warning, TEXT("[Char] SetupPlayerInputComponent called"));
+
     if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
     {
         if (IsValid(GrabLeftAction))
@@ -305,6 +292,83 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
             if (DebugInsanityAction)
             {
                 EIC->BindAction(DebugInsanityAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnDebugInsanity);
+            }
+        }
+
+        if (IsValid(UseItemAction))
+        {
+            EIC->BindAction(UseItemAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnUseItemTriggered);
+            UE_LOG(LogTemp, Warning, TEXT("[Char] BindAction done: %s"), *GetNameSafe(UseItemAction));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("[Char] UseItemAction is NULL"));
+        }
+    }
+}
+
+void ADownfallCharacter::OnUseItemTriggered(const FInputActionValue& Value)
+{
+    if (!Inventory) return;
+
+    UWorld* W = GetWorld();
+    UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
+    UItemSubsystem* IS = GI ? GI->GetSubsystem<UItemSubsystem>() : nullptr;
+    if (!IS) return;
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+
+    int32 Slot = INDEX_NONE;
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        const FItemStack& S = Slots[i];
+        if (!S.IsValid()) continue;
+
+        const UItemDefinition* Def = IS->GetItemDefinitionById(S.ItemId);
+        if (!Def) continue;
+        if (Def->UseType != EItemUseType::PlaceActor) continue;
+        if (!Def->PlaceActorClass) continue;
+
+        Slot = i;
+        break;
+    }
+
+    if (Slot == INDEX_NONE)
+    {
+        return;
+    }
+
+    if (!Inventory->IsPreviewEnabled())
+    {
+        Inventory->SetPreviewSlotIndex(Slot);
+        Inventory->SetPreviewEnabled(true);
+        return;
+    }
+
+    const bool bUsed = Inventory->UseItem(Slot, this);
+
+    if (bUsed)
+    {
+        Inventory->SetPreviewEnabled(false);
+    }
+}
+
+void ADownfallCharacter::ApplyClimbingMappingContext()
+{
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    {
+        if (ULocalPlayer* LP = PC->GetLocalPlayer())
+        {
+            if (UEnhancedInputLocalPlayerSubsystem* Subsys =
+                LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+            {
+                if (ClimbingMappingContext)
+                {
+                    Subsys->ClearAllMappings();
+                    Subsys->AddMappingContext(ClimbingMappingContext, 0);
+
+                    UE_LOG(LogTemp, Warning, TEXT("[Char] MappingContext applied"));
+                }
             }
         }
     }
