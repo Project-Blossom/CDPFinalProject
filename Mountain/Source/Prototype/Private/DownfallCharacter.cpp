@@ -21,6 +21,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Item/InventoryComponent.h"
 #include "Item/ItemSubsystem.h"
+#include "Item/ItemDefinition.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 

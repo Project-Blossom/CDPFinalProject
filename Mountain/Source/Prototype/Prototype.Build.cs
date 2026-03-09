@@ -21,7 +21,8 @@ public class Prototype : ModuleRules
             "Slate",
             "ProceduralMeshComponent",
             "PhysicsCore",
-            "SlateCore"
+            "SlateCore",
+            "DeveloperSettings"
         });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

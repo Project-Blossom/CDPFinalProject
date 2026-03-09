@@ -17,11 +17,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Item")
     UItemDefinition* GetItemDefinitionById(FName ItemId) const;
 
-public:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
-    TArray<TObjectPtr<UItemDefinition>> ItemList;
-
 private:
     UPROPERTY(Transient)
-    TMap<FName, TObjectPtr<UItemDefinition>> ItemMap;
+    mutable TMap<FName, TObjectPtr<UItemDefinition>> ItemMap;
 };
