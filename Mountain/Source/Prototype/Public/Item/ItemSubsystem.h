@@ -19,5 +19,5 @@ public:
 
 private:
     UPROPERTY(Transient)
-    mutable TMap<FName, TObjectPtr<UItemDefinition>> ItemMap;
+    TMap<FName, TObjectPtr<UItemDefinition>> ItemMap;
 };
