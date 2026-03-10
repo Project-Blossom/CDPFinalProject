@@ -57,20 +57,17 @@ void AFlyingMonster::FlyToLocation(FVector TargetLocation, float Speed, bool bAv
             FVector HitLocation;
             if (CheckForObstacles(DesiredDirection, ObstacleCheckDistance, HitLocation))
             {
-                // 장애물 발견 - 회피 시작
-                FVector ObstacleNormal = (CurrentLocation - HitLocation).GetSafeNormal();
-                AvoidanceDirection = GetAvoidanceDirection(DesiredDirection, ObstacleNormal);
+                // 장애물 발견 - 목표 재설정으로 변경!
+                OnObstacleDetected(DesiredDirection);
                 
-                bIsAvoiding = true;
-                AvoidanceTimer = AvoidanceDuration;
-                FinalDirection = AvoidanceDirection;
-                
-                UE_LOG(LogMonster, Warning, TEXT("%s: Obstacle detected! Starting avoidance"), *GetName());
+                UE_LOG(LogMonster, Warning, TEXT("%s: Obstacle detected! Calling OnObstacleDetected"), *GetName());
                 
 #if !UE_BUILD_SHIPPING
                 DrawDebugLine(GetWorld(), CurrentLocation, HitLocation, FColor::Red, false, 1.0f, 0, 3.0f);
                 DrawDebugSphere(GetWorld(), HitLocation, 30.0f, 8, FColor::Red, false, 1.0f);
 #endif
+                // 이번 프레임은 이동하지 않음
+                return;
             }
         }
     }
@@ -108,11 +105,32 @@ FVector AFlyingMonster::GetRandomPatrolLocation() const
     
     for (int32 Attempt = 0; Attempt < MaxAttempts; Attempt++)
     {
-        FVector RandomOffset = FVector(
-            FMath::RandRange(-PatrolRadius, PatrolRadius),
-            FMath::RandRange(-PatrolRadius, PatrolRadius),
-            FMath::RandRange(0.0f, VerticalPatrolRange)
-        );
+        FVector RandomOffset;
+        
+        if (bHasObstacleMemory)
+        {
+            // 반대 반구에서 생성
+            RandomOffset = const_cast<AFlyingMonster*>(this)->GenerateOppositeHemisphereOffset(PatrolRadius, VerticalPatrolRange);
+            
+            // 마지막 시도면 기억 초기화
+            if (Attempt == MaxAttempts - 1)
+            {
+                const_cast<AFlyingMonster*>(this)->bHasObstacleMemory = false;
+                UE_LOG(LogMonster, Log, TEXT("%s obstacle memory cleared"), *GetName());
+            }
+        }
+        else
+        {
+            // 기존 랜덤 로직 (5배 확장된 범위)
+            float ExtendedRadius = PatrolRadius * 5.0f;
+            float ExtendedVerticalRange = VerticalPatrolRange * 5.0f;
+            
+            RandomOffset = FVector(
+                FMath::RandRange(-ExtendedRadius, ExtendedRadius),
+                FMath::RandRange(-ExtendedRadius, ExtendedRadius),
+                FMath::RandRange(0.0f, ExtendedVerticalRange)
+            );
+        }
 
         FVector TargetLocation = IdleLocation + RandomOffset;
         TargetLocation.Z = FMath::Max(TargetLocation.Z, 100.0f);
@@ -120,13 +138,15 @@ FVector AFlyingMonster::GetRandomPatrolLocation() const
         // 이 위치가 암벽 안인지 체크
         if (IsLocationValid(TargetLocation))
         {
-            UE_LOG(LogMonster, Verbose, TEXT("%s: Valid patrol location found on attempt %d"), *GetName(), Attempt + 1);
+            UE_LOG(LogMonster, Verbose, TEXT("%s: Valid patrol location found on attempt %d%s"), 
+                *GetName(), Attempt + 1, bHasObstacleMemory ? TEXT(" (opposite hemisphere)") : TEXT(""));
             return TargetLocation;
         }
     }
     
     // 실패하면 IdleLocation 위쪽으로 (안전한 위치)
     UE_LOG(LogMonster, Warning, TEXT("%s: Failed to find valid patrol location, using safe fallback"), *GetName());
+    const_cast<AFlyingMonster*>(this)->bHasObstacleMemory = false;  // 기억 초기화
     return IdleLocation + FVector(0, 0, 300.0f);
 }
 
@@ -237,4 +257,54 @@ bool AFlyingMonster::IsLocationValid(const FVector& Location) const
     }
     
     return true;
+}
+
+void AFlyingMonster::OnObstacleDetected(const FVector& ObstacleDirection)
+{
+    LastObstacleDirection = ObstacleDirection;
+    bHasObstacleMemory = true;
+    
+    UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected in direction %s"), 
+        *GetName(), *ObstacleDirection.ToString());
+}
+
+FVector AFlyingMonster::GenerateOppositeHemisphereOffset(float Radius, float VerticalRange)
+{
+    // 실패한 방향의 반대 반구에서만 생성
+    // OppositeHemisphereAngle = 90도 이상 반대 방향
+    
+    // 거리를 5배로 증가
+    float ExtendedRadius = Radius * 5.0f;
+    float ExtendedVerticalRange = VerticalRange * 5.0f;
+    
+    int32 MaxAttempts = 20;
+    
+    for (int32 i = 0; i < MaxAttempts; i++)
+    {
+        // 랜덤 오프셋 생성 (5배 확장된 범위)
+        FVector RandomOffset = FVector(
+            FMath::RandRange(-ExtendedRadius, ExtendedRadius),
+            FMath::RandRange(-ExtendedRadius, ExtendedRadius),
+            FMath::RandRange(0.0f, ExtendedVerticalRange)
+        );
+        
+        FVector Direction = RandomOffset.GetSafeNormal();
+        
+        // LastObstacleDirection과의 각도 계산
+        float DotProduct = FVector::DotProduct(Direction, LastObstacleDirection);
+        float AngleDegrees = FMath::RadiansToDegrees(FMath::Acos(DotProduct));
+        
+        // OppositeHemisphereAngle(90도) 이상 반대면 OK
+        if (AngleDegrees >= OppositeHemisphereAngle)
+        {
+            UE_LOG(LogMonster, Log, TEXT("%s found opposite direction: %.1f degrees from obstacle (distance: %.1f)"), 
+                *GetName(), AngleDegrees, RandomOffset.Size());
+            return RandomOffset;
+        }
+    }
+    
+    // 실패 시: 정확히 반대 방향 (5배 거리)
+    UE_LOG(LogMonster, Warning, TEXT("%s failed to find opposite hemisphere, using exact opposite"), 
+        *GetName());
+    return -LastObstacleDirection * ExtendedRadius;
 }

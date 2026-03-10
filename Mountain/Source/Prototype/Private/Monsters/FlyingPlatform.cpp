@@ -4,6 +4,7 @@
 #include "DrawDebugHelpers.h"
 #include "AIController.h"
 #include "BrainComponent.h"
+#include "BehaviorTree/BlackboardComponent.h"
 
 AFlyingPlatform::AFlyingPlatform()
 {
@@ -193,4 +194,26 @@ FVector AFlyingPlatform::GetGrabLocation() const
 
     // 없으면 중심 위치 + 위쪽 오프셋 (50cm)
     return GetActorLocation() + FVector(0, 0, 50.0f);
+}
+
+void AFlyingPlatform::OnObstacleDetected(const FVector& ObstacleDirection)
+{
+    Super::OnObstacleDetected(ObstacleDirection);
+    
+    // BT 없을 때: 목표 포기
+    bHasTarget = false;
+    
+    // BT 있을 때: Blackboard PatrolLocation 초기화
+    AAIController* AIController = Cast<AAIController>(GetController());
+    if (AIController && AIController->GetBlackboardComponent())
+    {
+        UBlackboardComponent* Blackboard = AIController->GetBlackboardComponent();
+        Blackboard->ClearValue("PatrolLocation");
+        
+        UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected! Blackboard PatrolLocation cleared"), *GetName());
+    }
+    else
+    {
+        UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected! bHasTarget reset"), *GetName());
+    }
 }

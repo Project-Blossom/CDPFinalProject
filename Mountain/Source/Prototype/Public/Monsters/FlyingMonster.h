@@ -57,6 +57,16 @@ public:
     
 	UPROPERTY(EditAnywhere, Category = "Flight")
 	float AvoidanceDuration = 1.0f;  // 회피 지속 시간
+
+	// Obstacle Memory (목표 재설정용)
+	UPROPERTY(BlueprintReadOnly, Category = "Flight")
+	FVector LastObstacleDirection;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Flight")
+	bool bHasObstacleMemory = false;
+
+	UPROPERTY(EditAnywhere, Category = "Flight")
+	float OppositeHemisphereAngle = 90.0f;  // 최소 반대 각도
 	
 	// Functions
 	UFUNCTION(BlueprintCallable, Category = "Flight")
@@ -73,6 +83,13 @@ public:
 	
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	bool IsLocationValid(const FVector& Location) const;
+
+protected:
+	// Obstacle Detection Callback
+	virtual void OnObstacleDetected(const FVector& ObstacleDirection);
+
+	// Helper Functions
+	FVector GenerateOppositeHemisphereOffset(float Radius, float VerticalRange);
 
 private:
 	// Obstacle Avoidance

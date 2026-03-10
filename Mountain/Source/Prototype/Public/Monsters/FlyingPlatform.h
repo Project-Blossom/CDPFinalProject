@@ -76,4 +76,8 @@ public:
     void UpdatePatrol(float DeltaTime);
 
     virtual void Attack() override {}
+
+protected:
+    // Override: 장애물 감지 시 목표 재설정
+    virtual void OnObstacleDetected(const FVector& ObstacleDirection) override;
 };
