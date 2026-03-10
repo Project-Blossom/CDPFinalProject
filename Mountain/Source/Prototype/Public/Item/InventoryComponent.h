@@ -25,14 +25,14 @@ public:
     FOnInventoryChanged OnInventoryChanged;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
-    int32 SlotCount = 24;
+    int32 SlotCount = 25;
 
     // ---------- Place settings ----------
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
-    float PlaceRangeCm = 5000.f;
+    float PlaceRangeCm = 200.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
-    float PlaceTraceDistanceCm = 5000.f;
+    float PlaceTraceDistanceCm = 200.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "0.0"))
     float PlaceEmbedCm = 5.f;

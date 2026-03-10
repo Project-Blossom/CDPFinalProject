@@ -77,5 +77,5 @@ void ADownfallPlayerController::GiveTestItemsIfNeeded()
     if (!Inv) return;
     if (!TestAnchorItemDef) return;
 
-    Inv->TryAddByDefinition(TestAnchorItemDef, 1);
+    Inv->TryAddByDefinition(TestAnchorItemDef, 5);
 }

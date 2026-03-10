@@ -59,15 +59,10 @@ void UInventoryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 void UInventoryComponent::SetPreviewEnabled(bool bEnabled)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[Preview] SetPreviewEnabled %s"),
-        bEnabled ? TEXT("TRUE") : TEXT("FALSE"));
-
     bPreviewEnabled = bEnabled;
 
     if (!bPreviewEnabled)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] DestroyPreviewActor"));
-
         DestroyPreviewActor();
         bLastPreviewValid = false;
         LastPreviewReason = FText::FromString(TEXT("Preview disabled"));
@@ -76,7 +71,6 @@ void UInventoryComponent::SetPreviewEnabled(bool bEnabled)
 
     if (ShouldRunPreview())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] EnsurePreviewActor"));
         EnsurePreviewActor();
     }
 }
@@ -127,12 +121,6 @@ AActor* UInventoryComponent::GetPreviewUserActor() const
 
 void UInventoryComponent::EnsurePreviewActor()
 {
-    if (PreviewActor)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] Already has PreviewActor"));
-        return;
-    }
-
     UWorld* W = GetWorld();
     if (!W)
     {
@@ -146,9 +134,6 @@ void UInventoryComponent::EnsurePreviewActor()
         return;
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[Preview] Spawning preview actor: %s"),
-        *DefaultPreviewActorClass->GetName());
-
     FActorSpawnParameters Params;
     Params.Owner = GetOwner();
     Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -160,8 +145,6 @@ void UInventoryComponent::EnsurePreviewActor()
         UE_LOG(LogTemp, Error, TEXT("[Preview] SpawnActor FAILED"));
         return;
     }
-
-    UE_LOG(LogTemp, Warning, TEXT("[Preview] Spawned preview actor"));
 
     PreviewActor->SetReplicates(false);
     PreviewActor->SetReplicateMovement(false);
@@ -213,16 +196,11 @@ void UInventoryComponent::UpdatePreview(float)
 
     if (bOK)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] Transform VALID"));
-
         PreviewActor->SetActorTransform(Xf);
         PreviewActor->SetActorHiddenInGame(false);
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] Transform INVALID: %s"),
-            *Fail.ToString());
-
         PreviewActor->SetActorHiddenInGame(true);
     }
 }
@@ -373,21 +351,18 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
 {
     if (!User)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: Invalid user"));
         OutFailReason = FText::FromString(TEXT("Invalid user"));
         return false;
     }
 
     if (!Def || Def->UseType != EItemUseType::PlaceActor)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: Invalid item type"));
         OutFailReason = FText::FromString(TEXT("Item cannot be placed"));
         return false;
     }
 
     if (!Def->PlaceActorClass)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: No PlaceActorClass"));
         OutFailReason = FText::FromString(TEXT("No actor assigned for placement"));
         return false;
     }
@@ -420,8 +395,6 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
 
     if (!bHit || !Hit.bBlockingHit)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: No surface hit"));
-
         OutFailReason = FText::FromString(TEXT("No valid surface to place the item"));
         return false;
     }
@@ -430,9 +403,6 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
 
     if (Dist > PlaceRangeCm)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Preview] Fail: Too far (%.0f / %.0f)"),
-            Dist, PlaceRangeCm);
-
         OutFailReason = FText::FromString(TEXT("Target is too far away"));
         return false;
     }
@@ -443,8 +413,6 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
     const FRotator Rot = FRotationMatrix::MakeFromX(Forward).Rotator();
 
     const FVector Pos = Hit.ImpactPoint + Normal * (-PlaceEmbedCm);
-
-    UE_LOG(LogTemp, Warning, TEXT("[Preview] SUCCESS BuildPlaceTransform"));
 
     OutXform = FTransform(Rot, Pos);
     return true;

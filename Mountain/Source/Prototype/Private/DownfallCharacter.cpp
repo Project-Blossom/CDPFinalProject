@@ -258,8 +258,6 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 {
     Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-    UE_LOG(LogTemp, Warning, TEXT("[Char] SetupPlayerInputComponent called"));
-
     if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
     {
         if (IsValid(GrabLeftAction))
@@ -299,7 +297,6 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         if (IsValid(UseItemAction))
         {
             EIC->BindAction(UseItemAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnUseItemTriggered);
-            UE_LOG(LogTemp, Warning, TEXT("[Char] BindAction done: %s"), *GetNameSafe(UseItemAction));
         }
         else
         {
@@ -367,8 +364,6 @@ void ADownfallCharacter::ApplyClimbingMappingContext()
                 {
                     Subsys->ClearAllMappings();
                     Subsys->AddMappingContext(ClimbingMappingContext, 0);
-
-                    UE_LOG(LogTemp, Warning, TEXT("[Char] MappingContext applied"));
                 }
             }
         }
