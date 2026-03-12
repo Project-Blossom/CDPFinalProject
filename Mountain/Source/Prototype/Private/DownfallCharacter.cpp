@@ -152,6 +152,14 @@ void ADownfallCharacter::BeginPlay()
         UE_LOG(LogDownFall, Warning, TEXT("GlitchMaterial not assigned - set in Blueprint"));
     }
 
+    // Inventory
+    if (Inventory && GripFinder)
+    {
+        Inventory->PlaceRangeCm = GripFinder->MaxReachDistance;
+        Inventory->PlaceTraceDistanceCm = GripFinder->MaxReachDistance;
+    }
+
+    RefreshInventoryUIState();
     ApplyClimbingMappingContext();
 }
 
@@ -270,17 +278,17 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         {
             EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &ADownfallCharacter::OnLook);
         }
-        
+
         if (IsValid(MoveAction))
         {
             EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ADownfallCharacter::OnMove);
         }
-        
+
         if (IsValid(JumpAction))
         {
             EIC->BindAction(JumpAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnJumpStarted);
             EIC->BindAction(JumpAction, ETriggerEvent::Completed, this, &ADownfallCharacter::OnJumpCompleted);
-
+            
             // Debug: Insanity Test
             if (DebugInsanityAction)
             {
@@ -292,56 +300,92 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         {
             EIC->BindAction(UseItemAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnUseItemTriggered);
         }
-        else
+
+        if (IsValid(ToggleInventoryAction))
         {
-            UE_LOG(LogTemp, Error, TEXT("[Char] UseItemAction is NULL"));
+            EIC->BindAction(ToggleInventoryAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnToggleInventoryTriggered);
         }
     }
 }
 
 void ADownfallCharacter::OnUseItemTriggered(const FInputActionValue& Value)
 {
-    if (!Inventory) return;
-
-    UWorld* W = GetWorld();
-    UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
-    UItemSubsystem* IS = GI ? GI->GetSubsystem<UItemSubsystem>() : nullptr;
-    if (!IS) return;
-
-    const TArray<FItemStack>& Slots = Inventory->GetSlots();
-
-    int32 Slot = INDEX_NONE;
-    for (int32 i = 0; i < Slots.Num(); ++i)
-    {
-        const FItemStack& S = Slots[i];
-        if (!S.IsValid()) continue;
-
-        const UItemDefinition* Def = IS->GetItemDefinitionById(S.ItemId);
-        if (!Def) continue;
-        if (Def->UseType != EItemUseType::PlaceActor) continue;
-        if (!Def->PlaceActorClass) continue;
-
-        Slot = i;
-        break;
-    }
-
-    if (Slot == INDEX_NONE)
+    if (!Inventory)
     {
         return;
     }
 
-    if (!Inventory->IsPreviewEnabled())
+    switch (ItemUseState)
     {
-        Inventory->SetPreviewSlotIndex(Slot);
-        Inventory->SetPreviewEnabled(true);
+    case EItemUseState::None:
         return;
-    }
 
-    const bool bUsed = Inventory->UseItem(Slot, this);
+    case EItemUseState::InventoryOpen:
+        TryPickHeldItemFromCursor();
+        return;
 
-    if (bUsed)
+    case EItemUseState::HoldingItem:
+        TryUseHeldItem();
+        return;
+
+    case EItemUseState::PlacementPreview:
     {
+        if (!Inventory->UseItem(HeldSlotIndex, this))
+        {
+            return;
+        }
+
         Inventory->SetPreviewEnabled(false);
+
+        const TArray<FItemStack>& Slots = Inventory->GetSlots();
+        if (Slots.IsValidIndex(HeldSlotIndex) && Slots[HeldSlotIndex].IsValid())
+        {
+            ItemUseState = EItemUseState::HoldingItem;
+        }
+        else
+        {
+            HeldSlotIndex = INDEX_NONE;
+            ItemUseState = EItemUseState::None;
+        }
+
+        RefreshInventoryUIState();
+        return;
+    }
+
+    default:
+        return;
+    }
+}
+
+void ADownfallCharacter::OnToggleInventoryTriggered(const FInputActionValue& Value)
+{
+    if (!Inventory)
+    {
+        return;
+    }
+
+    switch (ItemUseState)
+    {
+    case EItemUseState::None:
+        EnterInventoryFromCenter();
+        break;
+
+    case EItemUseState::InventoryOpen:
+        CloseInventoryToEmptyHand();
+        break;
+
+    case EItemUseState::HoldingItem:
+        EnterInventoryFromHeldSlot();
+        break;
+
+    case EItemUseState::PlacementPreview:
+        Inventory->SetPreviewEnabled(false);
+        ItemUseState = EItemUseState::HoldingItem;
+        RefreshInventoryUIState();
+        break;
+
+    default:
+        break;
     }
 }
 
@@ -399,6 +443,12 @@ void ADownfallCharacter::OnLook(const FInputActionValue& Value)
 void ADownfallCharacter::OnMove(const FInputActionValue& Value)
 {
     FVector2D MovementVector = Value.Get<FVector2D>();
+
+    if (ItemUseState == EItemUseState::InventoryOpen)
+    {
+        TryMoveInventoryCursorFromInput(MovementVector);
+        return;
+    }
 
     if (!Controller) return;
 
@@ -1245,4 +1295,228 @@ float ADownfallCharacter::CalculateNextSwitchInterval() const
     
     // 최소 0.1초는 유지
     return FMath::Max(0.1f, BaseInterval + RandomVariation);
+}
+
+void ADownfallCharacter::RefreshInventoryUIState()
+{
+    const bool bInventoryOpen = (ItemUseState == EItemUseState::InventoryOpen);
+    const bool bPreviewing = (ItemUseState == EItemUseState::PlacementPreview);
+
+    BP_UpdateInventoryMode(bInventoryOpen, InventoryCursorIndex, HeldSlotIndex, bPreviewing);
+}
+
+void ADownfallCharacter::MoveInventoryCursor(int32 DX, int32 DY)
+{
+    int32 X = InventoryCursorIndex % 5;
+    int32 Y = InventoryCursorIndex / 5;
+
+    X = FMath::Clamp(X + DX, 0, 4);
+    Y = FMath::Clamp(Y + DY, 0, 4);
+
+    InventoryCursorIndex = Y * 5 + X;
+    RefreshInventoryUIState();
+}
+
+bool ADownfallCharacter::TryMoveInventoryCursorFromInput(const FVector2D& MovementVector)
+{
+    const float AbsX = FMath::Abs(MovementVector.X);
+    const float AbsY = FMath::Abs(MovementVector.Y);
+
+    FVector2D DesiredDir = FVector2D::ZeroVector;
+
+    if (AbsX < 0.5f && AbsY < 0.5f)
+    {
+        bCursorInputHeld = false;
+        LastCursorInputDir = FVector2D::ZeroVector;
+        return false;
+    }
+
+    if (AbsX >= AbsY)
+    {
+        DesiredDir.X = (MovementVector.X > 0.0f) ? 1.0f : -1.0f;
+    }
+    else
+    {
+        // 위/아래가 반대로 느껴지면 여기만 바꾸면 됨
+        DesiredDir.Y = (MovementVector.Y > 0.0f) ? -1.0f : 1.0f;
+    }
+
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+
+    if (!bCursorInputHeld || DesiredDir != LastCursorInputDir)
+    {
+        bCursorInputHeld = true;
+        LastCursorInputDir = DesiredDir;
+        NextCursorRepeatTime = Now + CursorInitialRepeatDelay;
+
+        MoveInventoryCursor((int32)DesiredDir.X, (int32)DesiredDir.Y);
+        return true;
+    }
+
+    if (Now >= NextCursorRepeatTime)
+    {
+        NextCursorRepeatTime = Now + CursorRepeatInterval;
+        MoveInventoryCursor((int32)DesiredDir.X, (int32)DesiredDir.Y);
+        return true;
+    }
+
+    return false;
+}
+
+void ADownfallCharacter::EnterInventoryFromCenter()
+{
+    ItemUseState = EItemUseState::InventoryOpen;
+    InventoryCursorIndex = 12;
+    HeldSlotIndex = INDEX_NONE;
+
+    if (Inventory)
+    {
+        Inventory->SetPreviewEnabled(false);
+    }
+
+    RefreshInventoryUIState();
+}
+
+void ADownfallCharacter::EnterInventoryFromHeldSlot()
+{
+    ItemUseState = EItemUseState::InventoryOpen;
+
+    if (IsValidInventorySlotIndex(HeldSlotIndex))
+    {
+        InventoryCursorIndex = HeldSlotIndex;
+    }
+    else
+    {
+        InventoryCursorIndex = 12;
+    }
+
+    if (Inventory)
+    {
+        Inventory->SetPreviewEnabled(false);
+    }
+
+    HeldSlotIndex = INDEX_NONE;
+    RefreshInventoryUIState();
+}
+
+void ADownfallCharacter::CloseInventoryToEmptyHand()
+{
+    ItemUseState = EItemUseState::None;
+    InventoryCursorIndex = 12;
+    HeldSlotIndex = INDEX_NONE;
+
+    if (Inventory)
+    {
+        Inventory->SetPreviewEnabled(false);
+    }
+
+    RefreshInventoryUIState();
+}
+
+bool ADownfallCharacter::TryPickHeldItemFromCursor()
+{
+    if (!Inventory)
+    {
+        return false;
+    }
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+
+    if (!Slots.IsValidIndex(InventoryCursorIndex))
+    {
+        return false;
+    }
+
+    if (!Slots[InventoryCursorIndex].IsValid())
+    {
+        return false;
+    }
+
+    HeldSlotIndex = InventoryCursorIndex;
+    ItemUseState = EItemUseState::HoldingItem;
+    RefreshInventoryUIState();
+    return true;
+}
+
+bool ADownfallCharacter::TryUseHeldItem()
+{
+    if (!Inventory || !IsValidInventorySlotIndex(HeldSlotIndex))
+    {
+        return false;
+    }
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+
+    if (!Slots.IsValidIndex(HeldSlotIndex) || !Slots[HeldSlotIndex].IsValid())
+    {
+        HeldSlotIndex = INDEX_NONE;
+        ItemUseState = EItemUseState::None;
+        RefreshInventoryUIState();
+        return false;
+    }
+
+    if (IsPlaceableSlot(HeldSlotIndex))
+    {
+        Inventory->SetPreviewSlotIndex(HeldSlotIndex);
+        Inventory->SetPreviewEnabled(true);
+        ItemUseState = EItemUseState::PlacementPreview;
+        RefreshInventoryUIState();
+        return true;
+    }
+
+    const bool bUsed = Inventory->UseItem(HeldSlotIndex, this);
+    if (!bUsed)
+    {
+        return false;
+    }
+
+    const TArray<FItemStack>& AfterSlots = Inventory->GetSlots();
+    if (!AfterSlots.IsValidIndex(HeldSlotIndex) || !AfterSlots[HeldSlotIndex].IsValid())
+    {
+        HeldSlotIndex = INDEX_NONE;
+        ItemUseState = EItemUseState::None;
+    }
+    else
+    {
+        ItemUseState = EItemUseState::HoldingItem;
+    }
+
+    RefreshInventoryUIState();
+    return true;
+}
+
+bool ADownfallCharacter::IsValidInventorySlotIndex(int32 Index) const
+{
+    return Inventory && Inventory->GetSlots().IsValidIndex(Index);
+}
+
+bool ADownfallCharacter::IsPlaceableSlot(int32 Index) const
+{
+    if (!Inventory || !IsValidInventorySlotIndex(Index))
+    {
+        return false;
+    }
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+    const FItemStack& Stack = Slots[Index];
+    if (!Stack.IsValid())
+    {
+        return false;
+    }
+
+    UWorld* W = GetWorld();
+    UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
+    UItemSubsystem* IS = GI ? GI->GetSubsystem<UItemSubsystem>() : nullptr;
+    if (!IS)
+    {
+        return false;
+    }
+
+    const UItemDefinition* Def = IS->GetItemDefinitionById(Stack.ItemId);
+    if (!Def)
+    {
+        return false;
+    }
+
+    return (Def->UseType == EItemUseType::PlaceActor && Def->PlaceActorClass != nullptr);
 }

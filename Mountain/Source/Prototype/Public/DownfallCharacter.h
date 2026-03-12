@@ -43,9 +43,18 @@ struct FHandData
 
     UPROPERTY(BlueprintReadOnly)
     float Stamina = 100.0f;
-    
+
     UPROPERTY()
     AActor* GrippedActor = nullptr;
+};
+
+UENUM(BlueprintType)
+enum class EItemUseState : uint8
+{
+    None              UMETA(DisplayName = "None"),
+    InventoryOpen     UMETA(DisplayName = "InventoryOpen"),
+    HoldingItem       UMETA(DisplayName = "HoldingItem"),
+    PlacementPreview  UMETA(DisplayName = "PlacementPreview")
 };
 
 UCLASS()
@@ -59,7 +68,6 @@ public:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
     virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-
 
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -86,7 +94,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Climbing|Physics")
     TObjectPtr<UPhysicsConstraintComponent> RightHandConstraint;
 
-
     // Enhanced Input
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputMappingContext> ClimbingMappingContext;
@@ -99,17 +106,21 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> LookAction;
-    
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> MoveAction;
-    
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> JumpAction;
 
-    // Debug Test
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> DebugInsanityAction;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr<UInputAction> UseItemAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr<UInputAction> ToggleInventoryAction;
 
     // Settings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physics")
@@ -123,7 +134,7 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float MaxStamina = 100.0f;
-    
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
     float Insanity = 0.0f;
 
@@ -131,7 +142,7 @@ public:
     float MaxInsanity = 100.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
-    float InsanityDecayRate = 0.1f;  // 초당 자연 감소 (1초에 0.1씩)
+    float InsanityDecayRate = 0.1f; // 초당 자연 감소 (1초에 0.1씩)
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
     float InsanityGrowthRate = 0.1f; // 혼란 상태일 때 초당 증가 (1초에 0.1씩)
@@ -141,13 +152,13 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Insanity")
     bool bIsConfused = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float StaminaDrainPerSecond = 5.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float StaminaRecoverPerSecond = 15.0f;
-    
-    
+
     // State
     UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
     FHandData LeftHand;
@@ -157,8 +168,23 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
     bool bIsClimbing = false;
-    
-    
+
+    // Item State
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
+    EItemUseState ItemUseState = EItemUseState::None;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
+    int32 InventoryCursorIndex = 12; // 5x5 중앙
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
+    int32 HeldSlotIndex = INDEX_NONE;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Cursor")
+    float CursorInitialRepeatDelay = 0.20f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Cursor")
+    float CursorRepeatInterval = 0.12f;
+
     // Events
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
     void OnHandGripped(bool bIsLeftHand, const FGripPointInfo& GripInfo);
@@ -166,10 +192,13 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
     void OnHandReleased(bool bIsLeftHand);
 
+    UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|UI")
+    void BP_UpdateInventoryMode(bool bInventoryOpen, int32 CursorIndex, int32 InHeldSlotIndex, bool bPreviewing);
+
     // Stamina
     void UpdateStamina(float DeltaTime);
     float GetStaminaDrainRate(const FHandData& Hand) const;
-    
+
     // Insanity
     UFUNCTION(BlueprintCallable, Category = "Insanity")
     void AddInsanity(float Amount);
@@ -188,7 +217,7 @@ public:
     void HideAttachDesaturation();
 
     void UpdateAttachDesaturation(float DeltaTime);
-    
+
     // New Glitch System (Material-based)
     UPROPERTY(EditAnywhere, Category = "VFX|Glitch")
     TObjectPtr<UMaterial> GlitchMaterial;
@@ -196,7 +225,6 @@ public:
     UPROPERTY()
     TObjectPtr<UMaterialInstanceDynamic> GlitchMaterialInstance;
 
-    // Glitch Parameters
     UPROPERTY(EditAnywhere, Category = "VFX|Glitch", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float NoiseIntensity = 0.0f;
 
@@ -204,13 +232,13 @@ public:
     float CurrentNoiseIntensity = 0.0f;
 
     UPROPERTY(EditAnywhere, Category = "VFX|Glitch")
-    float PatternSwitchBaseInterval = 2.0f;  // 기본 전환 간격 (초)
+    float PatternSwitchBaseInterval = 2.0f; // 기본 전환 간격 (초)
 
     UPROPERTY(EditAnywhere, Category = "VFX|Glitch")
-    float PatternSwitchRandomness = 1.0f;  // 랜덤 변동 폭
+    float PatternSwitchRandomness = 1.0f; // 랜덤 변동 폭
 
     UPROPERTY(BlueprintReadOnly, Category = "VFX|Glitch")
-    int32 CurrentPattern = 0;  // 0, 1, 2
+    int32 CurrentPattern = 0; // 0, 1, 2
 
     UPROPERTY(BlueprintReadOnly, Category = "VFX|Glitch")
     float TimeSinceLastSwitch = 0.0f;
@@ -241,11 +269,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     UInventoryComponent* GetInventory() const { return Inventory; }
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-    TObjectPtr<UInputAction> UseItemAction;
-    
 protected:
-
     // Input Handlers
     void OnGrabLeftStarted(const FInputActionValue& Value);
     void OnGrabLeftCompleted(const FInputActionValue& Value);
@@ -253,40 +277,54 @@ protected:
     void OnGrabRightCompleted(const FInputActionValue& Value);
     void OnLook(const FInputActionValue& Value);
     void OnMove(const FInputActionValue& Value);
-    void OnJumpStarted(const FInputActionValue& Value); 
+    void OnJumpStarted(const FInputActionValue& Value);
     void OnJumpCompleted(const FInputActionValue& Value);
+    void OnUseItemTriggered(const FInputActionValue& Value);
+    void OnToggleInventoryTriggered(const FInputActionValue& Value);
 
     // Debug
     void OnDebugInsanity(const FInputActionValue& Value);
-    
+
     // Grip Logic
     void TryGrip(bool bIsLeftHand);
     void ReleaseGrip(bool bIsLeftHand);
     void SetupConstraint(UPhysicsConstraintComponent* Constraint, const FVector& TargetLocation);
     void SetupConstraintToActor(UPhysicsConstraintComponent* Constraint, AActor* TargetActor, const FVector& GripLocation);
     void BreakConstraint(UPhysicsConstraintComponent* Constraint);
-    
+
     // State
     void UpdateClimbingState();
-    void CheckForPlatformAbduction();  // 납치 체크
-    void AbductByPlatform(bool bIsLeftHand, class AFlyingPlatform* Platform);  // 납치 실행
+    void CheckForPlatformAbduction(); // 납치 체크
+    void AbductByPlatform(bool bIsLeftHand, class AFlyingPlatform* Platform); // 납치 실행
     bool AreBothHandsFree() const;
-    
-    // Inventory
+
+    // Inventory State Helpers
+    void RefreshInventoryUIState();
+    void MoveInventoryCursor(int32 DX, int32 DY);
+    bool TryMoveInventoryCursorFromInput(const FVector2D& MovementVector);
+    void EnterInventoryFromCenter();
+    void EnterInventoryFromHeldSlot();
+    void CloseInventoryToEmptyHand();
+    bool TryPickHeldItemFromCursor();
+    bool TryUseHeldItem();
+    bool IsValidInventorySlotIndex(int32 Index) const;
+    bool IsPlaceableSlot(int32 Index) const;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     TObjectPtr<UInventoryComponent> Inventory;
 
-    // Item
-    void OnUseItemTriggered(const FInputActionValue& Value);
-    void ApplyClimbingMappingContext();
-
-    // Debug
 #if !UE_BUILD_SHIPPING
     void DrawDebugInfo();
 #endif
-    
+
 private:
     void UpdateGlitchEffect();
     void UpdateGlitchPatternSwitch(float DeltaTime);
     float CalculateNextSwitchInterval() const;
+    void ApplyClimbingMappingContext();
+
+private:
+    FVector2D LastCursorInputDir = FVector2D::ZeroVector;
+    bool bCursorInputHeld = false;
+    float NextCursorRepeatTime = 0.0f;
 };
