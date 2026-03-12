@@ -189,21 +189,34 @@ public:
 
     void UpdateAttachDesaturation(float DeltaTime);
     
-    // GlitchFX
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
-    TObjectPtr<APostProcessVolume> GlitchPostProcessVolume;
+    // New Glitch System (Material-based)
+    UPROPERTY(EditAnywhere, Category = "VFX|Glitch")
+    TObjectPtr<UMaterial> GlitchMaterial;
 
-    UPROPERTY(EditAnywhere, Category = "Insanity")
-    float InsanityGlitchThreshold = 70.0f;
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> GlitchMaterialInstance;
 
-    UPROPERTY(EditAnywhere, Category = "Insanity")
-    float MaxGlitchIntensity = 1.0f;
-    
-    UPROPERTY(EditAnywhere, Category = "Insanity")
-    float GlitchTransitionSpeed = 2.0f;     // 전환 속도
-    
-    UPROPERTY(BlueprintReadOnly, Category = "Insanity")
-    float CurrentGlitchIntensity = 0.0f;    // 현재 글리치 강도
+    // Glitch Parameters
+    UPROPERTY(EditAnywhere, Category = "VFX|Glitch", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float NoiseIntensity = 0.0f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|Glitch", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float CurrentNoiseIntensity = 0.0f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|Glitch")
+    float PatternSwitchBaseInterval = 2.0f;  // 기본 전환 간격 (초)
+
+    UPROPERTY(EditAnywhere, Category = "VFX|Glitch")
+    float PatternSwitchRandomness = 1.0f;  // 랜덤 변동 폭
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|Glitch")
+    int32 CurrentPattern = 0;  // 0, 1, 2
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|Glitch")
+    float TimeSinceLastSwitch = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|Glitch")
+    float NextSwitchTime = 2.0f;
 
     // Attach Desaturation VFX
     UPROPERTY(EditAnywhere, Category = "VFX")
@@ -274,4 +287,6 @@ protected:
     
 private:
     void UpdateGlitchEffect();
+    void UpdateGlitchPatternSwitch(float DeltaTime);
+    float CalculateNextSwitchInterval() const;
 };

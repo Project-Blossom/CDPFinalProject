@@ -114,34 +114,6 @@ void ADownfallCharacter::BeginPlay()
     // 초기 스태미나
     LeftHand.Stamina = MaxStamina;
     RightHand.Stamina = MaxStamina;
-    
-    if (!GlitchPostProcessVolume)
-    {
-        TArray<AActor*> FoundActors;
-        UGameplayStatics::GetAllActorsOfClass(GetWorld(), APostProcessVolume::StaticClass(), FoundActors);
-        
-        if (FoundActors.Num() > 0)
-        {
-            GlitchPostProcessVolume = Cast<APostProcessVolume>(FoundActors[0]);
-            UE_LOG(LogTemp, Warning, TEXT("DownfallCharacter: PostProcessVolume auto-found: %s"), 
-                *GlitchPostProcessVolume->GetName());
-            
-            // 초기 Blend Weight를 0으로 설정
-            if (GlitchPostProcessVolume->Settings.WeightedBlendables.Array.Num() > 0)
-            {
-                GlitchPostProcessVolume->Settings.WeightedBlendables.Array[0].Weight = 0.0f;
-                UE_LOG(LogTemp, Log, TEXT("DownfallCharacter: Glitch effect initialized to 0"));
-            }
-            else
-            {
-                UE_LOG(LogTemp, Warning, TEXT("DownfallCharacter: PostProcessVolume has no materials!"));
-            }
-        }
-        else
-        {
-            UE_LOG(LogTemp, Error, TEXT("DownfallCharacter: No PostProcessVolume found in level!"));
-        }
-    }
 
     // Attach Desaturation Material Instance 생성
     if (AttachDesaturationMaterial && PostProcessComp)
@@ -159,6 +131,27 @@ void ADownfallCharacter::BeginPlay()
         UE_LOG(LogDownFall, Warning, TEXT("AttachDesaturationMaterial not assigned - set in Blueprint"));
     }
 
+    // Glitch Material Instance 생성
+    if (GlitchMaterial && PostProcessComp)
+    {
+        GlitchMaterialInstance = UMaterialInstanceDynamic::Create(GlitchMaterial, this);
+        if (GlitchMaterialInstance)
+        {
+            GlitchMaterialInstance->SetScalarParameterValue(FName("NoiseIntensity"), 0.0f);
+            GlitchMaterialInstance->SetScalarParameterValue(FName("CurrentPattern"), 0.0f);
+            PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, GlitchMaterialInstance));
+            
+            // 첫 전환 시간 계산
+            NextSwitchTime = CalculateNextSwitchInterval();
+            
+            UE_LOG(LogDownFall, Log, TEXT("Glitch Material Instance created"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("GlitchMaterial not assigned - set in Blueprint"));
+    }
+
     ApplyClimbingMappingContext();
 }
 
@@ -171,6 +164,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateClimbingState();
     CheckForPlatformAbduction();
     UpdateGlitchEffect();
+    UpdateGlitchPatternSwitch(DeltaTime);
     UpdateAttachDesaturation(DeltaTime);
     
     // AI Hearing: 의도적인 움직임만 소음 발생
@@ -1129,53 +1123,43 @@ void ADownfallCharacter::DrawDebugInfo()
 
 void ADownfallCharacter::UpdateGlitchEffect()
 {
-    if (!GlitchPostProcessVolume)
-    {
+    if (!GlitchMaterialInstance)
         return;
-    }
     
-    if (GlitchPostProcessVolume->Settings.WeightedBlendables.Array.Num() == 0)
-    {
-        return;
-    }
-    
-    float TargetIntensity = 0.0f;
-    
-    // Insanity 70 이상일 때 점진적으로 강화
-    if (Insanity >= InsanityGlitchThreshold)
-    {
-        // 70~100 범위를 0~1로 정규화
-        float NormalizedInsanity = (Insanity - InsanityGlitchThreshold) / (MaxInsanity - InsanityGlitchThreshold);
-        
-        // 곡선 적용 (제곱하면 처음엔 천천히, 나중엔 급격히)
-        float CurvedIntensity = NormalizedInsanity * NormalizedInsanity;
-        
-        // 최종 강도 계산
-        TargetIntensity = FMath::Clamp(CurvedIntensity * MaxGlitchIntensity, 0.0f, 1.0f);
-    }
-    
-    // 부드러운 전환 (보간)
-    CurrentGlitchIntensity = FMath::FInterpTo(
-        CurrentGlitchIntensity, 
-        TargetIntensity, 
-        GetWorld()->GetDeltaSeconds(), 
-        GlitchTransitionSpeed
+    // Insanity에 따라 NoiseIntensity 조절 (점진적, 0~100 → 0~1)
+    float TargetIntensity = FMath::GetMappedRangeValueClamped(
+        FVector2D(0.0f, 100.0f),  // Insanity 범위
+        FVector2D(0.0f, 1.0f),     // NoiseIntensity 범위
+        Insanity
     );
     
-    // Post Process Material Blend Weight 적용
-    GlitchPostProcessVolume->Settings.WeightedBlendables.Array[0].Weight = CurrentGlitchIntensity;
+    // 부드러운 전환
+    CurrentNoiseIntensity = FMath::FInterpTo(
+        CurrentNoiseIntensity, 
+        TargetIntensity, 
+        GetWorld()->GetDeltaSeconds(), 
+        2.0f
+    );
     
-    // 디버그 로그 (화면에 표시)
-    if (GEngine && CurrentGlitchIntensity > 0.01f)
+    // Material Parameter 업데이트
+    GlitchMaterialInstance->SetScalarParameterValue(
+        FName("NoiseIntensity"), 
+        CurrentNoiseIntensity
+    );
+    
+#if !UE_BUILD_SHIPPING
+    // 디버그 표시
+    if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(
-            1, // Key (같은 키면 덮어씀)
+            1, 
             0.0f, 
             FColor::Red,
-            FString::Printf(TEXT("Glitch: %.0f%% (Insanity: %.1f)"), 
-                CurrentGlitchIntensity * 100.0f, Insanity)
+            FString::Printf(TEXT("Glitch: %.0f%% (Insanity: %.1f, Pattern: %d)"), 
+                CurrentNoiseIntensity * 100.0f, Insanity, CurrentPattern)
         );
     }
+#endif
 }
 
 void ADownfallCharacter::ShowAttachDesaturation(float Amount)
@@ -1216,4 +1200,49 @@ void ADownfallCharacter::UpdateAttachDesaturation(float DeltaTime)
 
     // Material Parameter 업데이트
     DesaturationMaterialInstance->SetScalarParameterValue(FName("DesaturationAmount"), CurrentDesaturationAmount);
+}
+
+void ADownfallCharacter::UpdateGlitchPatternSwitch(float DeltaTime)
+{
+    if (!GlitchMaterialInstance)
+        return;
+    
+    TimeSinceLastSwitch += DeltaTime;
+    
+    if (TimeSinceLastSwitch >= NextSwitchTime)
+    {
+        // 패턴 전환 (0 → 1 → 2 → 0)
+        CurrentPattern = (CurrentPattern + 1) % 3;
+        
+        GlitchMaterialInstance->SetScalarParameterValue(
+            FName("CurrentPattern"), 
+            (float)CurrentPattern
+        );
+        
+        // 다음 전환 시간 계산
+        TimeSinceLastSwitch = 0.0f;
+        NextSwitchTime = CalculateNextSwitchInterval();
+        
+        UE_LOG(LogDownFall, Log, TEXT("Glitch Pattern switched to %d, next switch in %.2f seconds"), 
+            CurrentPattern, NextSwitchTime);
+    }
+}
+
+float ADownfallCharacter::CalculateNextSwitchInterval() const
+{
+    // Insanity가 높을수록 전환 빈도 증가 (0~100 → 1~5배)
+    float FrequencyMultiplier = FMath::GetMappedRangeValueClamped(
+        FVector2D(0.0f, 100.0f),   // Insanity 범위
+        FVector2D(1.0f, 5.0f),     // 전환 빈도 배율
+        Insanity
+    );
+    
+    // 기본 간격을 빈도로 나눔
+    float BaseInterval = PatternSwitchBaseInterval / FrequencyMultiplier;
+    
+    // 랜덤 변동 추가
+    float RandomVariation = FMath::RandRange(-PatternSwitchRandomness, PatternSwitchRandomness);
+    
+    // 최소 0.1초는 유지
+    return FMath::Max(0.1f, BaseInterval + RandomVariation);
 }
