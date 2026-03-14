@@ -22,7 +22,8 @@ public class Prototype : ModuleRules
             "ProceduralMeshComponent",
             "PhysicsCore",
             "SlateCore",
-            "DeveloperSettings"
+            "DeveloperSettings",
+            "MountainGen"
         });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

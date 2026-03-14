@@ -269,6 +269,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     UInventoryComponent* GetInventory() const { return Inventory; }
 
+    // UI 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Altitude")
+    TSubclassOf<class UAltitudeWidget> AltitudeWidgetClass;
+
+    UPROPERTY()
+    TObjectPtr<UAltitudeWidget> AltitudeWidget;
+    
 protected:
     // Input Handlers
     void OnGrabLeftStarted(const FInputActionValue& Value);
@@ -322,7 +329,11 @@ private:
     void UpdateGlitchPatternSwitch(float DeltaTime);
     float CalculateNextSwitchInterval() const;
     void ApplyClimbingMappingContext();
-
+    void UpdateAltitudeUI();
+    class AMountainGenWorldActor* FindMountainGenActor();
+    float GetGroundHeight() const;
+    float InitialGroundHeight = 0.0f;
+    
 private:
     FVector2D LastCursorInputDir = FVector2D::ZeroVector;
     bool bCursorInputHeld = false;

@@ -22,6 +22,9 @@
 #include "Item/InventoryComponent.h"
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
+#include "UI/AltitudeWidget.h"
+#include "Blueprint/UserWidget.h"
+#include "MountainGenWorldActor.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -161,6 +164,24 @@ void ADownfallCharacter::BeginPlay()
 
     RefreshInventoryUIState();
     ApplyClimbingMappingContext();
+    
+    // Altitude Widget
+    if (AltitudeWidgetClass)
+    {
+        AltitudeWidget = CreateWidget<UAltitudeWidget>(GetWorld(), AltitudeWidgetClass);
+        if (AltitudeWidget)
+        {
+            AltitudeWidget->AddToViewport();
+            UE_LOG(LogDownFall, Log, TEXT("Altitude Widget created and added to viewport"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("AltitudeWidgetClass not assigned"));
+    }
+    
+    InitialGroundHeight = GetGroundHeight();
+    UE_LOG(LogDownFall, Log, TEXT("Initial ground height: %.2f"), InitialGroundHeight);
 }
 
 void ADownfallCharacter::Tick(float DeltaTime)
@@ -174,6 +195,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateGlitchEffect();
     UpdateGlitchPatternSwitch(DeltaTime);
     UpdateAttachDesaturation(DeltaTime);
+    UpdateAltitudeUI();
     
     // AI Hearing: 의도적인 움직임만 소음 발생
     FVector Velocity = GetVelocity();
@@ -1519,4 +1541,69 @@ bool ADownfallCharacter::IsPlaceableSlot(int32 Index) const
     }
 
     return (Def->UseType == EItemUseType::PlaceActor && Def->PlaceActorClass != nullptr);
+}
+
+void ADownfallCharacter::UpdateAltitudeUI()
+{
+    if (!AltitudeWidget)
+        return;
+
+    float CurrentZ = GetActorLocation().Z;
+    float MaxHeight = 5000.0f; // 기본값 500m
+    
+    // TODO: MountainGenWorldActor에서 실제 높이 읽기
+    
+    AltitudeWidget->UpdateAltitude(CurrentZ, InitialGroundHeight, MaxHeight);
+}
+
+AMountainGenWorldActor* ADownfallCharacter::FindMountainGenActor()
+{
+    // 캐싱 (매 프레임 찾지 않기)
+    static AMountainGenWorldActor* CachedActor = nullptr;
+    
+    if (CachedActor)
+        return CachedActor;
+    
+    // 월드에서 찾기
+    TArray<AActor*> FoundActors;
+    UGameplayStatics::GetAllActorsOfClass(GetWorld(), AMountainGenWorldActor::StaticClass(), FoundActors);
+    
+    if (FoundActors.Num() > 0)
+    {
+        CachedActor = Cast<AMountainGenWorldActor>(FoundActors[0]);
+        UE_LOG(LogDownFall, Log, TEXT("MountainGenWorldActor found: %s"), *CachedActor->GetName());
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("MountainGenWorldActor not found in level"));
+    }
+    
+    return CachedActor;
+}
+
+float ADownfallCharacter::GetGroundHeight() const
+{
+    // LineTrace로 지면 찾기
+    FHitResult Hit;
+    FVector Start = GetActorLocation();
+    FVector End = Start - FVector(0, 0, 100000.0f); // 1000m 아래까지
+    
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);
+    
+    bool bHit = GetWorld()->LineTraceSingleByChannel(
+        Hit,
+        Start,
+        End,
+        ECC_WorldStatic,
+        Params
+    );
+    
+    if (bHit)
+    {
+        return Hit.Location.Z;
+    }
+    
+    // 못 찾으면 0
+    return 0.0f;
 }
