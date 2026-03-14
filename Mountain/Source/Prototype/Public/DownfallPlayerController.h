@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Item/InventoryWidget.h"
 #include "DownfallPlayerController.generated.h"
 
 class APawn;
@@ -17,6 +18,9 @@ class PROTOTYPE_API ADownfallPlayerController : public APlayerController
 public:
     virtual void BeginPlay() override;
     virtual void OnPossess(APawn* InPawn) override;
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory")
+    UInventoryWidget* GetInventoryWidget() const { return InventoryWidget; }
 
 protected:
     UPROPERTY(EditDefaultsOnly, Category = "UI")

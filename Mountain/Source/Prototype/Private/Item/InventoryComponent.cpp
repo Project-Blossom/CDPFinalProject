@@ -121,16 +121,19 @@ AActor* UInventoryComponent::GetPreviewUserActor() const
 
 void UInventoryComponent::EnsurePreviewActor()
 {
+    if (PreviewActor && IsValid(PreviewActor))
+    {
+        return;
+    }
+
     UWorld* W = GetWorld();
     if (!W)
     {
-        UE_LOG(LogTemp, Error, TEXT("[Preview] GetWorld NULL"));
         return;
     }
 
     if (!DefaultPreviewActorClass)
     {
-        UE_LOG(LogTemp, Error, TEXT("[Preview] DefaultPreviewActorClass NULL"));
         return;
     }
 
@@ -142,7 +145,6 @@ void UInventoryComponent::EnsurePreviewActor()
 
     if (!PreviewActor)
     {
-        UE_LOG(LogTemp, Error, TEXT("[Preview] SpawnActor FAILED"));
         return;
     }
 
@@ -154,11 +156,13 @@ void UInventoryComponent::EnsurePreviewActor()
 
 void UInventoryComponent::DestroyPreviewActor()
 {
-    if (PreviewActor)
+    if (PreviewActor && IsValid(PreviewActor))
     {
+        PreviewActor->SetActorHiddenInGame(true);
         PreviewActor->Destroy();
-        PreviewActor = nullptr;
     }
+
+    PreviewActor = nullptr;
 }
 
 void UInventoryComponent::UpdatePreview(float)
@@ -459,8 +463,14 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             return false;
         }
 
+        SetPreviewEnabled(false);
+        PreviewSlotIndex = INDEX_NONE;
+
         S.Count -= 1;
-        if (S.Count <= 0) S.Reset();
+        if (S.Count <= 0)
+        {
+            S.Reset();
+        }
 
         OnInventoryChanged.Broadcast();
         return true;
