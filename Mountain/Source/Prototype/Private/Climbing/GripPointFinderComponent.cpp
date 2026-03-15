@@ -43,9 +43,7 @@ void UGripPointFinderComponent::CacheClimbableSurfaces()
     }
 }
 
-// ========================================
-// 메인 함수: 그립 포인트 찾기
-// ========================================
+
 bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, const FVector& CameraForward, FGripPointInfo& OutGripInfo)
 {
     if (!IsValid(GetWorld()))
@@ -54,9 +52,7 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
         return false;
     }
 
-    // ========================================
-    // 우선순위 1: IClimbableSurface (몬스터 등)
-    // ========================================
+    // IClimbalbleSurface : 잡기 우선순위가 가장 높음
     for (const TScriptInterface<IClimbableSurface>& Surface : CachedClimbableSurfaces)
     {
         if (!Surface.GetObject() || !IsValid(Surface.GetObject()))
@@ -107,24 +103,14 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
             }
         }
     }
-
-    // ========================================
-    // 우선순위 2: 일반 지형 (기존 로직)
-    // ========================================
-
-    // ========================================
-    // 1단계: 카메라 Ray로 첫 Hit 찾기
-    // ========================================
+    
     FHitResult InitialHit;
     if (!FindInitialHitPoint(CameraLocation, CameraForward, InitialHit))
     {
         UE_LOG(LogGripFinder, Verbose, TEXT("No surface found in camera direction"));
         return false;
     }
-
-    // ========================================
-    // 2단계: 거리 검증
-    // ========================================
+    
     float Distance = FVector::Dist(CameraLocation, InitialHit.Location);
     if (Distance > MaxReachDistance)
     {
@@ -132,9 +118,6 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
         return false;
     }
 
-    // ========================================
-    // 3단계: 인근 평균 경사 계산
-    // ========================================
     float AverageSurfaceAngle = 0.0f;
     FVector AverageNormal = FVector::UpVector;
     
@@ -143,20 +126,14 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
         UE_LOG(LogGripFinder, Warning, TEXT("Failed to calculate average surface angle"));
         return false;
     }
-
-    // ========================================
-    // 4단계: 경사각 검증
-    // ========================================
+    
     if (AverageSurfaceAngle < MinSurfaceAngle || AverageSurfaceAngle > MaxSurfaceAngle)
     {
         UE_LOG(LogGripFinder, Verbose, TEXT("Surface angle %.1f° out of range [%.1f - %.1f]"), 
             AverageSurfaceAngle, MinSurfaceAngle, MaxSurfaceAngle);
         return false;
     }
-
-    // ========================================
-    // 5단계: 결과 구성
-    // ========================================
+    
     OutGripInfo.WorldLocation = InitialHit.Location;
     OutGripInfo.SurfaceNormal = InitialHit.Normal;
     OutGripInfo.AverageNormal = AverageNormal;
@@ -167,10 +144,9 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
     UE_LOG(LogGripFinder, Log, TEXT("Grip found: Angle=%.1f°, Quality=%.2f, Distance=%.1f cm"), 
         AverageSurfaceAngle, OutGripInfo.GripQuality, Distance);
 
+    /*
 #if !UE_BUILD_SHIPPING
-    // ========================================
     // 디버그 시각화
-    // ========================================
     
     // 1. Ray 경로 (노란선)
     DrawDebugLine(
@@ -236,13 +212,11 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
         2.0f
     );
 #endif
-
+*/
     return true;
 }
 
-// ========================================
-// 1단계: 카메라 Ray로 첫 Hit 찾기
-// ========================================
+// 카메라 Ray로 hit 탐색
 bool UGripPointFinderComponent::FindInitialHitPoint(const FVector& Start, const FVector& Direction, FHitResult& OutHit)
 {
     if (!IsValid(GetWorld()))
@@ -279,9 +253,7 @@ bool UGripPointFinderComponent::FindInitialHitPoint(const FVector& Start, const 
     return true;
 }
 
-// ========================================
-// 3단계: 인근 평균 경사 계산 (핵심!)
-// ========================================
+
 bool UGripPointFinderComponent::CalculateAverageSurfaceAngle(const FVector& HitPoint, const FVector& HitNormal, float& OutAngleDegrees, FVector& OutAverageNormal)
 {
     if (!IsValid(GetWorld()))
@@ -355,9 +327,6 @@ bool UGripPointFinderComponent::CalculateAverageSurfaceAngle(const FVector& HitP
     return true;
 }
 
-// ========================================
-// 품질 계산: 경사각 기반
-// ========================================
 float UGripPointFinderComponent::CalculateGripQuality(float SurfaceAngleDegrees) const
 {
     // 수직 벽 (90도) = 최고 품질 (1.0)
