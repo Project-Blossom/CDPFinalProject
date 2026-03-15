@@ -199,6 +199,12 @@ public:
     void UpdateStamina(float DeltaTime);
     float GetStaminaDrainRate(const FHandData& Hand) const;
 
+    UFUNCTION(BlueprintCallable, Category = "Climbing|Stamina")
+    bool CanRestoreStamina() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Climbing|Stamina")
+    bool RestoreStamina(float Amount);
+
     // Insanity
     UFUNCTION(BlueprintCallable, Category = "Insanity")
     void AddInsanity(float Amount);

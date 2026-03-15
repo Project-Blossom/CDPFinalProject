@@ -27,6 +27,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
     int32 SlotCount = 25;
 
+    // ---------- Áß¾Ó ¸Ç¼Õ ½½·Ô ----------
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "0"))
+    int32 ReservedCenterSlotIndex = 12;
+
     // ---------- Place settings ----------
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
     float PlaceRangeCm = 200.f;
@@ -55,6 +59,12 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool TransferTo(UInventoryComponent* Target, int32 FromIndex, int32 Count);
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    int32 GetReservedCenterSlotIndex() const { return ReservedCenterSlotIndex; }
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    bool IsReservedCenterSlot(int32 Index) const { return Index == ReservedCenterSlotIndex; }
 
     // ---- Save/Load ----
     UFUNCTION(BlueprintCallable, Category = "Inventory|Save")
@@ -135,6 +145,8 @@ private:
     int32 FindPartialStack(FName ItemId, int32 MaxStack) const;
 
     bool BuildPlaceTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const;
+
+    void SanitizeReservedCenterSlot();
 
     // ---- preview helpers ----
     bool ShouldRunPreview() const;

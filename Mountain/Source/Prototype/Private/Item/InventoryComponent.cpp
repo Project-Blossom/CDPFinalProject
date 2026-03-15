@@ -10,6 +10,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "DownfallCharacter.h"
 
 UInventoryComponent::UInventoryComponent()
 {
@@ -21,7 +22,15 @@ void UInventoryComponent::BeginPlay()
 {
     Super::BeginPlay();
 
+    SlotCount = FMath::Max(1, SlotCount);
     Slots.SetNum(SlotCount);
+
+    if (!Slots.IsValidIndex(ReservedCenterSlotIndex))
+    {
+        ReservedCenterSlotIndex = Slots.Num() / 2;
+    }
+
+    SanitizeReservedCenterSlot();
     OnInventoryChanged.Broadcast();
 
     if (bPreviewEnabled && ShouldRunPreview())
@@ -217,6 +226,12 @@ bool UInventoryComponent::ComputePreviewTransform(int32 Index, AActor* User, FTr
         return false;
     }
 
+    if (IsReservedCenterSlot(Index))
+    {
+        OutFailReason = FText::FromString(TEXT("Reserved center slot"));
+        return false;
+    }
+
     const FItemStack& S = Slots[Index];
     if (!S.IsValid())
     {
@@ -245,13 +260,32 @@ bool UInventoryComponent::ComputePreviewTransform(int32 Index, AActor* User, FTr
 // Inventory core
 // =========================================================
 
+void UInventoryComponent::SanitizeReservedCenterSlot()
+{
+    if (Slots.IsValidIndex(ReservedCenterSlotIndex))
+    {
+        if (Slots[ReservedCenterSlotIndex].IsValid())
+        {
+            Slots[ReservedCenterSlotIndex].Reset();
+        }
+    }
+}
+
 int32 UInventoryComponent::FindEmptySlot() const
 {
     for (int32 i = 0; i < Slots.Num(); ++i)
     {
+        if (IsReservedCenterSlot(i))
+        {
+            continue;
+        }
+
         if (Slots[i].IsEmpty())
+        {
             return i;
+        }
     }
+
     return INDEX_NONE;
 }
 
@@ -261,10 +295,18 @@ int32 UInventoryComponent::FindPartialStack(FName ItemId, int32 MaxStack) const
 
     for (int32 i = 0; i < Slots.Num(); ++i)
     {
+        if (IsReservedCenterSlot(i))
+        {
+            continue;
+        }
+
         const FItemStack& S = Slots[i];
         if (S.IsValid() && S.ItemId == ItemId && !S.bHasInstance && S.Count < MaxStack)
+        {
             return i;
+        }
     }
+
     return INDEX_NONE;
 }
 
@@ -319,6 +361,7 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
         }
     }
 
+    SanitizeReservedCenterSlot();
     OnInventoryChanged.Broadcast();
     return (Remaining == 0);
 }
@@ -337,6 +380,11 @@ bool UInventoryComponent::TryRemove(FName ItemId, int32 Count)
 
     for (int32 i = Slots.Num() - 1; i >= 0 && Remaining > 0; --i)
     {
+        if (IsReservedCenterSlot(i))
+        {
+            continue;
+        }
+
         FItemStack& S = Slots[i];
         if (!S.IsValid() || S.ItemId != ItemId) continue;
 
@@ -347,6 +395,7 @@ bool UInventoryComponent::TryRemove(FName ItemId, int32 Count)
         if (S.Count <= 0) S.Reset();
     }
 
+    SanitizeReservedCenterSlot();
     OnInventoryChanged.Broadcast();
     return (Remaining == 0);
 }
@@ -425,6 +474,7 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
 bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 {
     if (!Slots.IsValidIndex(Index) || !User) return false;
+    if (IsReservedCenterSlot(Index)) return false;
 
     FItemStack& S = Slots[Index];
     if (!S.IsValid()) return false;
@@ -437,11 +487,39 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
     {
     case EItemUseType::Consume:
     {
+        bool bConsumeSucceeded = false;
+
+        switch (Def->ConsumableEffectType)
+        {
+        case EConsumableEffectType::RestoreStamina:
+        {
+            ADownfallCharacter* DownfallChar = Cast<ADownfallCharacter>(User);
+            if (!DownfallChar)
+            {
+                BP_OnUseFailed(User, FText::FromString(TEXT("Only DownfallCharacter can use this item")));
+                return false;
+            }
+
+            bConsumeSucceeded = DownfallChar->RestoreStamina(Def->ConsumableEffectValue);
+            if (!bConsumeSucceeded)
+            {
+                BP_OnUseFailed(User, FText::FromString(TEXT("Stamina is already full")));
+                return false;
+            }
+            break;
+        }
+
+        default:
+            BP_OnUseFailed(User, FText::FromString(TEXT("Unsupported consumable effect")));
+            return false;
+        }
+
         BP_OnConsume(User, Def, 1);
 
         S.Count -= 1;
         if (S.Count <= 0) S.Reset();
 
+        SanitizeReservedCenterSlot();
         OnInventoryChanged.Broadcast();
         return true;
     }
@@ -472,6 +550,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             S.Reset();
         }
 
+        SanitizeReservedCenterSlot();
         OnInventoryChanged.Broadcast();
         return true;
     }
@@ -486,6 +565,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             S.Count = 1;
         }
 
+        SanitizeReservedCenterSlot();
         BP_OnEquip(User, Def, S.Instance);
         return true;
     }
@@ -500,6 +580,7 @@ bool UInventoryComponent::TransferTo(UInventoryComponent* Target, int32 FromInde
     if (!Target) return false;
     if (!Slots.IsValidIndex(FromIndex)) return false;
     if (Count <= 0) return false;
+    if (IsReservedCenterSlot(FromIndex)) return false;
 
     FItemStack& From = Slots[FromIndex];
     if (!From.IsValid()) return false;
@@ -514,6 +595,7 @@ bool UInventoryComponent::TransferTo(UInventoryComponent* Target, int32 FromInde
     From.Count -= MoveCount;
     if (From.Count <= 0) From.Reset();
 
+    SanitizeReservedCenterSlot();
     OnInventoryChanged.Broadcast();
     return true;
 }
@@ -522,6 +604,8 @@ bool UInventoryComponent::SaveToSlot(const FString& SlotName, int32 UserIndex)
 {
     UInventorySaveGame* SaveObj = Cast<UInventorySaveGame>(UGameplayStatics::CreateSaveGameObject(UInventorySaveGame::StaticClass()));
     if (!SaveObj) return false;
+
+    SanitizeReservedCenterSlot();
 
     SaveObj->SlotCount = SlotCount;
     SaveObj->Slots = Slots;
@@ -540,6 +624,12 @@ bool UInventoryComponent::LoadFromSlot(const FString& SlotName, int32 UserIndex)
     Slots = SaveObj->Slots;
     Slots.SetNum(SlotCount);
 
+    if (!Slots.IsValidIndex(ReservedCenterSlotIndex))
+    {
+        ReservedCenterSlotIndex = Slots.Num() / 2;
+    }
+
+    SanitizeReservedCenterSlot();
     OnInventoryChanged.Broadcast();
     return true;
 }

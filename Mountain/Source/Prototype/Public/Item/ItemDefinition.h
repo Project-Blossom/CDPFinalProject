@@ -23,6 +23,12 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Use")
     EItemUseType UseType = EItemUseType::None;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Consume")
+    EConsumableEffectType ConsumableEffectType = EConsumableEffectType::None;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Consume", meta = (ClampMin = "0.0"))
+    float ConsumableEffectValue = 0.f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stack", meta = (ClampMin = "1"))
     int32 MaxStack = 1;
 

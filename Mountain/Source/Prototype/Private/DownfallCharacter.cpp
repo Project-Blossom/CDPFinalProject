@@ -895,6 +895,29 @@ float ADownfallCharacter::GetStaminaDrainRate(const FHandData& Hand) const
     return BaseDrain;
 }
 
+bool ADownfallCharacter::CanRestoreStamina() const
+{
+    return (LeftHand.Stamina < MaxStamina) || (RightHand.Stamina < MaxStamina);
+}
+
+bool ADownfallCharacter::RestoreStamina(float Amount)
+{
+    if (Amount <= 0.f)
+    {
+        return false;
+    }
+
+    if (!CanRestoreStamina())
+    {
+        return false;
+    }
+
+    LeftHand.Stamina = FMath::Clamp(LeftHand.Stamina + Amount, 0.f, MaxStamina);
+    RightHand.Stamina = FMath::Clamp(RightHand.Stamina + Amount, 0.f, MaxStamina);
+
+    return true;
+}
+
 void ADownfallCharacter::AddInsanity(float Amount)
 {
     Insanity = FMath::Clamp(Insanity + Amount, 0.0f, MaxInsanity);

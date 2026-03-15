@@ -40,12 +40,7 @@ void ADownfallPlayerController::OnPossess(APawn* InPawn)
 void ADownfallPlayerController::DeferredInitAfterPossess()
 {
     CreateAndBindInventoryUI();
-    GiveTestItemsIfNeeded();
-
-    if (UInventoryComponent* Inv = GetInventoryFromPawn())
-    {
-        Inv->SetPreviewEnabled(false);
-    }
+    GiveStartupItems();
 }
 
 void ADownfallPlayerController::CreateAndBindInventoryUI()
@@ -71,11 +66,16 @@ void ADownfallPlayerController::CreateAndBindInventoryUI()
     InventoryWidget->BindInventory(Inv);
 }
 
-void ADownfallPlayerController::GiveTestItemsIfNeeded()
+void ADownfallPlayerController::GiveStartupItems()
 {
     UInventoryComponent* Inv = GetInventoryFromPawn();
     if (!Inv) return;
-    if (!TestAnchorItemDef) return;
 
-    Inv->TryAddByDefinition(TestAnchorItemDef, 5);
+    for (const FStartupInventoryEntry& Entry : StartupItems)
+    {
+        if (!Entry.ItemDef) continue;
+        if (Entry.Count <= 0) continue;
+
+        Inv->TryAddByDefinition(Entry.ItemDef, Entry.Count);
+    }
 }

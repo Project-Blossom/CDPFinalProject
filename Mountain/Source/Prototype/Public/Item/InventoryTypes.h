@@ -19,6 +19,13 @@ enum class EItemUseType : uint8
     PlaceActor  UMETA(DisplayName = "PlaceActor"),
 };
 
+UENUM(BlueprintType)
+enum class EConsumableEffectType : uint8
+{
+    None            UMETA(DisplayName = "None"),
+    RestoreStamina  UMETA(DisplayName = "RestoreStamina"),
+};
+
 USTRUCT(BlueprintType)
 struct FItemInstanceData
 {
@@ -42,7 +49,6 @@ struct FItemStack
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
     int32 Count = 0;
 
-    // 무기 강화/내구도/랜덤옵션이 있을 때만 true
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
     bool bHasInstance = false;
 

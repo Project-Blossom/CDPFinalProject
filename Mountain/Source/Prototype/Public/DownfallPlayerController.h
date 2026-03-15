@@ -10,6 +10,18 @@ class UInventoryComponent;
 class UInventoryWidget;
 class UItemDefinition;
 
+USTRUCT(BlueprintType)
+struct FStartupInventoryEntry
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
+    TObjectPtr<const UItemDefinition> ItemDef = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
+    int32 Count = 1;
+};
+
 UCLASS()
 class PROTOTYPE_API ADownfallPlayerController : public APlayerController
 {
@@ -29,12 +41,12 @@ protected:
     UPROPERTY()
     TObjectPtr<UInventoryWidget> InventoryWidget = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Inventory|Test")
-    TObjectPtr<const UItemDefinition> TestAnchorItemDef = nullptr;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Startup")
+    TArray<FStartupInventoryEntry> StartupItems;
 
 private:
     UInventoryComponent* GetInventoryFromPawn() const;
     void DeferredInitAfterPossess();
     void CreateAndBindInventoryUI();
-    void GiveTestItemsIfNeeded();
+    void GiveStartupItems();
 };
