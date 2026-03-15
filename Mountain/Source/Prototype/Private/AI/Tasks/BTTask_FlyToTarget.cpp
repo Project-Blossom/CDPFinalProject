@@ -35,11 +35,27 @@ EBTNodeResult::Type UBTTask_FlyToTarget::ExecuteTask(UBehaviorTreeComponent& Own
         return EBTNodeResult::Failed;
     }
 
-    UObject* TargetObject = BlackboardComp->GetValueAsObject(TargetKey.SelectedKeyName);
+    // Target 유효성 검사 (Vector 또는 Object)
+    bool bHasValidTarget = false;
     
-    if (!TargetObject)
+    if (BlackboardComp->IsVectorValueSet(TargetKey.SelectedKeyName))
     {
-        UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: No target"));
+        UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Target is Vector (stored location)"));
+        bHasValidTarget = true;
+    }
+    else
+    {
+        UObject* TargetObject = BlackboardComp->GetValueAsObject(TargetKey.SelectedKeyName);
+        if (TargetObject)
+        {
+            UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Target is Object (dynamic tracking)"));
+            bHasValidTarget = true;
+        }
+    }
+    
+    if (!bHasValidTarget)
+    {
+        UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: No valid target (neither Vector nor Object)"));
         return EBTNodeResult::Failed;
     }
 
@@ -70,36 +86,43 @@ void UBTTask_FlyToTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Nod
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
     
     FVector TargetLocation;
-    UObject* TargetObject = BlackboardComp->GetValueAsObject(TargetKey.SelectedKeyName);
     
-    AActor* TargetActor = nullptr;
-    
-    if (TargetObject)
+    // Vector 타입인지 먼저 시도 (AttackTargetLocation - 저장된 위치)
+    if (BlackboardComp->IsVectorValueSet(TargetKey.SelectedKeyName))
     {
-        TargetActor = Cast<AActor>(TargetObject);
-        if (TargetActor)
-        {
-            TargetLocation = TargetActor->GetActorLocation();
-        }
-        else
-        {
-            FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
-            return;
-        }
+        // Vector 키 - 저장된 위치 사용 (추적 X)
+        TargetLocation = BlackboardComp->GetValueAsVector(TargetKey.SelectedKeyName);
+        UE_LOG(LogTemp, Verbose, TEXT("BTTask_FlyToTarget: Using stored Vector target (no tracking)"));
     }
     else
     {
-        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
-        return;
+        // Object 키 시도 - Actor 위치 사용 (실시간 추적)
+        UObject* TargetObject = BlackboardComp->GetValueAsObject(TargetKey.SelectedKeyName);
+        AActor* TargetActor = Cast<AActor>(TargetObject);
+        
+        if (TargetActor)
+        {
+            TargetLocation = TargetActor->GetActorLocation();
+            UE_LOG(LogTemp, Verbose, TEXT("BTTask_FlyToTarget: Using Actor target (tracking)"));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: Invalid target key"));
+            FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+            return;
+        }
     }
 
     FVector CurrentLocation = FlyingMonster->GetActorLocation();
     float Distance = FVector::Dist(CurrentLocation, TargetLocation);
     
     // 플레이어와의 충돌 체크 (FlyingAttacker용)
-    if (!bHasHitPlayerThisTask && TargetActor)
+    if (!bHasHitPlayerThisTask)
     {
-        ADownfallCharacter* Player = Cast<ADownfallCharacter>(TargetActor);
+        // TargetPlayer를 Blackboard에서 직접 가져오기
+        UObject* PlayerObject = BlackboardComp->GetValueAsObject("TargetPlayer");
+        ADownfallCharacter* Player = Cast<ADownfallCharacter>(PlayerObject);
+        
         if (Player)
         {
             float PlayerDistance = FVector::Dist(CurrentLocation, Player->GetActorLocation());

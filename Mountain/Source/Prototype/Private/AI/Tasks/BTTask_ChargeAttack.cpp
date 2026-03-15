@@ -82,14 +82,14 @@ void UBTTask_ChargeAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
         return;
     }
 
-    if (TargetPlayer)
+    // 저장된 공격 목표 위치를 향해 회전 (플레이어 추적 X)
+    FVector AttackTargetLocation = BlackboardComp->GetValueAsVector(AttackTargetLocationKey.SelectedKeyName);
+    
+    FVector Direction = (AttackTargetLocation - Pawn->GetActorLocation()).GetSafeNormal();
+    if (!Direction.IsNearlyZero())
     {
-        FVector Direction = (TargetPlayer->GetActorLocation() - Pawn->GetActorLocation()).GetSafeNormal();
-        if (!Direction.IsNearlyZero())
-        {
-            FRotator TargetRotation = Direction.Rotation();
-            FRotator NewRotation = FMath::RInterpTo(Pawn->GetActorRotation(), TargetRotation, DeltaSeconds, 10.0f);
-            Pawn->SetActorRotation(NewRotation);
-        }
+        FRotator TargetRotation = Direction.Rotation();
+        FRotator NewRotation = FMath::RInterpTo(Pawn->GetActorRotation(), TargetRotation, DeltaSeconds, 10.0f);
+        Pawn->SetActorRotation(NewRotation);
     }
 }

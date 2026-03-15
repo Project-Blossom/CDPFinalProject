@@ -25,6 +25,7 @@
 #include "UI/AltitudeWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "MountainGenWorldActor.h"
+#include "MountainGenSettings.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -1551,7 +1552,11 @@ void ADownfallCharacter::UpdateAltitudeUI()
     float CurrentZ = GetActorLocation().Z;
     float MaxHeight = 5000.0f; // 기본값 500m
     
-    // TODO: MountainGenWorldActor에서 실제 높이 읽기
+    AMountainGenWorldActor* MountainActor = FindMountainGenActor();
+    if (MountainActor)
+    {
+        MaxHeight = MountainActor->Settings.CliffHeightCm;
+    }
     
     AltitudeWidget->UpdateAltitude(CurrentZ, InitialGroundHeight, MaxHeight);
 }
