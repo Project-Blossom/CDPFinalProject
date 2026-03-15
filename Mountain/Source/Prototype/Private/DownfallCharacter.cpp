@@ -2,6 +2,7 @@
 #include "DownfallCharacter.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/PostProcessComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -39,6 +40,21 @@ ADownfallCharacter::ADownfallCharacter()
     FirstPersonCamera->SetRelativeLocation(FVector(0.0f, 0.0f, 64.0f));
     FirstPersonCamera->bUsePawnControlRotation = true;
 
+    // Hand
+    LeftHandMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("LeftHandMesh"));
+    LeftHandMesh->SetupAttachment(FirstPersonCamera);
+    LeftHandMesh->SetRelativeLocation(LeftHandRestPosition);
+    LeftHandMesh->SetRelativeScale3D(FVector(0.3f)); // 작은 크기
+    LeftHandMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    LeftHandMesh->SetCastShadow(false);
+
+    RightHandMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("RightHandMesh"));
+    RightHandMesh->SetupAttachment(FirstPersonCamera);
+    RightHandMesh->SetRelativeLocation(RightHandRestPosition);
+    RightHandMesh->SetRelativeScale3D(FVector(0.3f));
+    RightHandMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    RightHandMesh->SetCastShadow(false);
+    
     // Post Process Component (VFX용)
     PostProcessComp = CreateDefaultSubobject<UPostProcessComponent>(TEXT("PostProcessComp"));
     PostProcessComp->SetupAttachment(FirstPersonCamera);
@@ -196,6 +212,8 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateGlitchEffect();
     UpdateGlitchPatternSwitch(DeltaTime);
     UpdateAttachDesaturation(DeltaTime);
+    UpdateAttachDesaturation(DeltaTime);
+    UpdateHandPositions(DeltaTime);
     UpdateAltitudeUI();
     
     // AI Hearing: 의도적인 움직임만 소음 발생
@@ -1542,6 +1560,47 @@ bool ADownfallCharacter::IsPlaceableSlot(int32 Index) const
     }
 
     return (Def->UseType == EItemUseType::PlaceActor && Def->PlaceActorClass != nullptr);
+}
+
+void ADownfallCharacter::UpdateHandPositions(float DeltaTime)
+{
+    if (!LeftHandMesh || !RightHandMesh)
+        return;
+
+    // 왼손 목표 위치
+    FVector LeftTarget = GetHandTargetPosition(true);
+    FVector CurrentLeftPos = LeftHandMesh->GetRelativeLocation();
+    FVector NewLeftPos = FMath::VInterpTo(CurrentLeftPos, LeftTarget, DeltaTime, HandMoveSpeed);
+    LeftHandMesh->SetRelativeLocation(NewLeftPos);
+
+    // 오른손 목표 위치
+    FVector RightTarget = GetHandTargetPosition(false);
+    FVector CurrentRightPos = RightHandMesh->GetRelativeLocation();
+    FVector NewRightPos = FMath::VInterpTo(CurrentRightPos, RightTarget, DeltaTime, HandMoveSpeed);
+    RightHandMesh->SetRelativeLocation(NewRightPos);
+}
+
+FVector ADownfallCharacter::GetHandTargetPosition(bool bIsLeftHand) const
+{
+    const FHandData& Hand = bIsLeftHand ? LeftHand : RightHand;
+    
+    // 손이 잡고 있으면
+    if (Hand.State == EHandState::Gripping && Hand.CurrentGrip.bIsValid)
+    {
+        // 월드 공간의 Grip 위치를 카메라 로컬 공간으로 변환
+        FVector GripWorldLocation = Hand.CurrentGrip.WorldLocation;
+        
+        if (FirstPersonCamera)
+        {
+            FTransform CameraTransform = FirstPersonCamera->GetComponentTransform();
+            FVector LocalGripPos = CameraTransform.InverseTransformPosition(GripWorldLocation);
+            
+            return LocalGripPos;
+        }
+    }
+    
+    // 손을 놓았으면 휴식 위치로
+    return bIsLeftHand ? LeftHandRestPosition : RightHandRestPosition;
 }
 
 void ADownfallCharacter::UpdateAltitudeUI()

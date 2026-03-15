@@ -276,6 +276,22 @@ public:
     UPROPERTY()
     TObjectPtr<UAltitudeWidget> AltitudeWidget;
     
+    // Hand
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hands|Mesh")
+    TObjectPtr<USkeletalMeshComponent> LeftHandMesh;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hands|Mesh")
+    TObjectPtr<USkeletalMeshComponent> RightHandMesh;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Hands|Position")
+    FVector LeftHandRestPosition = FVector(30.0f, -40.0f, -30.0f);
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Hands|Position")
+    FVector RightHandRestPosition = FVector(30.0f, 40.0f, -30.0f);
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Hands|Animation")
+    float HandMoveSpeed = 10.0f;
+    
 protected:
     // Input Handlers
     void OnGrabLeftStarted(const FInputActionValue& Value);
@@ -333,6 +349,8 @@ private:
     class AMountainGenWorldActor* FindMountainGenActor();
     float GetGroundHeight() const;
     float InitialGroundHeight = 0.0f;
+    void UpdateHandPositions(float DeltaTime);
+    FVector GetHandTargetPosition(bool bIsLeftHand) const;
     
 private:
     FVector2D LastCursorInputDir = FVector2D::ZeroVector;
