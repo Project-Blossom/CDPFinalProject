@@ -5,6 +5,8 @@
 #include "Item/InventoryTypes.h"
 #include "ItemDefinition.generated.h"
 
+class UTexture2D;
+
 UCLASS(BlueprintType)
 class PROTOTYPE_API UItemDefinition : public UDataAsset
 {
@@ -28,6 +30,9 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Consume", meta = (ClampMin = "0.0"))
     float ConsumableEffectValue = 0.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+    TObjectPtr<UTexture2D> Icon = nullptr;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stack", meta = (ClampMin = "1"))
     int32 MaxStack = 1;

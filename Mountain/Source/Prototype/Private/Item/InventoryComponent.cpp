@@ -11,6 +11,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "DownfallCharacter.h"
+#include "Engine/Texture2D.h"
 
 UInventoryComponent::UInventoryComponent()
 {
@@ -632,4 +633,63 @@ bool UInventoryComponent::LoadFromSlot(const FString& SlotName, int32 UserIndex)
     SanitizeReservedCenterSlot();
     OnInventoryChanged.Broadcast();
     return true;
+}
+
+bool UInventoryComponent::HasValidItemAt(int32 Index) const
+{
+    if (!Slots.IsValidIndex(Index))
+    {
+        return false;
+    }
+
+    if (IsReservedCenterSlot(Index))
+    {
+        return false;
+    }
+
+    return Slots[Index].IsValid();
+}
+
+UItemDefinition* UInventoryComponent::GetItemDefinitionAt(int32 Index) const
+{
+    if (!Slots.IsValidIndex(Index))
+    {
+        return nullptr;
+    }
+
+    if (IsReservedCenterSlot(Index))
+    {
+        return nullptr;
+    }
+
+    const FItemStack& S = Slots[Index];
+    if (!S.IsValid())
+    {
+        return nullptr;
+    }
+
+    UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    if (!GI)
+    {
+        return nullptr;
+    }
+
+    UItemSubsystem* IS = GI->GetSubsystem<UItemSubsystem>();
+    if (!IS)
+    {
+        return nullptr;
+    }
+
+    return IS->GetItemDefinitionById(S.ItemId);
+}
+
+UTexture2D* UInventoryComponent::GetItemIconAt(int32 Index) const
+{
+    UItemDefinition* Def = GetItemDefinitionAt(Index);
+    if (!Def)
+    {
+        return nullptr;
+    }
+
+    return Def->Icon;
 }

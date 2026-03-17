@@ -6,6 +6,7 @@
 #include "InventoryComponent.generated.h"
 
 class UItemDefinition;
+class UTexture2D;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
 
@@ -44,6 +45,15 @@ public:
 public:
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     const TArray<FItemStack>& GetSlots() const { return Slots; }
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    bool HasValidItemAt(int32 Index) const;
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    UItemDefinition* GetItemDefinitionAt(int32 Index) const;
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    UTexture2D* GetItemIconAt(int32 Index) const;
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool TryAdd(FName ItemId, int32 Count, bool bForceInstance = false);
