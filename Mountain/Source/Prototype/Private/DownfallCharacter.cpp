@@ -27,6 +27,7 @@
 #include "Blueprint/UserWidget.h"
 #include "MountainGenWorldActor.h"
 #include "MountainGenSettings.h"
+#include "Core/DownfallGameMode.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 

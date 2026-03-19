@@ -42,6 +42,35 @@ public:
     bool IsStageActive() const { return bStageActive; }
 
 protected:
+    // 결과 화면 레벨 이름
+    UPROPERTY(EditDefaultsOnly, Category = "Stage")
+    FName ResultLevelName = FName("StageResult");
+
+    // Fade Out 시간
+    UPROPERTY(EditDefaultsOnly, Category = "Stage")
+    float FadeOutDuration = 2.0f;
+
+    // Fade Out Post Process Material
+    UPROPERTY(EditDefaultsOnly, Category = "Stage")
+    TObjectPtr<class UMaterialInterface> FadeOutMaterial;
+
+private:
+    bool bStageCompleted = false;
+    bool bFadingOut = false;
+    FTimerHandle FadeOutTimerHandle;
+    
+    // Post Process Material Instance
+    UPROPERTY()
+    TObjectPtr<class UMaterialInstanceDynamic> FadeOutMaterialInstance;
+    
+    // Fade 진행도
+    float CurrentFadeAlpha = 0.0f;
+
+    void StartFadeOut();
+    void UpdateFadeOut(float DeltaTime);
+    void OnFadeOutComplete();
+
+protected:
     // 스테이지 활성화 상태
     UPROPERTY(BlueprintReadOnly, Category = "Stage")
     bool bStageActive = false;
