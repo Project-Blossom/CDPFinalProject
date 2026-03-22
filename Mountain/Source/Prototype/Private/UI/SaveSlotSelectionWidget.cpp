@@ -3,6 +3,7 @@
 #include "Components/TextBlock.h"
 #include "Kismet/GameplayStatics.h"
 #include "Core/DownfallGameInstance.h"
+#include "UI/OverwriteWarningWidget.h"
 
 void USaveSlotSelectionWidget::NativeConstruct()
 {
@@ -153,16 +154,33 @@ void USaveSlotSelectionWidget::HandleSlotSelected(int32 SlotIndex)
 
 void USaveSlotSelectionWidget::ShowConfirmDialog(int32 SlotIndex)
 {
-    // TODO: 경고 다이얼로그 UI 만들기
-    // 지금은 로그만 출력하고 바로 진행
-    UE_LOG(LogTemp, Warning, TEXT("Overwriting slot %d"), SlotIndex);
-
-    UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(GetGameInstance());
-    if (GI)
+    if (!OverwriteWarningWidgetClass)
     {
-        GI->DeleteSlot(SlotIndex);
-        GI->SetCurrentSaveSlot(SlotIndex);
-        UGameplayStatics::OpenLevel(this, FirstStageLevel);
+        UE_LOG(LogTemp, Error, TEXT("OverwriteWarningWidgetClass not set!"));
+        
+        // Widget이 없으면 바로 진행
+        UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(GetGameInstance());
+        if (GI)
+        {
+            GI->DeleteSlot(SlotIndex);
+            GI->SetCurrentSaveSlot(SlotIndex);
+            UGameplayStatics::OpenLevel(this, FirstStageLevel);
+        }
+        return;
+    }
+
+    APlayerController* PC = GetOwningPlayer();
+    if (!PC)
+        return;
+
+    // 경고 Widget 생성
+    CurrentWarningWidget = CreateWidget<UOverwriteWarningWidget>(PC, OverwriteWarningWidgetClass);
+    if (CurrentWarningWidget)
+    {
+        CurrentWarningWidget->SetSlotIndex(SlotIndex);
+        CurrentWarningWidget->AddToViewport(100); // 최상위에 표시
+        
+        UE_LOG(LogTemp, Warning, TEXT("Showing overwrite warning for slot %d"), SlotIndex);
     }
 }
 

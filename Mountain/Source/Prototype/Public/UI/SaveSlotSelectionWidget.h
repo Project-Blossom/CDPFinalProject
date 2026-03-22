@@ -62,7 +62,14 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Save Slot")
     FName FirstStageLevel = FName("Stage1");
 
+    // 덮어쓰기 경고 Widget 클래스
+    UPROPERTY(EditDefaultsOnly, Category = "Save Slot")
+    TSubclassOf<class UOverwriteWarningWidget> OverwriteWarningWidgetClass;
+
 private:
+    // 현재 표시 중인 경고 Widget
+    UPROPERTY()
+    TObjectPtr<class UOverwriteWarningWidget> CurrentWarningWidget;
     // 슬롯 정보 업데이트
     void UpdateSlotInfo();
 
