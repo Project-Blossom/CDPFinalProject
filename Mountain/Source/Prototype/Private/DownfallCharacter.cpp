@@ -1460,19 +1460,35 @@ void ADownfallCharacter::EnterInventoryFromHeldSlot()
         Inventory->SetPreviewEnabled(false);
     }
 
-    HeldSlotIndex = INDEX_NONE;
     RefreshInventoryUIState();
 }
 
 void ADownfallCharacter::CloseInventoryToEmptyHand()
 {
-    ItemUseState = EItemUseState::None;
     InventoryCursorIndex = 12;
-    HeldSlotIndex = INDEX_NONE;
 
     if (Inventory)
     {
         Inventory->SetPreviewEnabled(false);
+    }
+
+    if (IsValidInventorySlotIndex(HeldSlotIndex))
+    {
+        const TArray<FItemStack>& Slots = Inventory->GetSlots();
+        if (Slots.IsValidIndex(HeldSlotIndex) && Slots[HeldSlotIndex].IsValid())
+        {
+            ItemUseState = EItemUseState::HoldingItem;
+        }
+        else
+        {
+            HeldSlotIndex = INDEX_NONE;
+            ItemUseState = EItemUseState::None;
+        }
+    }
+    else
+    {
+        HeldSlotIndex = INDEX_NONE;
+        ItemUseState = EItemUseState::None;
     }
 
     RefreshInventoryUIState();
