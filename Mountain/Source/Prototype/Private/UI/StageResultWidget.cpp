@@ -92,12 +92,10 @@ void UStageResultWidget::HandleRetryClicked()
 
 void UStageResultWidget::HandleMainMenuClicked()
 {
-    UE_LOG(LogTemp, Warning, TEXT("Main Menu clicked"));
+    UE_LOG(LogTemp, Warning, TEXT("Main Menu clicked - Returning to Main Menu"));
 
-    // TODO: 메인 메뉴 레벨로 이동 (메인 메뉴가 만들어지면)
-    // UGameplayStatics::OpenLevel(this, FName("MainMenu"));
-    
-    UE_LOG(LogTemp, Warning, TEXT("Main Menu level not implemented yet"));
+    // 메인 메뉴 레벨로 이동
+    UGameplayStatics::OpenLevel(this, FName("MainMenu"));
 }
 
 void UStageResultWidget::HandleNextStageClicked()

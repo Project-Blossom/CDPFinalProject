@@ -67,6 +67,14 @@ void UDownfallGameInstance::SaveToSlot(int32 SlotIndex)
     SaveGameObject->LastSaveTime = FDateTime::Now();
 
     FString SlotName = GetSlotName(SlotIndex);
+    
+    // 저장 경로 출력
+    FString SaveGamePath = FPaths::ProjectSavedDir() / TEXT("SaveGames") / (SlotName + TEXT(".sav"));
+    UE_LOG(LogTemp, Warning, TEXT("===== SAVE FILE PATH ====="));
+    UE_LOG(LogTemp, Warning, TEXT("Slot Name: %s"), *SlotName);
+    UE_LOG(LogTemp, Warning, TEXT("Full Path: %s"), *SaveGamePath);
+    UE_LOG(LogTemp, Warning, TEXT("=========================="));
+    
     bool bSuccess = UGameplayStatics::SaveGameToSlot(SaveGameObject, SlotName, 0);
 
     if (bSuccess)
