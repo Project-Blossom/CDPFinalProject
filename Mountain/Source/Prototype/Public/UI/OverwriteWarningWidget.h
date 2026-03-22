@@ -41,8 +41,24 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Overwrite Warning")
     FName FirstStageLevel = FName("Stage1");
 
+    // Fade Widget 클래스
+    UPROPERTY(EditDefaultsOnly, Category = "Overwrite Warning")
+    TSubclassOf<class UFadeWidget> FadeWidgetClass;
+
+    // Fade Out 시간
+    UPROPERTY(EditDefaultsOnly, Category = "Overwrite Warning")
+    float FadeOutDuration = 1.5f;
+
 private:
     int32 SlotIndex = -1;
+
+    UPROPERTY()
+    TObjectPtr<class UFadeWidget> FadeWidgetInstance;
+
+    FName PendingLevelName;
+
+    void StartFadeOutToLevel(FName LevelName);
+    void OnFadeOutComplete();
 
     UFUNCTION()
     void HandleConfirmClicked();

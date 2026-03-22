@@ -3,7 +3,9 @@
 #include "Components/TextBlock.h"
 #include "Kismet/GameplayStatics.h"
 #include "Core/DownfallGameInstance.h"
+#include "UI/FadeWidget.h"
 #include "UI/OverwriteWarningWidget.h"
+#include "UI/FadeWidget.h"
 
 void USaveSlotSelectionWidget::NativeConstruct()
 {
@@ -128,10 +130,10 @@ void USaveSlotSelectionWidget::HandleSlotSelected(int32 SlotIndex)
         }
         else
         {
-            // 빈 슬롯 → 바로 시작
+            // 빈 슬롯 → Fade Out 후 시작
             GI->DeleteSlot(SlotIndex);
             GI->SetCurrentSaveSlot(SlotIndex);
-            UGameplayStatics::OpenLevel(this, FirstStageLevel);
+            StartFadeOutToLevel(FirstStageLevel);
         }
     }
     else
@@ -139,11 +141,9 @@ void USaveSlotSelectionWidget::HandleSlotSelected(int32 SlotIndex)
         // LoadGame 모드
         if (bSlotExists)
         {
-            // 데이터 로드 후 시작
+            // 데이터 로드 후 Fade Out + 시작
             GI->LoadFromSlot(SlotIndex);
-            
-            // TODO: 마지막 플레이한 스테이지로 이동 (현재는 Stage1)
-            UGameplayStatics::OpenLevel(this, FirstStageLevel);
+            StartFadeOutToLevel(FirstStageLevel);
         }
         else
         {
@@ -164,7 +164,7 @@ void USaveSlotSelectionWidget::ShowConfirmDialog(int32 SlotIndex)
         {
             GI->DeleteSlot(SlotIndex);
             GI->SetCurrentSaveSlot(SlotIndex);
-            UGameplayStatics::OpenLevel(this, FirstStageLevel);
+            StartFadeOutToLevel(FirstStageLevel);  // 수정: Fade Out 추가
         }
         return;
     }
@@ -178,7 +178,7 @@ void USaveSlotSelectionWidget::ShowConfirmDialog(int32 SlotIndex)
     if (CurrentWarningWidget)
     {
         CurrentWarningWidget->SetSlotIndex(SlotIndex);
-        CurrentWarningWidget->AddToViewport(100); // 최상위에 표시
+        CurrentWarningWidget->AddToViewport(100);
         
         UE_LOG(LogTemp, Warning, TEXT("Showing overwrite warning for slot %d"), SlotIndex);
     }
@@ -223,4 +223,46 @@ void USaveSlotSelectionWidget::HandleBackClicked()
 {
     UE_LOG(LogTemp, Warning, TEXT("Back to Main Menu"));
     UGameplayStatics::OpenLevel(this, MainMenuLevel);
+}
+
+void USaveSlotSelectionWidget::StartFadeOutToLevel(FName LevelName)
+{
+    if (!FadeWidgetClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("FadeWidgetClass not set - opening level directly"));
+        UGameplayStatics::OpenLevel(this, LevelName);
+        return;
+    }
+
+    APlayerController* PC = GetOwningPlayer();
+    if (!PC)
+        return;
+
+    // Fade Widget 생성
+    FadeWidgetInstance = CreateWidget<UFadeWidget>(PC, FadeWidgetClass);
+    if (FadeWidgetInstance)
+    {
+        FadeWidgetInstance->AddToViewport(200); // 최상위
+        FadeWidgetInstance->StartFadeOut(FadeOutDuration);
+        
+        PendingLevelName = LevelName;
+        
+        UE_LOG(LogTemp, Warning, TEXT("Starting Fade Out to level: %s"), *LevelName.ToString());
+        
+        // Fade Out 시간 후 레벨 전환
+        FTimerHandle TimerHandle;
+        GetWorld()->GetTimerManager().SetTimer(
+            TimerHandle,
+            this,
+            &USaveSlotSelectionWidget::OnFadeOutComplete,
+            FadeOutDuration,
+            false
+        );
+    }
+}
+
+void USaveSlotSelectionWidget::OnFadeOutComplete()
+{
+    UE_LOG(LogTemp, Warning, TEXT("Fade Out Complete - Loading level: %s"), *PendingLevelName.ToString());
+    UGameplayStatics::OpenLevel(this, PendingLevelName);
 }

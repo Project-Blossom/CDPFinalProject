@@ -3,6 +3,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Camera/PlayerCameraManager.h"
+#include "UI/FadeWidget.h"
 
 ADownfallGameMode::ADownfallGameMode()
 {
@@ -12,6 +13,23 @@ ADownfallGameMode::ADownfallGameMode()
 void ADownfallGameMode::BeginPlay()
 {
     Super::BeginPlay();
+
+    // Fade In 효과 시작
+    if (FadeInWidgetClass)
+    {
+        APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+        if (PC)
+        {
+            UFadeWidget* FadeWidget = CreateWidget<UFadeWidget>(PC, FadeInWidgetClass);
+            if (FadeWidget)
+            {
+                FadeWidget->AddToViewport(200);
+                FadeWidget->StartFadeIn(FadeInDuration);
+                
+                UE_LOG(LogTemp, Warning, TEXT("Stage Fade In started"));
+            }
+        }
+    }
 
     // 자동으로 스테이지 시작
     StartStage();

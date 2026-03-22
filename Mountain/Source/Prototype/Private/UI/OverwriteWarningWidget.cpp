@@ -3,6 +3,7 @@
 #include "Components/TextBlock.h"
 #include "Kismet/GameplayStatics.h"
 #include "Core/DownfallGameInstance.h"
+#include "UI/FadeWidget.h"
 
 void UOverwriteWarningWidget::NativeConstruct()
 {
@@ -66,9 +67,52 @@ void UOverwriteWarningWidget::HandleConfirmClicked()
         GI->DeleteSlot(SlotIndex);
         GI->SetCurrentSaveSlot(SlotIndex);
 
-        // 첫 스테이지로 이동
-        UGameplayStatics::OpenLevel(this, FirstStageLevel);
+        // 다이얼로그 닫기
+        RemoveFromParent();
+
+        // Fade Out 후 레벨 전환
+        StartFadeOutToLevel(FirstStageLevel);
     }
+}
+
+void UOverwriteWarningWidget::StartFadeOutToLevel(FName LevelName)
+{
+    if (!FadeWidgetClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("FadeWidgetClass not set - opening level directly"));
+        UGameplayStatics::OpenLevel(this, LevelName);
+        return;
+    }
+
+    APlayerController* PC = GetOwningPlayer();
+    if (!PC)
+        return;
+
+    // Fade Widget 생성
+    FadeWidgetInstance = CreateWidget<UFadeWidget>(PC, FadeWidgetClass);
+    if (FadeWidgetInstance)
+    {
+        FadeWidgetInstance->AddToViewport(200);
+        FadeWidgetInstance->StartFadeOut(FadeOutDuration);
+        
+        PendingLevelName = LevelName;
+        
+        // Fade Out 시간 후 레벨 전환
+        FTimerHandle TimerHandle;
+        GetWorld()->GetTimerManager().SetTimer(
+            TimerHandle,
+            this,
+            &UOverwriteWarningWidget::OnFadeOutComplete,
+            FadeOutDuration,
+            false
+        );
+    }
+}
+
+void UOverwriteWarningWidget::OnFadeOutComplete()
+{
+    UE_LOG(LogTemp, Warning, TEXT("Fade Out Complete - Loading level: %s"), *PendingLevelName.ToString());
+    UGameplayStatics::OpenLevel(this, PendingLevelName);
 }
 
 void UOverwriteWarningWidget::HandleCancelClicked()

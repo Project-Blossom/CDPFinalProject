@@ -66,10 +66,31 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Save Slot")
     TSubclassOf<class UOverwriteWarningWidget> OverwriteWarningWidgetClass;
 
+    // Fade Widget 클래스
+    UPROPERTY(EditDefaultsOnly, Category = "Save Slot")
+    TSubclassOf<class UFadeWidget> FadeWidgetClass;
+
+    // Fade Out 후 레벨 전환 시간
+    UPROPERTY(EditDefaultsOnly, Category = "Save Slot")
+    float FadeOutDuration = 1.5f;
+
 private:
     // 현재 표시 중인 경고 Widget
     UPROPERTY()
     TObjectPtr<class UOverwriteWarningWidget> CurrentWarningWidget;
+
+    // Fade Widget Instance
+    UPROPERTY()
+    TObjectPtr<class UFadeWidget> FadeWidgetInstance;
+
+    // Fade Out 후 전환할 레벨
+    FName PendingLevelName;
+
+    // Fade Out 시작
+    void StartFadeOutToLevel(FName LevelName);
+
+    // Fade Out 완료 후 레벨 전환
+    void OnFadeOutComplete();
     // 슬롯 정보 업데이트
     void UpdateSlotInfo();
 
