@@ -2,6 +2,7 @@
 #include "Components/Button.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Core/DownfallGameInstance.h"
 
 void UMainMenuWidget::NativeConstruct()
 {
@@ -63,20 +64,30 @@ void UMainMenuWidget::HandleNewGameClicked()
 {
     UE_LOG(LogTemp, Warning, TEXT("New Game clicked - Opening Save Slot Selection"));
 
-    // TODO: SaveSlotSelection 레벨로 이동 (아직 없음)
-    // UGameplayStatics::OpenLevel(this, SaveSlotSelectionLevel);
-    
-    UE_LOG(LogTemp, Warning, TEXT("SaveSlotSelection level not implemented yet"));
+    // GameInstance에 NewGame 모드 설정
+    UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(GetGameInstance());
+    if (GI)
+    {
+        GI->SetNewGameMode(true);
+    }
+
+    // SaveSlotSelection 레벨로 이동
+    UGameplayStatics::OpenLevel(this, SaveSlotSelectionLevel);
 }
 
 void UMainMenuWidget::HandleLoadGameClicked()
 {
     UE_LOG(LogTemp, Warning, TEXT("Load Game clicked - Opening Save Slot Selection"));
 
-    // TODO: SaveSlotSelection 레벨로 이동 (아직 없음)
-    // UGameplayStatics::OpenLevel(this, SaveSlotSelectionLevel);
-    
-    UE_LOG(LogTemp, Warning, TEXT("SaveSlotSelection level not implemented yet"));
+    // GameInstance에 LoadGame 모드 설정
+    UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(GetGameInstance());
+    if (GI)
+    {
+        GI->SetNewGameMode(false);
+    }
+
+    // SaveSlotSelection 레벨로 이동
+    UGameplayStatics::OpenLevel(this, SaveSlotSelectionLevel);
 }
 
 void UMainMenuWidget::HandleSettingsClicked()

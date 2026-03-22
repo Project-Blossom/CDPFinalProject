@@ -66,6 +66,18 @@ public:
     UFUNCTION(BlueprintPure, Category = "Save")
     bool DoesSaveSlotExist(int32 SlotIndex) const;
 
+    // 슬롯 정보 가져오기 (플레이 시간, 클리어 개수, 마지막 날짜)
+    UFUNCTION(BlueprintPure, Category = "Save")
+    void GetSlotInfo(int32 SlotIndex, float& OutTotalPlayTime, int32& OutClearedStages, FDateTime& OutLastSaveTime, bool& OutExists) const;
+
+    // NewGame 모드 설정
+    UFUNCTION(BlueprintCallable, Category = "Save")
+    void SetNewGameMode(bool bNewGame) { bIsNewGameMode = bNewGame; }
+
+    // NewGame 모드인지 확인
+    UFUNCTION(BlueprintPure, Category = "Save")
+    bool IsNewGameMode() const { return bIsNewGameMode; }
+
 protected:
     // 스테이지 기록 배열
     UPROPERTY(BlueprintReadOnly, Category = "Stage")
@@ -74,6 +86,9 @@ protected:
     // 현재 활성 세이브 슬롯 (0, 1, 2)
     UPROPERTY(BlueprintReadOnly, Category = "Save")
     int32 CurrentSaveSlotIndex = 0;
+
+    // NewGame 모드 플래그
+    bool bIsNewGameMode = false;
 
     // 세이브 슬롯 이름 생성
     FString GetSlotName(int32 SlotIndex) const;

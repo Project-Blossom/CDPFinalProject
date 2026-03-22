@@ -49,6 +49,22 @@ void UDownfallGameInstance::SaveToSlot(int32 SlotIndex)
     }
 
     SaveGameObject->StageRecords = StageRecords;
+    
+    // 클리어한 스테이지 개수 계산
+    int32 ClearedCount = 0;
+    float TotalTime = 0.0f;
+    for (const FStageTimeRecord& Record : StageRecords)
+    {
+        if (Record.bCleared)
+        {
+            ClearedCount++;
+            TotalTime += Record.BestTime;
+        }
+    }
+    
+    SaveGameObject->ClearedStagesCount = ClearedCount;
+    SaveGameObject->TotalPlayTime = TotalTime;
+    SaveGameObject->LastSaveTime = FDateTime::Now();
 
     FString SlotName = GetSlotName(SlotIndex);
     bool bSuccess = UGameplayStatics::SaveGameToSlot(SaveGameObject, SlotName, 0);
@@ -125,6 +141,38 @@ bool UDownfallGameInstance::DoesSaveSlotExist(int32 SlotIndex) const
 
     FString SlotName = GetSlotName(SlotIndex);
     return UGameplayStatics::DoesSaveGameExist(SlotName, 0);
+}
+
+void UDownfallGameInstance::GetSlotInfo(int32 SlotIndex, float& OutTotalPlayTime, int32& OutClearedStages, FDateTime& OutLastSaveTime, bool& OutExists) const
+{
+    OutExists = false;
+    OutTotalPlayTime = 0.0f;
+    OutClearedStages = 0;
+    OutLastSaveTime = FDateTime::MinValue();
+
+    if (SlotIndex < 0 || SlotIndex > 2)
+    {
+        return;
+    }
+
+    FString SlotName = GetSlotName(SlotIndex);
+
+    if (!UGameplayStatics::DoesSaveGameExist(SlotName, 0))
+    {
+        return;
+    }
+
+    UDownfallSaveGame* SaveGameObject = Cast<UDownfallSaveGame>(
+        UGameplayStatics::LoadGameFromSlot(SlotName, 0)
+    );
+
+    if (SaveGameObject)
+    {
+        OutExists = true;
+        OutTotalPlayTime = SaveGameObject->TotalPlayTime;
+        OutClearedStages = SaveGameObject->ClearedStagesCount;
+        OutLastSaveTime = SaveGameObject->LastSaveTime;
+    }
 }
 
 void UDownfallGameInstance::RecordStageTime(FName StageId, float Time)

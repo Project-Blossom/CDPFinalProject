@@ -18,5 +18,17 @@ public:
     UPROPERTY()
     TArray<FStageTimeRecord> StageRecords;
 
+    // 총 플레이 시간 (초)
+    UPROPERTY()
+    float TotalPlayTime = 0.0f;
+
+    // 마지막 저장 시간
+    UPROPERTY()
+    FDateTime LastSaveTime;
+
+    // 클리어한 스테이지 개수
+    UPROPERTY()
+    int32 ClearedStagesCount = 0;
+
 
 };
