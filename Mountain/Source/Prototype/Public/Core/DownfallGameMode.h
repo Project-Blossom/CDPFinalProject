@@ -54,6 +54,14 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Stage")
     TObjectPtr<class UMaterialInterface> FadeOutMaterial;
 
+    // Fade In Widget 클래스 (게임 시작 시)
+    UPROPERTY(EditDefaultsOnly, Category = "Stage")
+    TSubclassOf<class UFadeWidget> FadeInWidgetClass;
+
+    // Fade In 시간
+    UPROPERTY(EditDefaultsOnly, Category = "Stage")
+    float FadeInDuration = 1.0f;
+
 private:
     bool bStageCompleted = false;
     bool bFadingOut = false;
