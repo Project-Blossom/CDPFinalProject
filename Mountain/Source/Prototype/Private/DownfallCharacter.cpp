@@ -633,7 +633,6 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
     FHandData& Hand = bIsLeftHand ? LeftHand : RightHand;
     UPhysicsConstraintComponent* Constraint = bIsLeftHand ? LeftHandConstraint : RightHandConstraint;
 
-
     // 1. 상태 확인
     if (Hand.State == EHandState::Gripping)
     {
@@ -651,11 +650,11 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
         UE_LOG(LogDownFall, Error, TEXT("Missing components"));
         return;
     }
-    
+
     // 2. 카메라 정보 가져오기
     FVector CameraLocation = FirstPersonCamera->GetComponentLocation();
     FVector CameraForward = FirstPersonCamera->GetForwardVector();
-    
+
     // 3. 그립 포인트 찾기
     FGripPointInfo GripInfo;
     bool bFound = GripFinder->FindGripPoint(CameraLocation, CameraForward, GripInfo);
@@ -665,56 +664,36 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
         UE_LOG(LogDownFall, Log, TEXT("%s hand: Grip failed"), bIsLeftHand ? TEXT("Left") : TEXT("Right"));
         return;
     }
-    
+
     // 4. 물리 모드 전환 체크 (상태 업데이트 전)
     bool bWasBothHandsFree = AreBothHandsFree();
-    
+
     // 5. 상태 업데이트
     Hand.State = EHandState::Gripping;
     Hand.CurrentGrip = GripInfo;
-    
-    // 6. FlyingPlatform 체크 (Constraint 설정 전!)
-    bool bGrippedMonster = false;
-    
-    TArray<FHitResult> Hits;
-    FCollisionQueryParams Params;
-    Params.AddIgnoredActor(this);
+    Hand.GrippedActor = nullptr;
 
-    GetWorld()->SweepMultiByChannel(
-        Hits,
-        GripInfo.WorldLocation,
-        GripInfo.WorldLocation + FVector(0, 0, 1),
-        FQuat::Identity,
-        ECC_Pawn,
-        FCollisionShape::MakeSphere(300.0f),  // 몬스터 잡기 판정 범위 (3m)
-        Params
-    );
-
-    for (const FHitResult& Hit : Hits)
+    // 6. SourceActor 체크 (Constraint 설정 전!)
+    // GripFinder가 특수 climbable actor(플랫폼, 앵커 등)를 찾은 경우
+    if (IsValid(GripInfo.SourceActor))
     {
-        if (Hit.GetActor() && Hit.GetActor()->Implements<UClimbableSurface>())
+        Hand.GrippedActor = GripInfo.SourceActor;
+
+        if (AFlyingPlatform* Platform = Cast<AFlyingPlatform>(GripInfo.SourceActor))
         {
-            Hand.GrippedActor = Hit.GetActor();
-        
-            if (AFlyingPlatform* Platform = Cast<AFlyingPlatform>(Hit.GetActor()))
-            {
-                Platform->OnPlayerGrab(this);
-                UE_LOG(LogDownFall, Log, TEXT("Grabbed Flying Platform: %s"), *Platform->GetName());
-                
-                // 동적 Constraint 설정
-                SetupConstraintToActor(Constraint, Platform, GripInfo.WorldLocation);
-                bGrippedMonster = true;
-            }
-            break;
+            Platform->OnPlayerGrab(this);
+            UE_LOG(LogDownFall, Log, TEXT("Grabbed Flying Platform: %s"), *Platform->GetName());
         }
+
+        // 동적 Constraint 설정
+        SetupConstraintToActor(Constraint, GripInfo.SourceActor, GripInfo.WorldLocation);
     }
-    
-    // 7. 일반 지형 Constraint 설정 (몬스터가 아닌 경우만)
-    if (!bGrippedMonster)
+    else
     {
+        // 7. 일반 지형 Constraint 설정
         SetupConstraint(Constraint, GripInfo.WorldLocation);
     }
-    
+
     Hand.GripStartTime = GetWorld()->GetTimeSeconds();
 
     // 8. 물리 모드 전환 (첫 Grip인 경우)
@@ -722,16 +701,16 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
     {
         GetCapsuleComponent()->SetSimulatePhysics(true);
         GetCharacterMovement()->SetMovementMode(MOVE_None);
-        
+
         UE_LOG(LogDownFall, Log, TEXT("Physics mode activated"));
     }
 
     // 9. 이벤트 발생
     OnHandGripped(bIsLeftHand, GripInfo);
 
-    UE_LOG(LogDownFall, Log, TEXT("%s hand gripped: Angle=%.1f°, Quality=%.2f"), 
-        bIsLeftHand ? TEXT("Left") : TEXT("Right"), 
-        GripInfo.SurfaceAngleDegrees, 
+    UE_LOG(LogDownFall, Log, TEXT("%s hand gripped: Angle=%.1f°, Quality=%.2f"),
+        bIsLeftHand ? TEXT("Left") : TEXT("Right"),
+        GripInfo.SurfaceAngleDegrees,
         GripInfo.GripQuality);
 }
 
@@ -754,14 +733,14 @@ void ADownfallCharacter::ReleaseGrip(bool bIsLeftHand)
         }
         Hand.GrippedActor = nullptr;
     }
-    
+
     // Constraint 해제
     BreakConstraint(Constraint);
-    
+
     // 상태 업데이트
     Hand.State = EHandState::Free;
     Hand.CurrentGrip = FGripPointInfo();
-    
+
     UE_LOG(LogDownFall, Log, TEXT("%s hand released"), bIsLeftHand ? TEXT("Left") : TEXT("Right"));
 }
 
@@ -891,6 +870,12 @@ float ADownfallCharacter::GetStaminaDrainRate(const FHandData& Hand) const
     if (Hand.CurrentGrip.GripQuality < 0.5f)
     {
         BaseDrain *= 2.0f;
+    }
+    else if (Hand.CurrentGrip.GripQuality >= 5.0f)
+    {
+        // 앵커 전용 특수값
+        // GripQuality = 5.0f 이상이면 매우 안정적인 고정점으로 간주
+        BaseDrain *= 0.2f;
     }
 
     return BaseDrain;

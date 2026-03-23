@@ -18,6 +18,11 @@ void UGripPointFinderComponent::BeginPlay()
     CacheClimbableSurfaces();
 }
 
+void UGripPointFinderComponent::RefreshClimbableSurfaces()
+{
+    CacheClimbableSurfaces();
+}
+
 void UGripPointFinderComponent::CacheClimbableSurfaces()
 {
     CachedClimbableSurfaces.Empty();
@@ -27,22 +32,34 @@ void UGripPointFinderComponent::CacheClimbableSurfaces()
         return;
     }
 
-    // 레벨 내 모든 IClimbableSurface 구현체 찾기 (미래 확장용)
+    // 레벨 내 모든 IClimbableSurface 구현체 찾기
+    // - FlyingPlatform 같은 특수 액터
+    // - 설치형 앵커 같은 PlaceActor
     for (TActorIterator<AActor> It(GetWorld()); It; ++It)
     {
         AActor* Actor = *It;
-        if (IsValid(Actor) && Actor->Implements<UClimbableSurface>())
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        // 자기 자신은 제외
+        if (Actor == GetOwner())
+        {
+            continue;
+        }
+
+        if (Actor->Implements<UClimbableSurface>())
         {
             TScriptInterface<IClimbableSurface> ClimbableSurface;
             ClimbableSurface.SetObject(Actor);
             ClimbableSurface.SetInterface(Cast<IClimbableSurface>(Actor));
-            
+
             CachedClimbableSurfaces.Add(ClimbableSurface);
             UE_LOG(LogGripFinder, Log, TEXT("Found climbable surface: %s"), *Actor->GetName());
         }
     }
 }
-
 
 bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, const FVector& CameraForward, FGripPointInfo& OutGripInfo)
 {
@@ -52,41 +69,120 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
         return false;
     }
 
-    // IClimbalbleSurface : 잡기 우선순위가 가장 높음
-    for (const TScriptInterface<IClimbableSurface>& Surface : CachedClimbableSurfaces)
+    // 1. 카메라 Ray를 먼저 쏜다
+    //    기존 문제:
+    //    - IClimbableSurface를 먼저 전부 순회해서
+    //      "내가 실제로 바라본 대상"보다 "반경 안의 특수 액터"가 먼저 잡혔음
+    FHitResult InitialHit;
+    if (!FindInitialHitPoint(CameraLocation, CameraForward, InitialHit))
     {
-        if (!Surface.GetObject() || !IsValid(Surface.GetObject()))
-            continue;
+        UE_LOG(LogGripFinder, Verbose, TEXT("No surface found in camera direction"));
 
-        // 몬스터에게 직접 물어봄
-        FGripPointInfo MonsterGripInfo;
-        if (IClimbableSurface::Execute_FindNearestGripPoint(
-            Surface.GetObject(),
-            CameraLocation,
-            SurfaceSampleRadius * 10.0f,  // 몬스터 감지 범위 (500cm)
-            MonsterGripInfo))
+        // 1-1. 레이로 아무것도 못 맞췄을 때만 보조적으로 특수 climbable actor 탐색
+        //      (완전 fallback 용도)
+        for (const TScriptInterface<IClimbableSurface>& Surface : CachedClimbableSurfaces)
         {
-            // 거리 체크
-            float Distance = FVector::Dist(CameraLocation, MonsterGripInfo.WorldLocation);
-            if (Distance <= MaxReachDistance)
+            UObject* SurfaceObject = Surface.GetObject();
+            if (!IsValid(SurfaceObject))
             {
-                OutGripInfo = MonsterGripInfo;
-                
+                continue;
+            }
+
+            FGripPointInfo ActorGripInfo;
+            if (IClimbableSurface::Execute_FindNearestGripPoint(
+                SurfaceObject,
+                CameraLocation,
+                SurfaceSampleRadius * 10.0f,
+                ActorGripInfo))
+            {
+                const float Distance = FVector::Dist(CameraLocation, ActorGripInfo.WorldLocation);
+                if (Distance <= MaxReachDistance && ActorGripInfo.bIsValid)
+                {
+                    // BP에서 SourceActor를 안 채웠더라도 여기서 보정
+                    if (!IsValid(ActorGripInfo.SourceActor))
+                    {
+                        ActorGripInfo.SourceActor = Cast<AActor>(SurfaceObject);
+                    }
+
+                    OutGripInfo = ActorGripInfo;
+
 #if !UE_BUILD_SHIPPING
-                // 디버그: 몬스터 감지 시각화
+                    // 디버그: fallback 특수 그립 감지 시각화
+                    DrawDebugLine(
+                        GetWorld(),
+                        CameraLocation,
+                        ActorGripInfo.WorldLocation,
+                        FColor::Magenta,
+                        false,
+                        0.5f,
+                        0,
+                        3.0f
+                    );
+
+                    DrawDebugSphere(
+                        GetWorld(),
+                        ActorGripInfo.WorldLocation,
+                        30.0f,
+                        8,
+                        FColor::Magenta,
+                        false,
+                        0.5f,
+                        0,
+                        2.0f
+                    );
+#endif
+
+                    UE_LOG(LogGripFinder, Log, TEXT("Fallback climbable grip point: %s at distance %.1f"),
+                        *SurfaceObject->GetName(), Distance);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // 2. 레이에 맞은 대상이 IClimbableSurface면 그 액터만 처리
+    //    핵심:
+    //    - 이제는 "범위 안의 아무 climbable"이 아니라
+    //      "내가 실제로 레이로 맞춘 climbable"만 잡는다
+    AActor* HitActor = InitialHit.GetActor();
+    if (IsValid(HitActor) && HitActor->Implements<UClimbableSurface>())
+    {
+        FGripPointInfo ActorGripInfo;
+        if (IClimbableSurface::Execute_FindNearestGripPoint(
+            HitActor,
+            InitialHit.Location,         // 카메라 위치가 아니라 실제 맞춘 지점 기준
+            SurfaceSampleRadius * 2.0f,  // 앵커/플랫폼 표면 주변 정도만 허용
+            ActorGripInfo))
+        {
+            const float Distance = FVector::Dist(CameraLocation, ActorGripInfo.WorldLocation);
+            if (Distance <= MaxReachDistance && ActorGripInfo.bIsValid)
+            {
+                // BP에서 SourceActor를 안 채웠더라도 여기서 보정
+                if (!IsValid(ActorGripInfo.SourceActor))
+                {
+                    ActorGripInfo.SourceActor = HitActor;
+                }
+
+                OutGripInfo = ActorGripInfo;
+
+#if !UE_BUILD_SHIPPING
+                // 디버그: 실제 레이로 맞춘 특수 그립 감지 시각화
                 DrawDebugLine(
                     GetWorld(),
                     CameraLocation,
-                    MonsterGripInfo.WorldLocation,
+                    ActorGripInfo.WorldLocation,
                     FColor::Magenta,
                     false,
                     0.5f,
                     0,
                     3.0f
                 );
+
                 DrawDebugSphere(
                     GetWorld(),
-                    MonsterGripInfo.WorldLocation,
+                    ActorGripInfo.WorldLocation,
                     30.0f,
                     8,
                     FColor::Magenta,
@@ -96,22 +192,20 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
                     2.0f
                 );
 #endif
-                
-                UE_LOG(LogGripFinder, Log, TEXT("Found monster grip point: %s at distance %.1f"), 
-                    *Surface.GetObject()->GetName(), Distance);
+
+                UE_LOG(LogGripFinder, Log, TEXT("Hit climbable grip point: %s at distance %.1f"),
+                    *HitActor->GetName(), Distance);
                 return true;
             }
         }
-    }
-    
-    FHitResult InitialHit;
-    if (!FindInitialHitPoint(CameraLocation, CameraForward, InitialHit))
-    {
-        UE_LOG(LogGripFinder, Verbose, TEXT("No surface found in camera direction"));
+
+        // 레이로 맞춘 건 climbable actor인데,
+        // 그 액터가 유효한 grip point를 못 줬으면 실패 처리
         return false;
     }
-    
-    float Distance = FVector::Dist(CameraLocation, InitialHit.Location);
+
+    // 3. 일반 ProceduralMesh 지형 처리
+    const float Distance = FVector::Dist(CameraLocation, InitialHit.Location);
     if (Distance > MaxReachDistance)
     {
         UE_LOG(LogGripFinder, Verbose, TEXT("Surface too far: %.1f cm (max: %.1f cm)"), Distance, MaxReachDistance);
@@ -120,99 +214,31 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
 
     float AverageSurfaceAngle = 0.0f;
     FVector AverageNormal = FVector::UpVector;
-    
+
     if (!CalculateAverageSurfaceAngle(InitialHit.Location, InitialHit.Normal, AverageSurfaceAngle, AverageNormal))
     {
         UE_LOG(LogGripFinder, Warning, TEXT("Failed to calculate average surface angle"));
         return false;
     }
-    
+
     if (AverageSurfaceAngle < MinSurfaceAngle || AverageSurfaceAngle > MaxSurfaceAngle)
     {
-        UE_LOG(LogGripFinder, Verbose, TEXT("Surface angle %.1f° out of range [%.1f - %.1f]"), 
+        UE_LOG(LogGripFinder, Verbose, TEXT("Surface angle %.1f° out of range [%.1f - %.1f]"),
             AverageSurfaceAngle, MinSurfaceAngle, MaxSurfaceAngle);
         return false;
     }
-    
+
     OutGripInfo.WorldLocation = InitialHit.Location;
     OutGripInfo.SurfaceNormal = InitialHit.Normal;
     OutGripInfo.AverageNormal = AverageNormal;
     OutGripInfo.SurfaceAngleDegrees = AverageSurfaceAngle;
     OutGripInfo.GripQuality = CalculateGripQuality(AverageSurfaceAngle);
     OutGripInfo.bIsValid = true;
+    OutGripInfo.SourceActor = nullptr; // 일반 지형은 개별 액터를 잡는 게 아님
 
-    UE_LOG(LogGripFinder, Log, TEXT("Grip found: Angle=%.1f°, Quality=%.2f, Distance=%.1f cm"), 
+    UE_LOG(LogGripFinder, Log, TEXT("Grip found: Angle=%.1f°, Quality=%.2f, Distance=%.1f cm"),
         AverageSurfaceAngle, OutGripInfo.GripQuality, Distance);
 
-    /*
-#if !UE_BUILD_SHIPPING
-    // 디버그 시각화
-    
-    // 1. Ray 경로 (노란선)
-    DrawDebugLine(
-        GetWorld(), 
-        CameraLocation, 
-        InitialHit.Location, 
-        FColor::Yellow, 
-        false, 
-        2.0f, 
-        0, 
-        2.0f
-    );
-    
-    // 2. Grip 지점 (녹색 구)
-    DrawDebugSphere(
-        GetWorld(), 
-        OutGripInfo.WorldLocation, 
-        15.0f, 
-        12, 
-        FColor::Green, 
-        false, 
-        2.0f, 
-        0, 
-        2.0f
-    );
-    
-    // 3. 경사 샘플링 범위 (노란색 Wire Sphere)
-    DrawDebugSphere(
-        GetWorld(), 
-        OutGripInfo.WorldLocation, 
-        SurfaceSampleRadius, 
-        16, 
-        FColor::Yellow, 
-        false, 
-        2.0f, 
-        0, 
-        1.0f
-    );
-    
-    // 4. 평균 Normal 벡터 (파란색 화살표)
-    DrawDebugDirectionalArrow(
-        GetWorld(), 
-        OutGripInfo.WorldLocation, 
-        OutGripInfo.WorldLocation + OutGripInfo.AverageNormal * 50.0f, 
-        20.0f, 
-        FColor::Blue, 
-        false, 
-        2.0f, 
-        0, 
-        3.0f
-    );
-    
-    // 5. Hit Normal 벡터 (빨간색 화살표, 비교용)
-    DrawDebugDirectionalArrow(
-        GetWorld(), 
-        OutGripInfo.WorldLocation, 
-        OutGripInfo.WorldLocation + OutGripInfo.SurfaceNormal * 40.0f, 
-        15.0f, 
-        FColor::Red, 
-        false, 
-        2.0f, 
-        0, 
-        2.0f
-    );
-#endif
-*/
     return true;
 }
 
@@ -224,12 +250,12 @@ bool UGripPointFinderComponent::FindInitialHitPoint(const FVector& Start, const 
         return false;
     }
 
-    FVector End = Start + Direction * MaxReachDistance;
+    const FVector End = Start + Direction * MaxReachDistance;
 
     FCollisionQueryParams QueryParams;
     QueryParams.AddIgnoredActor(GetOwner());
 
-    bool bHit = GetWorld()->LineTraceSingleByChannel(
+    const bool bHit = GetWorld()->LineTraceSingleByChannel(
         OutHit,
         Start,
         End,
@@ -242,17 +268,27 @@ bool UGripPointFinderComponent::FindInitialHitPoint(const FVector& Start, const 
         return false;
     }
 
-    // ProceduralMesh만 허용 (MountainGen 지형)
+    // IClimbableSurface 구현 액터면 허용
+    // - 앵커
+    // - FlyingPlatform
+    if (AActor* HitActor = OutHit.GetActor())
+    {
+        if (HitActor->Implements<UClimbableSurface>())
+        {
+            return true;
+        }
+    }
+
+    // ProceduralMesh면 일반 지형으로 허용 (MountainGen 지형)
     UProceduralMeshComponent* ProcMesh = Cast<UProceduralMeshComponent>(OutHit.Component.Get());
     if (!IsValid(ProcMesh))
     {
-        UE_LOG(LogGripFinder, Verbose, TEXT("Hit non-ProceduralMesh: %s"), *OutHit.Component->GetName());
+        UE_LOG(LogGripFinder, Verbose, TEXT("Hit unsupported component: %s"), *GetNameSafe(OutHit.Component.Get()));
         return false;
     }
 
     return true;
 }
-
 
 bool UGripPointFinderComponent::CalculateAverageSurfaceAngle(const FVector& HitPoint, const FVector& HitNormal, float& OutAngleDegrees, FVector& OutAverageNormal)
 {
@@ -264,66 +300,67 @@ bool UGripPointFinderComponent::CalculateAverageSurfaceAngle(const FVector& HitP
     // Multi-direction sampling for stable angle calculation
     TArray<FVector> SampledNormals;
     SampledNormals.Add(HitNormal);  // 중심 Normal
-    
+
     FCollisionQueryParams QueryParams;
     QueryParams.AddIgnoredActor(GetOwner());
-    
+
     // 8방향 샘플링 (원형)
     const int32 NumDirections = 8;
     const float AngleStep = 360.0f / NumDirections;
-    
-    for (int32 i = 0; i < NumDirections; i++)
+
+    for (int32 i = 0; i < NumDirections; ++i)
     {
-        float Angle = i * AngleStep;
-        float Radians = FMath::DegreesToRadians(Angle);
-        
+        const float Angle = i * AngleStep;
+        const float Radians = FMath::DegreesToRadians(Angle);
+
         // HitNormal에 수직인 평면에서 방향 계산
         FVector Right = FVector::CrossProduct(HitNormal, FVector::UpVector).GetSafeNormal();
         if (Right.IsNearlyZero())
         {
             Right = FVector::CrossProduct(HitNormal, FVector::ForwardVector).GetSafeNormal();
         }
-        FVector Up = FVector::CrossProduct(Right, HitNormal).GetSafeNormal();
-        
+
+        const FVector Up = FVector::CrossProduct(Right, HitNormal).GetSafeNormal();
+
         // 원형 샘플링 방향
-        FVector SampleDir = (Right * FMath::Cos(Radians) + Up * FMath::Sin(Radians)).GetSafeNormal();
-        FVector SampleOffset = SampleDir * SurfaceSampleRadius;
-        
+        const FVector SampleDir = (Right * FMath::Cos(Radians) + Up * FMath::Sin(Radians)).GetSafeNormal();
+        const FVector SampleOffset = SampleDir * SurfaceSampleRadius;
+
         // HitPoint에서 약간 띄워서 시작 (벽 안쪽에 파묻히지 않도록)
-        FVector Start = HitPoint + HitNormal * 5.0f;
-        FVector End = HitPoint + SampleOffset;
-        
+        const FVector Start = HitPoint + HitNormal * 5.0f;
+        const FVector End = HitPoint + SampleOffset;
+
         FHitResult Hit;
-        bool bHit = GetWorld()->LineTraceSingleByChannel(
+        const bool bHit = GetWorld()->LineTraceSingleByChannel(
             Hit,
             Start,
             End,
             ECC_Visibility,
             QueryParams
         );
-        
+
         if (bHit && Hit.bBlockingHit)
         {
             SampledNormals.Add(Hit.Normal);
         }
     }
-    
+
     // Normal 평균 계산 (중심에 가중치)
     FVector SumNormal = HitNormal * 2.0f;  // 중심 2배 가중치
-    for (int32 i = 1; i < SampledNormals.Num(); i++)
+    for (int32 i = 1; i < SampledNormals.Num(); ++i)
     {
         SumNormal += SampledNormals[i];
     }
-    
+
     OutAverageNormal = (SumNormal / (SampledNormals.Num() + 1.0f)).GetSafeNormal();
-    
+
     // 경사각 계산
     float DotProduct = FVector::DotProduct(OutAverageNormal, FVector::UpVector);
     DotProduct = FMath::Clamp(DotProduct, -1.0f, 1.0f);
     OutAngleDegrees = FMath::RadiansToDegrees(FMath::Acos(DotProduct));
-    
+
     UE_LOG(LogGripFinder, Verbose, TEXT("Sampled %d normals, Avg Angle: %.1f°"), SampledNormals.Num(), OutAngleDegrees);
-    
+
     return true;
 }
 
@@ -331,9 +368,8 @@ float UGripPointFinderComponent::CalculateGripQuality(float SurfaceAngleDegrees)
 {
     // 수직 벽 (90도) = 최고 품질 (1.0)
     // 평평한 바닥/천장 = 낮은 품질
+    const float DistanceFrom90 = FMath::Abs(SurfaceAngleDegrees - 90.0f);
+    const float Quality = 1.0f - (DistanceFrom90 / 90.0f);
 
-    float DistanceFrom90 = FMath::Abs(SurfaceAngleDegrees - 90.0f);
-    float Quality = 1.0f - (DistanceFrom90 / 90.0f);
-    
     return FMath::Clamp(Quality, 0.1f, 1.0f); // 최소 0.1
 }

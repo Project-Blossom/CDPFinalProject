@@ -1,7 +1,7 @@
-// File: Source/prototype/Public/Climbing/IClimbableSurface.h
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
 #include "UObject/Interface.h"
 #include "IClimbableSurface.generated.h"
 
@@ -11,45 +11,62 @@
 USTRUCT(BlueprintType)
 struct FGripPointInfo
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadWrite)
-	FVector WorldLocation = FVector::ZeroVector;
+    // 실제 손이 붙을 월드 위치
+    UPROPERTY(BlueprintReadWrite)
+    FVector WorldLocation = FVector::ZeroVector;
 
-	UPROPERTY(BlueprintReadWrite)
-	FVector SurfaceNormal = FVector::UpVector;
+    // 표면 Normal
+    UPROPERTY(BlueprintReadWrite)
+    FVector SurfaceNormal = FVector::UpVector;
 
-	UPROPERTY(BlueprintReadWrite)
-	float GripQuality = 1.0f; // 0.0 (나쁨) ~ 1.0 (좋음)
+    // 그립 품질
+    // 일반 지형: 0.1 ~ 1.0
+    // 앵커: 특수값 5.0 사용
+    UPROPERTY(BlueprintReadWrite)
+    float GripQuality = 1.0f;
 
-	UPROPERTY(BlueprintReadWrite)
-	float SurfaceAngleDegrees = 0.0f; // 경사각 (0~180도)
+    // 경사각 (일반 지형용)
+    UPROPERTY(BlueprintReadWrite)
+    float SurfaceAngleDegrees = 0.0f;
 
-	UPROPERTY(BlueprintReadWrite)
-	FVector AverageNormal = FVector::UpVector; // 인근 평균 법선
+    // 주변 평균 Normal (일반 지형용)
+    UPROPERTY(BlueprintReadWrite)
+    FVector AverageNormal = FVector::UpVector;
 
-	UPROPERTY(BlueprintReadWrite)
-	bool bIsValid = false;
+    // 유효한 그립인지
+    UPROPERTY(BlueprintReadWrite)
+    bool bIsValid = false;
+
+    // 어떤 액터를 잡은 건지 직접 전달
+    // 일반 지형이면 nullptr
+    UPROPERTY(BlueprintReadWrite)
+    TObjectPtr<AActor> SourceActor = nullptr;
 };
 
 /**
  * 등반 가능한 표면 인터페이스
- * MountainGen 플러그인 변경에 독립적
+ * ProceduralMesh 기반 일반 지형이 아니라,
+ * 개별 액터(플랫폼, 앵커 등) 쪽 확장용
  */
 UINTERFACE(MinimalAPI, Blueprintable)
 class UClimbableSurface : public UInterface
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 };
 
 class PROTOTYPE_API IClimbableSurface
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
 public:
-	/**
-	 * 가장 가까운 그립 포인트 찾기
-	 */
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Climbing")
-	bool FindNearestGripPoint(const FVector& SearchOrigin, float SearchRadius, FGripPointInfo& OutGripInfo);
+    /**
+     * 가장 가까운 그립 포인트 찾기
+     * @param SearchOrigin  탐색 시작 위치
+     * @param SearchRadius  탐색 반경
+     * @param OutGripInfo   결과 그립 정보
+     */
+    UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Climbing")
+    bool FindNearestGripPoint(const FVector& SearchOrigin, float SearchRadius, FGripPointInfo& OutGripInfo);
 };
