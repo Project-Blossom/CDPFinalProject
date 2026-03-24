@@ -494,6 +494,9 @@ void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
     DetectionGauge = 0.0f;
     PotentialTarget = nullptr;
     
+    // CRITICAL: Shake 감지 초기화
+    LastMousePosition = FVector2D::ZeroVector;  // 리셋
+    
     SetActorHiddenInGame(true);
     SetActorEnableCollision(false);
     SetActorTickEnabled(true);
@@ -502,7 +505,7 @@ void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
     // Attach Desaturation VFX 표시
     Player->ShowAttachDesaturation(0.8f);
     
-    UE_LOG(LogMonster, Warning, TEXT("%s ATTACHED (debuff mode) - Time since spawn: %.1fs"), *GetName(), TimeSinceSpawn);
+    UE_LOG(LogMonster, Warning, TEXT("%s ATTACHED (debuff mode) - Time since spawn: %.1fs, Shake detection RESET"), *GetName(), TimeSinceSpawn);
 }
 
 void AWallCrawler::DetachFromPlayer()
@@ -511,6 +514,7 @@ void AWallCrawler::DetachFromPlayer()
     
     bAttachedToPlayer = false;
     AccumulatedShake = 0.0f;
+    LastMousePosition = FVector2D::ZeroVector;  // CRITICAL: 리셋
     
     // Stun 상태 시작
     bIsStunned = true;
@@ -647,29 +651,49 @@ void AWallCrawler::UpdateShakeDetection(float DeltaTime)
     if (!PC) return;
     
     FRotator CurrentRotation = PC->GetControlRotation();
+    FVector2D CurrentRotation2D(CurrentRotation.Pitch, CurrentRotation.Yaw);
     
-    if (LastMousePosition.IsNearlyZero())
+    // 첫 프레임: 현재 회전 저장
+    if (LastMousePosition.IsZero())
     {
-        LastMousePosition = FVector2D(CurrentRotation.Pitch, CurrentRotation.Yaw);
+        LastMousePosition = CurrentRotation2D;
+        UE_LOG(LogMonster, Log, TEXT("%s Shake detection initialized: Pitch=%.1f, Yaw=%.1f"), 
+            *GetName(), CurrentRotation.Pitch, CurrentRotation.Yaw);
         return;
     }
     
-    FVector2D CurrentRotation2D(CurrentRotation.Pitch, CurrentRotation.Yaw);
+    // 회전 변화량 계산
     FVector2D RotationDelta = CurrentRotation2D - LastMousePosition;
     
-    // Yaw wrap 처리
+    // Yaw wrap 처리 (360도 경계)
     if (RotationDelta.Y > 180.0f) RotationDelta.Y -= 360.0f;
     if (RotationDelta.Y < -180.0f) RotationDelta.Y += 360.0f;
     
-    float RotationMovement = FMath::Abs(RotationDelta.Y);
-    AccumulatedShake += RotationMovement * 5.0f;
+    // 절대값 합산 (양방향 흔들기 모두 카운트)
+    float FrameShake = (FMath::Abs(RotationDelta.X) + FMath::Abs(RotationDelta.Y)) * 5.0f;
+    AccumulatedShake += FrameShake;
+    
+    // 현재 위치 저장
     LastMousePosition = CurrentRotation2D;
     
+    // Detach 체크
     if (AccumulatedShake >= ShakeThreshold)
     {
-        UE_LOG(LogMonster, Warning, TEXT("%s shaken off!"), *GetName());
+        UE_LOG(LogMonster, Warning, TEXT("%s shaken off! (Accumulated: %.1f >= Threshold: %.1f)"), 
+            *GetName(), AccumulatedShake, ShakeThreshold);
         DetachFromPlayer();
+        return;
     }
+    
+#if !UE_BUILD_SHIPPING
+    if (GEngine && FrameShake > 0.1f)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 0.0f, 
+            AccumulatedShake > ShakeThreshold * 0.7f ? FColor::Red : FColor::Yellow,
+            FString::Printf(TEXT("Shake: %.0f/%.0f (Frame: %.1f)"), 
+                AccumulatedShake, ShakeThreshold, FrameShake));
+    }
+#endif
 }
 
 // Detection Gauge
