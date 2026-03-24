@@ -172,6 +172,24 @@ void ADownfallCharacter::BeginPlay()
     {
         UE_LOG(LogDownFall, Warning, TEXT("GlitchMaterial not assigned - set in Blueprint"));
     }
+    
+    if (LeftHandMesh)
+    {
+        LeftHandMaterialInstance = LeftHandMesh->CreateDynamicMaterialInstance(0);
+        if (LeftHandMaterialInstance)
+        {
+            UE_LOG(LogDownFall, Log, TEXT("Left Hand Material Instance created"));
+        }
+    }
+    
+    if (RightHandMesh)
+    {
+        RightHandMaterialInstance = RightHandMesh->CreateDynamicMaterialInstance(0);
+        if (RightHandMaterialInstance)
+        {
+            UE_LOG(LogDownFall, Log, TEXT("Right Hand Material Instance created"));
+        }
+    }
 
     // Inventory
     if (Inventory && GripFinder)
@@ -216,6 +234,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateAttachDesaturation(DeltaTime);
     UpdateHandPositions(DeltaTime);
     UpdateAltitudeUI();
+    UpdateHandStaminaVisuals(DeltaTime);
     
     // AI Hearing: 의도적인 움직임만 소음 발생
     FVector Velocity = GetVelocity();
@@ -1695,4 +1714,78 @@ float ADownfallCharacter::GetGroundHeight() const
     
     // 못 찾으면 0
     return 0.0f;
+}
+
+void ADownfallCharacter::UpdateHandStaminaVisuals(float DeltaTime)
+{
+    // 왼손 업데이트
+    if (LeftHandMaterialInstance && LeftHandMesh)
+    {
+        UpdateHandMaterial(LeftHandMaterialInstance, LeftHand.Stamina);
+        UpdateHandShake(LeftHandMesh, LeftHand.Stamina, DeltaTime, LeftHandRestPosition);
+    }
+    
+    // 오른손 업데이트
+    if (RightHandMaterialInstance && RightHandMesh)
+    {
+        UpdateHandMaterial(RightHandMaterialInstance, RightHand.Stamina);
+        UpdateHandShake(RightHandMesh, RightHand.Stamina, DeltaTime, RightHandRestPosition);
+    }
+}
+
+void ADownfallCharacter::UpdateHandMaterial(UMaterialInstanceDynamic* MaterialInstance, float Stamina)
+{
+    if (!MaterialInstance)
+        return;
+    
+    // 스태미나 값을 0~1 범위로 정규화
+    float StaminaPercent = FMath::Clamp(Stamina / 100.0f, 0.0f, 1.0f);
+    
+    float ColorBlendStrength = 0.0f;
+    
+    if (StaminaPercent >= 0.6f)
+    {
+        ColorBlendStrength = 0.0f;
+    }
+    else if (StaminaPercent >= 0.3f)
+    {
+        ColorBlendStrength = 0.65f;
+    }
+    else
+    {
+        ColorBlendStrength = 0.95f;
+    }
+    
+    // Material Parameter 설정
+    MaterialInstance->SetScalarParameterValue(FName("StaminaBlend"), ColorBlendStrength);
+}
+
+void ADownfallCharacter::UpdateHandShake(USkeletalMeshComponent* HandMesh, float Stamina, float DeltaTime, const FVector& RestPosition)
+{
+    if (!HandMesh)
+        return;
+    
+    float StaminaPercent = FMath::Clamp(Stamina / 100.0f, 0.0f, 1.0f);
+    
+    // 25% 이하일 때만 떨림 추가
+    if (StaminaPercent <= 0.25f)
+    {
+        HandShakeTimer += DeltaTime * HandShakeSpeed;
+        
+        // 떨림 강도 (스태미나가 낮을수록 강하게)
+        float ShakeAmount = (1.0f - (StaminaPercent / 0.25f)) * HandShakeIntensity;
+        
+        // Sin/Cos으로 자연스러운 떨림 생성
+        FVector ShakeOffset;
+        ShakeOffset.X = FMath::Sin(HandShakeTimer * 1.3f) * ShakeAmount;
+        ShakeOffset.Y = FMath::Cos(HandShakeTimer * 1.7f) * ShakeAmount;
+        ShakeOffset.Z = FMath::Sin(HandShakeTimer * 2.1f) * ShakeAmount * 0.5f;
+        
+        // 현재 위치 가져오기
+        FVector CurrentLocation = HandMesh->GetRelativeLocation();
+        
+        // 떨림만 추가 (작은 값으로)
+        HandMesh->SetRelativeLocation(CurrentLocation + ShakeOffset * 0.1f);
+    }
+    // 스태미나 25% 이상일 때는 아무것도 안 함 (UpdateHandPositions가 정상 작동)
 }

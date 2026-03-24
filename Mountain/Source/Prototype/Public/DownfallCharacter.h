@@ -298,6 +298,20 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Hands|Animation")
     float HandMoveSpeed = 10.0f;
     
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> LeftHandMaterialInstance;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> RightHandMaterialInstance;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Hand Mesh")
+    float HandShakeIntensity = 4.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Hand Mesh")
+    float HandShakeSpeed = 20.0f;
+
+    float HandShakeTimer = 0.0f;
+    
 protected:
     // Input Handlers
     void OnGrabLeftStarted(const FInputActionValue& Value);
@@ -357,6 +371,9 @@ private:
     float InitialGroundHeight = 0.0f;
     void UpdateHandPositions(float DeltaTime);
     FVector GetHandTargetPosition(bool bIsLeftHand) const;
+    void UpdateHandStaminaVisuals(float DeltaTime);
+    void UpdateHandMaterial(UMaterialInstanceDynamic* MaterialInstance, float Stamina);
+    void UpdateHandShake(USkeletalMeshComponent* HandMesh, float Stamina, float DeltaTime, const FVector& RestPosition);
     
 private:
     FVector2D LastCursorInputDir = FVector2D::ZeroVector;
