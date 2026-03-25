@@ -48,6 +48,19 @@ struct FHandData
     AActor* GrippedActor = nullptr;
 };
 
+// 그립 모드
+// - SurfaceGrip : 일반 지형 등반
+// - AnchorGrip  : 고정 앵커 / 볼트 / 손잡이
+// - DynamicGrip : 이동 플랫폼 / 몬스터 등
+UENUM(BlueprintType)
+enum class EGripMode : uint8
+{
+    None         UMETA(DisplayName = "None"),
+    SurfaceGrip  UMETA(DisplayName = "SurfaceGrip"),
+    AnchorGrip   UMETA(DisplayName = "AnchorGrip"),
+    DynamicGrip  UMETA(DisplayName = "DynamicGrip")
+};
+
 UENUM(BlueprintType)
 enum class EItemUseState : uint8
 {
@@ -169,6 +182,37 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
     bool bIsClimbing = false;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
+    EGripMode GripMode = EGripMode::None;
+
+    // Anchor State
+    UPROPERTY(BlueprintReadOnly, Category = "Climbing|Anchor")
+    TObjectPtr<AActor> CurrentAnchorActor = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Climbing|Anchor")
+    FVector CurrentAnchorPointWorld = FVector::ZeroVector;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Climbing|Anchor")
+    FVector CurrentAnchorNormal = FVector::UpVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Anchor")
+    float AnchorBodyBackOffset = 40.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Anchor")
+    float AnchorBodyDownOffset = 25.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Anchor")
+    float AnchorAlignSpeed = 10.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Anchor")
+    float AnchorRotationSpeed = 10.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Climbing|Anchor")
+    bool bAnchorGripLeftHand = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Climbing|Anchor")
+    bool bAnchorGripRightHand = false;
+
     // Item State
     UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
     EItemUseState ItemUseState = EItemUseState::None;
@@ -281,7 +325,7 @@ public:
 
     UPROPERTY()
     TObjectPtr<UAltitudeWidget> AltitudeWidget;
-    
+
     // Hand
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hands|Mesh")
     TObjectPtr<USkeletalMeshComponent> LeftHandMesh;
@@ -297,7 +341,7 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Hands|Animation")
     float HandMoveSpeed = 10.0f;
-    
+
     UPROPERTY()
     TObjectPtr<UMaterialInstanceDynamic> LeftHandMaterialInstance;
 
@@ -311,7 +355,7 @@ public:
     float HandShakeSpeed = 20.0f;
 
     float HandShakeTimer = 0.0f;
-    
+
 protected:
     // Input Handlers
     void OnGrabLeftStarted(const FInputActionValue& Value);
@@ -334,6 +378,20 @@ protected:
     void SetupConstraint(UPhysicsConstraintComponent* Constraint, const FVector& TargetLocation);
     void SetupConstraintToActor(UPhysicsConstraintComponent* Constraint, AActor* TargetActor, const FVector& GripLocation);
     void BreakConstraint(UPhysicsConstraintComponent* Constraint);
+
+    // Anchor Grip Logic
+    void EnterAnchorGrip(bool bIsLeftHand, const FGripPointInfo& GripInfo);
+    void UpdateAnchorGrip(float DeltaTime);
+    void ExitAnchorGrip(bool bIsLeftHand);
+    bool IsAnchorGripActive() const;
+
+    // Grip Query Helpers
+    bool HasAnchorGrip() const;
+    bool HasSurfaceGrip() const;
+    bool HasDynamicGrip() const;
+    const FHandData* GetPrimaryMovementHand() const;
+    float GetAnchorAssistMoveScale() const;
+    float GetAnchorAssistInterpSpeed() const;
 
     // State
     void UpdateClimbingState();
@@ -374,7 +432,7 @@ private:
     void UpdateHandStaminaVisuals(float DeltaTime);
     void UpdateHandMaterial(UMaterialInstanceDynamic* MaterialInstance, float Stamina);
     void UpdateHandShake(USkeletalMeshComponent* HandMesh, float Stamina, float DeltaTime, const FVector& RestPosition);
-    
+
 private:
     FVector2D LastCursorInputDir = FVector2D::ZeroVector;
     bool bCursorInputHeld = false;

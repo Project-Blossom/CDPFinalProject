@@ -234,7 +234,8 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
     OutGripInfo.SurfaceAngleDegrees = AverageSurfaceAngle;
     OutGripInfo.GripQuality = CalculateGripQuality(AverageSurfaceAngle);
     OutGripInfo.bIsValid = true;
-    OutGripInfo.SourceActor = nullptr; // 일반 지형은 개별 액터를 잡는 게 아님
+    OutGripInfo.SourceActor = nullptr;     // 일반 지형은 개별 액터를 잡는 게 아님
+    OutGripInfo.GripKind = EGripKind::Surface;
 
     UE_LOG(LogGripFinder, Log, TEXT("Grip found: Angle=%.1f°, Quality=%.2f, Distance=%.1f cm"),
         AverageSurfaceAngle, OutGripInfo.GripQuality, Distance);

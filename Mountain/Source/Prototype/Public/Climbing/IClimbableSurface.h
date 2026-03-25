@@ -6,6 +6,20 @@
 #include "IClimbableSurface.generated.h"
 
 /**
+ * 그립 종류
+ * - Surface     : 일반 ProceduralMesh 지형
+ * - Anchor      : 고정 앵커 / 볼트 / 손잡이
+ * - DynamicActor: 이동하는 플랫폼 / 몬스터 등
+ */
+UENUM(BlueprintType)
+enum class EGripKind : uint8
+{
+    Surface      UMETA(DisplayName = "Surface"),
+    Anchor       UMETA(DisplayName = "Anchor"),
+    DynamicActor UMETA(DisplayName = "DynamicActor")
+};
+
+/**
  * 그립 포인트 정보
  */
 USTRUCT(BlueprintType)
@@ -43,6 +57,13 @@ struct FGripPointInfo
     // 일반 지형이면 nullptr
     UPROPERTY(BlueprintReadWrite)
     TObjectPtr<AActor> SourceActor = nullptr;
+
+    // 어떤 종류의 그립인지
+    // Surface     : 일반 지형
+    // Anchor      : 고정 앵커
+    // DynamicActor: 움직이는 플랫폼/액터
+    UPROPERTY(BlueprintReadWrite)
+    EGripKind GripKind = EGripKind::Surface;
 };
 
 /**

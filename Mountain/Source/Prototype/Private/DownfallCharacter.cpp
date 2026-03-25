@@ -224,6 +224,12 @@ void ADownfallCharacter::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
+    // 앵커가 한 손이라도 걸려 있으면 보조 정보 갱신
+    if (IsAnchorGripActive())
+    {
+        UpdateAnchorGrip(DeltaTime);
+    }
+
     UpdateStamina(DeltaTime);
     UpdateInsanity(DeltaTime);
     UpdateClimbingState();
@@ -231,48 +237,45 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateGlitchEffect();
     UpdateGlitchPatternSwitch(DeltaTime);
     UpdateAttachDesaturation(DeltaTime);
-    UpdateAttachDesaturation(DeltaTime);
     UpdateHandPositions(DeltaTime);
     UpdateAltitudeUI();
     UpdateHandStaminaVisuals(DeltaTime);
-    
+
     // AI Hearing: 의도적인 움직임만 소음 발생
     FVector Velocity = GetVelocity();
     float Speed = Velocity.Size();
-    
+
     // 등반 중인지 확인 (멤버 변수 사용)
     // CRITICAL: 등반 중일 때는 더 높은 임계값 (200), 일반 이동은 100
     float NoiseThreshold = bIsClimbing ? 200.0f : 100.0f;
-    
+
     if (Speed > NoiseThreshold)
     {
-        // Noise 발생
         UAISense_Hearing::ReportNoiseEvent(
             GetWorld(),
             GetActorLocation(),
-            1.0f,      // Loudness
+            1.0f,
             this,
-            1000.0f,   // Max Range (10m)
+            1000.0f,
             NAME_None
         );
-        
-        // 디버그 로그 (Verbose)
+
         UE_LOG(LogDownFall, Verbose, TEXT("Player making noise at speed: %.1f (threshold: %.1f)"), Speed, NoiseThreshold);
     }
 
     // 착지 감지 및 Physics → Walking 모드 전환
-    // Physics ON 중 OR Falling 중에 체크
-    if (GetCapsuleComponent()->IsSimulatingPhysics() || 
-        GetCharacterMovement()->MovementMode == MOVE_Falling)
+    // 등반이 완전히 끝난 상태에서만 체크
+    if (!bIsClimbing &&
+        (GetCapsuleComponent()->IsSimulatingPhysics() ||
+            GetCharacterMovement()->MovementMode == MOVE_Falling))
     {
-        // 바닥과의 충돌 체크
         FHitResult Hit;
         FVector Start = GetActorLocation();
-        FVector End = Start - FVector(0, 0, 10.0f); // 바닥 감지 거리
-        
+        FVector End = Start - FVector(0, 0, 10.0f);
+
         FCollisionQueryParams QueryParams;
         QueryParams.AddIgnoredActor(this);
-        
+
         bool bHitGround = GetWorld()->SweepSingleByChannel(
             Hit,
             Start,
@@ -282,27 +285,24 @@ void ADownfallCharacter::Tick(float DeltaTime)
             FCollisionShape::MakeSphere(GetCapsuleComponent()->GetScaledCapsuleRadius()),
             QueryParams
         );
-        
+
         if (bHitGround)
         {
-            // 경사 체크: 걸을 수 있는 경사인지
             float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(Hit.ImpactNormal.Z));
             float WalkableSlope = GetCharacterMovement()->GetWalkableFloorAngle();
-            
+
             if (SlopeAngle <= WalkableSlope)
             {
-                // 걸을 수 있는 경사 → Physics OFF, 운동량 초기화
                 GetCapsuleComponent()->SetSimulatePhysics(false);
                 GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
                 GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
-                
-                // Rotation 초기화 (중요!)
+
                 FRotator CurrentRotation = GetActorRotation();
                 FRotator UpRightRotation = FRotator(0.0f, CurrentRotation.Yaw, 0.0f);
                 SetActorRotation(UpRightRotation);
-                
+
                 GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-                
+
                 UE_LOG(LogDownFall, Log, TEXT("Landed on walkable surface (%.1f°) - Physics disabled"), SlopeAngle);
             }
             else
@@ -516,33 +516,41 @@ void ADownfallCharacter::OnMove(const FInputActionValue& Value)
     // 카메라(컨트롤러) 회전 기준으로 방향 계산
     const FRotator ControlRotation = Controller->GetControlRotation();
     const FRotator YawRotation(0.0f, ControlRotation.Yaw, 0.0f);
-    
-    // 등반 중: Physics Impulse 적용
+
+    // 등반 중: Grip 조합에 따라 이동
     if (bIsClimbing)
     {
         UCapsuleComponent* Capsule = GetCapsuleComponent();
         if (!IsValid(Capsule)) return;
 
-        const float ClimbSpeed = 500.0f; // 부드러운 속도 (조정 가능: 400-600)
-
-        // 현재 잡고 있는 손의 벽면 Normal 가져오기
-        FVector SurfaceNormal = FVector::UpVector;
-        if (LeftHand.State == EHandState::Gripping)
+        const FHandData* PrimaryHand = GetPrimaryMovementHand();
+        if (!PrimaryHand || !PrimaryHand->CurrentGrip.bIsValid)
         {
-            SurfaceNormal = LeftHand.CurrentGrip.SurfaceNormal;
+            return;
         }
-        else if (RightHand.State == EHandState::Gripping)
+
+        float ClimbSpeed = 500.0f;
+        ClimbSpeed *= GetAnchorAssistMoveScale();
+
+        // 이동 기준 Normal:
+        // 1순위 Surface 손
+        // 2순위 Anchor 손
+        // 3순위 기타 grip
+        FVector SurfaceNormal = PrimaryHand->CurrentGrip.SurfaceNormal.GetSafeNormal();
+        if (SurfaceNormal.IsNearlyZero())
         {
-            SurfaceNormal = RightHand.CurrentGrip.SurfaceNormal;
+            SurfaceNormal = FVector::ForwardVector;
         }
 
         // 벽면에 평행한 "위" 방향 계산
-        FVector SurfaceUp = FVector::UpVector - SurfaceNormal * (FVector::UpVector | SurfaceNormal);
-        SurfaceUp.Normalize();
+        FVector SurfaceUp = FVector::UpVector - SurfaceNormal * FVector::DotProduct(FVector::UpVector, SurfaceNormal);
+        if (!SurfaceUp.Normalize())
+        {
+            SurfaceUp = FVector::CrossProduct(SurfaceNormal, FVector::RightVector).GetSafeNormal();
+        }
 
         // 벽면에 평행한 "오른쪽" 방향 계산
-        FVector SurfaceRight = FVector::CrossProduct(SurfaceNormal, SurfaceUp);
-        SurfaceRight.Normalize();
+        FVector SurfaceRight = FVector::CrossProduct(SurfaceNormal, SurfaceUp).GetSafeNormal();
 
         FVector TargetVelocity = FVector::ZeroVector;
 
@@ -560,24 +568,34 @@ void ADownfallCharacter::OnMove(const FInputActionValue& Value)
 
         // 현재 Velocity 가져오기
         FVector CurrentVelocity = Capsule->GetPhysicsLinearVelocity();
-    
-        // 부드러운 보간
-        FVector NewVelocity = FMath::VInterpTo(CurrentVelocity, TargetVelocity, GetWorld()->GetDeltaSeconds(), 5.0f);
-    
-        // Velocity 설정
+
+        // 앵커가 포함되면 더 안정적으로 감쇠
+        const float InterpSpeed = GetAnchorAssistInterpSpeed();
+
+        FVector NewVelocity = FMath::VInterpTo(
+            CurrentVelocity,
+            TargetVelocity,
+            GetWorld()->GetDeltaSeconds(),
+            InterpSpeed
+        );
+
+        // 입력이 없고 앵커가 걸려 있으면 더 빨리 안정화
+        if (HasAnchorGrip() && MovementVector.IsNearlyZero())
+        {
+            NewVelocity *= 0.85f;
+        }
+
         Capsule->SetPhysicsLinearVelocity(NewVelocity);
     }
     // 지상: 일반 이동
     else
     {
-        // 전후 이동
         if (MovementVector.Y != 0.0f)
         {
             const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
             AddMovementInput(Direction, MovementVector.Y);
         }
 
-        // 좌우 이동
         if (MovementVector.X != 0.0f)
         {
             const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
@@ -646,6 +664,211 @@ void ADownfallCharacter::OnDebugInsanity(const FInputActionValue& Value)
     UE_LOG(LogDownFall, Warning, TEXT("Debug: Added 10 Insanity (Test key pressed)"));
 }
 
+// Anchor Grip Logic
+void ADownfallCharacter::EnterAnchorGrip(bool bIsLeftHand, const FGripPointInfo& GripInfo)
+{
+    CurrentAnchorActor = GripInfo.SourceActor;
+
+    if (bIsLeftHand)
+    {
+        bAnchorGripLeftHand = true;
+    }
+    else
+    {
+        bAnchorGripRightHand = true;
+    }
+
+    // 현재 대표 앵커 정보 캐시
+    CurrentAnchorPointWorld = GripInfo.WorldLocation;
+    CurrentAnchorNormal = GripInfo.SurfaceNormal.GetSafeNormal();
+
+    UE_LOG(LogDownFall, Log, TEXT("EnterAnchorGrip: %s"), *GetNameSafe(CurrentAnchorActor));
+}
+
+void ADownfallCharacter::UpdateAnchorGrip(float DeltaTime)
+{
+    if (!IsAnchorGripActive())
+    {
+        CurrentAnchorActor = nullptr;
+        CurrentAnchorPointWorld = FVector::ZeroVector;
+        CurrentAnchorNormal = FVector::UpVector;
+        return;
+    }
+
+    FVector SumPoint = FVector::ZeroVector;
+    FVector SumNormal = FVector::ZeroVector;
+    int32 Count = 0;
+
+    if (LeftHand.State == EHandState::Gripping &&
+        LeftHand.CurrentGrip.GripKind == EGripKind::Anchor &&
+        LeftHand.CurrentGrip.bIsValid)
+    {
+        SumPoint += LeftHand.CurrentGrip.WorldLocation;
+        SumNormal += LeftHand.CurrentGrip.SurfaceNormal.GetSafeNormal();
+        ++Count;
+    }
+
+    if (RightHand.State == EHandState::Gripping &&
+        RightHand.CurrentGrip.GripKind == EGripKind::Anchor &&
+        RightHand.CurrentGrip.bIsValid)
+    {
+        SumPoint += RightHand.CurrentGrip.WorldLocation;
+        SumNormal += RightHand.CurrentGrip.SurfaceNormal.GetSafeNormal();
+        ++Count;
+    }
+
+    if (Count > 0)
+    {
+        CurrentAnchorPointWorld = SumPoint / (float)Count;
+        CurrentAnchorNormal = (SumNormal / (float)Count).GetSafeNormal();
+    }
+}
+
+void ADownfallCharacter::ExitAnchorGrip(bool bIsLeftHand)
+{
+    if (bIsLeftHand)
+    {
+        bAnchorGripLeftHand = false;
+    }
+    else
+    {
+        bAnchorGripRightHand = false;
+    }
+
+    if (!bAnchorGripLeftHand && !bAnchorGripRightHand)
+    {
+        CurrentAnchorActor = nullptr;
+        CurrentAnchorPointWorld = FVector::ZeroVector;
+        CurrentAnchorNormal = FVector::UpVector;
+
+        UE_LOG(LogDownFall, Log, TEXT("ExitAnchorGrip"));
+    }
+}
+
+bool ADownfallCharacter::IsAnchorGripActive() const
+{
+    return bAnchorGripLeftHand || bAnchorGripRightHand;
+}
+
+bool ADownfallCharacter::HasAnchorGrip() const
+{
+    const bool bLeftAnchor =
+        (LeftHand.State == EHandState::Gripping &&
+            LeftHand.CurrentGrip.GripKind == EGripKind::Anchor);
+
+    const bool bRightAnchor =
+        (RightHand.State == EHandState::Gripping &&
+            RightHand.CurrentGrip.GripKind == EGripKind::Anchor);
+
+    return bLeftAnchor || bRightAnchor;
+}
+
+bool ADownfallCharacter::HasSurfaceGrip() const
+{
+    const bool bLeftSurface =
+        (LeftHand.State == EHandState::Gripping &&
+            LeftHand.CurrentGrip.GripKind == EGripKind::Surface);
+
+    const bool bRightSurface =
+        (RightHand.State == EHandState::Gripping &&
+            RightHand.CurrentGrip.GripKind == EGripKind::Surface);
+
+    return bLeftSurface || bRightSurface;
+}
+
+bool ADownfallCharacter::HasDynamicGrip() const
+{
+    const bool bLeftDynamic =
+        (LeftHand.State == EHandState::Gripping &&
+            LeftHand.CurrentGrip.GripKind == EGripKind::DynamicActor);
+
+    const bool bRightDynamic =
+        (RightHand.State == EHandState::Gripping &&
+            RightHand.CurrentGrip.GripKind == EGripKind::DynamicActor);
+
+    return bLeftDynamic || bRightDynamic;
+}
+
+const FHandData* ADownfallCharacter::GetPrimaryMovementHand() const
+{
+    // 1순위: Surface 손
+    if (LeftHand.State == EHandState::Gripping &&
+        LeftHand.CurrentGrip.GripKind == EGripKind::Surface &&
+        LeftHand.CurrentGrip.bIsValid)
+    {
+        return &LeftHand;
+    }
+
+    if (RightHand.State == EHandState::Gripping &&
+        RightHand.CurrentGrip.GripKind == EGripKind::Surface &&
+        RightHand.CurrentGrip.bIsValid)
+    {
+        return &RightHand;
+    }
+
+    // 2순위: Anchor 손
+    if (LeftHand.State == EHandState::Gripping &&
+        LeftHand.CurrentGrip.GripKind == EGripKind::Anchor &&
+        LeftHand.CurrentGrip.bIsValid)
+    {
+        return &LeftHand;
+    }
+
+    if (RightHand.State == EHandState::Gripping &&
+        RightHand.CurrentGrip.GripKind == EGripKind::Anchor &&
+        RightHand.CurrentGrip.bIsValid)
+    {
+        return &RightHand;
+    }
+
+    // 3순위: 기타 grip
+    if (LeftHand.State == EHandState::Gripping && LeftHand.CurrentGrip.bIsValid)
+    {
+        return &LeftHand;
+    }
+
+    if (RightHand.State == EHandState::Gripping && RightHand.CurrentGrip.bIsValid)
+    {
+        return &RightHand;
+    }
+
+    return nullptr;
+}
+
+float ADownfallCharacter::GetAnchorAssistMoveScale() const
+{
+    // 절벽만 잡고 있으면 기존 속도 유지
+    if (!HasAnchorGrip())
+    {
+        return 1.0f;
+    }
+
+    // 절벽 + 앵커 혼합
+    if (HasAnchorGrip() && HasSurfaceGrip())
+    {
+        return 0.80f;
+    }
+
+    // 양손 앵커 또는 앵커만 잡고 있는 상태
+    return 0.65f;
+}
+
+float ADownfallCharacter::GetAnchorAssistInterpSpeed() const
+{
+    // 기본 surface 이동보다 anchor가 있으면 좀 더 빠르게 안정화
+    if (!HasAnchorGrip())
+    {
+        return 5.0f;
+    }
+
+    if (HasAnchorGrip() && HasSurfaceGrip())
+    {
+        return 8.0f;
+    }
+
+    return 10.0f;
+}
+
 // Grip Logic
 void ADownfallCharacter::TryGrip(bool bIsLeftHand)
 {
@@ -691,31 +914,44 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
     Hand.State = EHandState::Gripping;
     Hand.CurrentGrip = GripInfo;
     Hand.GrippedActor = nullptr;
-
-    // 6. SourceActor 체크 (Constraint 설정 전!)
-    // GripFinder가 특수 climbable actor(플랫폼, 앵커 등)를 찾은 경우
-    if (IsValid(GripInfo.SourceActor))
-    {
-        Hand.GrippedActor = GripInfo.SourceActor;
-
-        if (AFlyingPlatform* Platform = Cast<AFlyingPlatform>(GripInfo.SourceActor))
-        {
-            Platform->OnPlayerGrab(this);
-            UE_LOG(LogDownFall, Log, TEXT("Grabbed Flying Platform: %s"), *Platform->GetName());
-        }
-
-        // 동적 Constraint 설정
-        SetupConstraintToActor(Constraint, GripInfo.SourceActor, GripInfo.WorldLocation);
-    }
-    else
-    {
-        // 7. 일반 지형 Constraint 설정
-        SetupConstraint(Constraint, GripInfo.WorldLocation);
-    }
-
     Hand.GripStartTime = GetWorld()->GetTimeSeconds();
 
-    // 8. 물리 모드 전환 (첫 Grip인 경우)
+    // 6. 그립 종류별 처리
+    switch (GripInfo.GripKind)
+    {
+    case EGripKind::Anchor:
+        // 앵커도 월드 고정점처럼 Constraint를 건다.
+        // 다만 locomotion은 잠그지 않고, Anchor 보조점으로 등록한다.
+        SetupConstraint(Constraint, GripInfo.WorldLocation);
+        EnterAnchorGrip(bIsLeftHand, GripInfo);
+        break;
+
+    case EGripKind::DynamicActor:
+    {
+        if (AFlyingPlatform* Platform = Cast<AFlyingPlatform>(GripInfo.SourceActor))
+        {
+            Hand.GrippedActor = Platform;
+
+            Platform->OnPlayerGrab(this);
+            UE_LOG(LogDownFall, Log, TEXT("Grabbed Flying Platform: %s"), *Platform->GetName());
+
+            SetupConstraintToActor(Constraint, Platform, GripInfo.WorldLocation);
+        }
+        else
+        {
+            // 안전 fallback
+            SetupConstraint(Constraint, GripInfo.WorldLocation);
+        }
+        break;
+    }
+
+    case EGripKind::Surface:
+    default:
+        SetupConstraint(Constraint, GripInfo.WorldLocation);
+        break;
+    }
+
+    // 7. 물리 모드 전환 (첫 Grip인 경우)
     if (bWasBothHandsFree)
     {
         GetCapsuleComponent()->SetSimulatePhysics(true);
@@ -724,11 +960,15 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
         UE_LOG(LogDownFall, Log, TEXT("Physics mode activated"));
     }
 
+    // 8. 등반 상태 업데이트
+    UpdateClimbingState();
+
     // 9. 이벤트 발생
     OnHandGripped(bIsLeftHand, GripInfo);
 
-    UE_LOG(LogDownFall, Log, TEXT("%s hand gripped: Angle=%.1f°, Quality=%.2f"),
+    UE_LOG(LogDownFall, Log, TEXT("%s hand gripped: Kind=%d Angle=%.1f°, Quality=%.2f"),
         bIsLeftHand ? TEXT("Left") : TEXT("Right"),
+        static_cast<int32>(GripInfo.GripKind),
         GripInfo.SurfaceAngleDegrees,
         GripInfo.GripQuality);
 }
@@ -743,6 +983,13 @@ void ADownfallCharacter::ReleaseGrip(bool bIsLeftHand)
         return;
     }
 
+    // 1. 앵커 상태 해제
+    if (Hand.CurrentGrip.GripKind == EGripKind::Anchor)
+    {
+        ExitAnchorGrip(bIsLeftHand);
+    }
+
+    // 2. 동적 액터 해제
     if (Hand.GrippedActor)
     {
         if (AFlyingPlatform* Platform = Cast<AFlyingPlatform>(Hand.GrippedActor))
@@ -750,15 +997,19 @@ void ADownfallCharacter::ReleaseGrip(bool bIsLeftHand)
             Platform->OnPlayerRelease();
             UE_LOG(LogDownFall, Log, TEXT("Released Flying Platform: %s"), *Platform->GetName());
         }
+
         Hand.GrippedActor = nullptr;
     }
 
-    // Constraint 해제
+    // 3. Constraint 해제
     BreakConstraint(Constraint);
 
-    // 상태 업데이트
+    // 4. 상태 업데이트
     Hand.State = EHandState::Free;
     Hand.CurrentGrip = FGripPointInfo();
+
+    // 5. 등반 상태 업데이트
+    UpdateClimbingState();
 
     UE_LOG(LogDownFall, Log, TEXT("%s hand released"), bIsLeftHand ? TEXT("Left") : TEXT("Right"));
 }
@@ -977,24 +1228,51 @@ void ADownfallCharacter::UpdateClimbingState()
     bool bWasClimbing = bIsClimbing;
     bIsClimbing = (LeftHand.State == EHandState::Gripping || RightHand.State == EHandState::Gripping);
 
+    // 현재 grip 조합 요약
+    if (bIsClimbing)
+    {
+        if (HasDynamicGrip())
+        {
+            GripMode = EGripMode::DynamicGrip;
+        }
+        else if (HasAnchorGrip() && !HasSurfaceGrip())
+        {
+            GripMode = EGripMode::AnchorGrip;
+        }
+        else
+        {
+            // Surface만 있거나, Surface + Anchor 혼합이면
+            // locomotion은 surface 계열로 본다
+            GripMode = EGripMode::SurfaceGrip;
+        }
+    }
+
     // 양손 모두 놓았을 때
     if (bWasClimbing && !bIsClimbing)
     {
+        GripMode = EGripMode::None;
+
+        bAnchorGripLeftHand = false;
+        bAnchorGripRightHand = false;
+        CurrentAnchorActor = nullptr;
+        CurrentAnchorPointWorld = FVector::ZeroVector;
+        CurrentAnchorNormal = FVector::UpVector;
+
         GetCapsuleComponent()->SetSimulatePhysics(false);
-        
+
         // Rotation 초기화
         FRotator CurrentRotation = GetActorRotation();
         FRotator UpRightRotation = FRotator(0.0f, CurrentRotation.Yaw, 0.0f);
         SetActorRotation(UpRightRotation);
-        
+
         // 바닥에 서있는지 체크
         FHitResult Hit;
         FVector Start = GetActorLocation();
-        FVector End = Start - FVector(0, 0, 100.0f); // 100cm 아래 체크
-        
+        FVector End = Start - FVector(0, 0, 100.0f);
+
         FCollisionQueryParams QueryParams;
         QueryParams.AddIgnoredActor(this);
-        
+
         bool bHitGround = GetWorld()->SweepSingleByChannel(
             Hit,
             Start,
@@ -1004,34 +1282,29 @@ void ADownfallCharacter::UpdateClimbingState()
             FCollisionShape::MakeSphere(GetCapsuleComponent()->GetScaledCapsuleRadius()),
             QueryParams
         );
-        
+
         if (bHitGround)
         {
-            // 경사 체크
             float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(Hit.ImpactNormal.Z));
             float WalkableSlope = GetCharacterMovement()->GetWalkableFloorAngle();
-            
+
             if (SlopeAngle <= WalkableSlope)
             {
-                // 걸을 수 있는 바닥 → 즉시 Walking 모드
-                // Velocity 초기화
                 GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
                 GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
                 GetCharacterMovement()->Velocity = FVector::ZeroVector;
-                
+
                 GetCharacterMovement()->SetMovementMode(MOVE_Walking);
                 UE_LOG(LogDownFall, Log, TEXT("Released on ground - Walking mode"));
             }
             else
             {
-                // 가파른 경사 → Falling
                 GetCharacterMovement()->SetMovementMode(MOVE_Falling);
                 UE_LOG(LogDownFall, Log, TEXT("Released on steep slope - Falling"));
             }
         }
         else
         {
-            // 공중 → Falling
             GetCharacterMovement()->SetMovementMode(MOVE_Falling);
             UE_LOG(LogDownFall, Log, TEXT("Released in air - Falling"));
         }
