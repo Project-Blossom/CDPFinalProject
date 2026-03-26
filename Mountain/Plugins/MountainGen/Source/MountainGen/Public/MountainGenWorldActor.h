@@ -8,6 +8,7 @@
 
 class UProceduralMeshComponent;
 class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 struct FMGMetrics;
 
@@ -78,9 +79,32 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug", meta = (ClampMin = "1", ClampMax = "200"))
     int32 DebugPrintEveryNAttempt = 10;
 
+    // ---------- Material : Snow / Rock Auto Blend ----------
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")
+    float SnowSlopeMinZ = 0.35f;   // 이 값 이하부터 바위 비율 증가
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")
+    float SnowSlopeMaxZ = 0.75f;   // 이 값 이상이면 눈 비율 증가
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")
+    float OverhangMaxZ = -0.15f;   // 이 값 이하(아래를 보는 면)는 강제 바위
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock", meta = (ClampMin = "0.0"))
+    float SnowNoiseScale = 0.0008f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock", meta = (ClampMin = "0.0"))
+    float SnowNoiseStrength = 0.20f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")
+    float SnowHeightStartCm = 5000.0f;   // 이 높이부터 눈 증가
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")
+    float SnowHeightEndCm = 18000.0f;    // 이 높이쯤 거의 눈
+
 private:
     void BuildChunkAndMesh();
     void UI_Status(const FString& Msg, float Seconds = 2.0f, FColor Color = FColor::Cyan) const;
+    void ApplyVoxelMaterialParameters();
 
     static FString MakeMetricsLine(
         const FMountainGenSettings& S,
@@ -100,6 +124,9 @@ private:
     FMGAsyncResult PendingResult;
 
     TArray<FLinearColor> ReusableColors;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> VoxelMID = nullptr;
 
 #if WITH_EDITOR
     FTimerHandle EditorRegenTimer;

@@ -3,6 +3,7 @@
 #include "ProceduralMeshComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/Engine.h"
 #include "HAL/PlatformTime.h"
 
@@ -315,6 +316,33 @@ void AMountainGenWorldActor::UI_Status(const FString& Msg, float Seconds, FColor
         GEngine->AddOnScreenDebugMessage(-1, Seconds, Color, Msg);
 }
 
+void AMountainGenWorldActor::ApplyVoxelMaterialParameters()
+{
+    if (!ProcMesh || !VoxelMaterial)
+        return;
+
+    if (!VoxelMID || VoxelMID->Parent != VoxelMaterial)
+    {
+        VoxelMID = UMaterialInstanceDynamic::Create(VoxelMaterial, this);
+    }
+
+    if (!VoxelMID)
+    {
+        ProcMesh->SetMaterial(0, VoxelMaterial);
+        return;
+    }
+
+    VoxelMID->SetScalarParameterValue(TEXT("SnowSlopeMinZ"), SnowSlopeMinZ);
+    VoxelMID->SetScalarParameterValue(TEXT("SnowSlopeMaxZ"), SnowSlopeMaxZ);
+    VoxelMID->SetScalarParameterValue(TEXT("OverhangMaxZ"), OverhangMaxZ);
+    VoxelMID->SetScalarParameterValue(TEXT("SnowNoiseScale"), SnowNoiseScale);
+    VoxelMID->SetScalarParameterValue(TEXT("SnowNoiseStrength"), SnowNoiseStrength);
+    VoxelMID->SetScalarParameterValue(TEXT("SnowHeightStartCm"), SnowHeightStartCm);
+    VoxelMID->SetScalarParameterValue(TEXT("SnowHeightEndCm"), SnowHeightEndCm);
+
+    ProcMesh->SetMaterial(0, VoxelMID);
+}
+
 static bool MG_InRange(float V, float Min, float Max)
 {
     return (V >= Min && V <= Max);
@@ -484,8 +512,7 @@ void AMountainGenWorldActor::Tick(float DeltaSeconds)
         Result.FinalSettings.bCreateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision
     );
 
-    if (VoxelMaterial)
-        ProcMesh->SetMaterial(0, VoxelMaterial);
+    ApplyVoxelMaterialParameters();
 
     Settings.Seed = Result.FinalSettings.Seed;
 
@@ -822,8 +849,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             S.bCreateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision
         );
 
-        if (VoxelMaterial)
-            ProcMesh->SetMaterial(0, VoxelMaterial);
+        ApplyVoxelMaterialParameters();
 
         Settings.Seed = S.Seed;
 
@@ -834,8 +860,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     }
 
     // =========================================================
- // (B) Runtime: 비동기
- // =========================================================
+    // (B) Runtime: 비동기
+    // =========================================================
     if (bAsyncWorking)
     {
         bRegenQueued = true;
