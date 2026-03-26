@@ -21,6 +21,9 @@ public:
     void OnLoadGameClicked();
 
     UFUNCTION(BlueprintCallable, Category = "Main Menu")
+    void OnFreeRunClicked();
+
+    UFUNCTION(BlueprintCallable, Category = "Main Menu")
     void OnSettingsClicked();
 
     UFUNCTION(BlueprintCallable, Category = "Main Menu")
@@ -37,6 +40,9 @@ protected:
     class UButton* LoadGameButton;
 
     UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    class UButton* FreeRunButton;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
     class UButton* SettingsButton;
 
     UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
@@ -50,12 +56,19 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Main Menu")
     FName SettingsLevel = FName("Settings");
 
+    // FreeRun Setup 레벨
+    UPROPERTY(EditDefaultsOnly, Category = "Main Menu")
+    FName FreeRunSetupLevel = FName("FreeRunSetup");
+
 private:
     UFUNCTION()
     void HandleNewGameClicked();
 
     UFUNCTION()
     void HandleLoadGameClicked();
+
+    UFUNCTION()
+    void HandleFreeRunClicked();
 
     UFUNCTION()
     void HandleSettingsClicked();

@@ -18,6 +18,11 @@ void UMainMenuWidget::NativeConstruct()
     {
         LoadGameButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleLoadGameClicked);
     }
+    
+    if (FreeRunButton)
+    {
+        FreeRunButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleFreeRunClicked);
+    }
 
     if (SettingsButton)
     {
@@ -48,6 +53,11 @@ void UMainMenuWidget::OnNewGameClicked()
 void UMainMenuWidget::OnLoadGameClicked()
 {
     HandleLoadGameClicked();
+}
+
+void UMainMenuWidget::OnFreeRunClicked()
+{
+    HandleFreeRunClicked();
 }
 
 void UMainMenuWidget::OnSettingsClicked()
@@ -108,4 +118,10 @@ void UMainMenuWidget::HandleQuitClicked()
     {
         UKismetSystemLibrary::QuitGame(this, PC, EQuitPreference::Quit, false);
     }
+}
+
+void UMainMenuWidget::HandleFreeRunClicked()
+{
+    UE_LOG(LogTemp, Warning, TEXT("FreeRun clicked - Opening FreeRun Setup"));
+    UGameplayStatics::OpenLevel(this, FreeRunSetupLevel);
 }
