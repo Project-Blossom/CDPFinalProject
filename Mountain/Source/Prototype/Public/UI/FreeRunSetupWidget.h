@@ -91,6 +91,9 @@ private:
     UFUNCTION()
     void HandleBackClicked();
 
+    UFUNCTION()
+    void HandleSeedTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+
     // UI 업데이트
     void UpdateDifficultyUI();
 };

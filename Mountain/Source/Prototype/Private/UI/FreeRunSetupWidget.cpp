@@ -39,6 +39,12 @@ void UFreeRunSetupWidget::NativeConstruct()
         BackButton->OnClicked.AddDynamic(this, &UFreeRunSetupWidget::HandleBackClicked);
     }
 
+    // Seed TextBox 커밋 이벤트 바인딩 (엔터 키 입력 시)
+    if (SeedTextBox)
+    {
+        SeedTextBox->OnTextCommitted.AddDynamic(this, &UFreeRunSetupWidget::HandleSeedTextCommitted);
+    }
+
     // Input Mode 설정
     APlayerController* PC = GetOwningPlayer();
     if (PC)
@@ -52,10 +58,10 @@ void UFreeRunSetupWidget::NativeConstruct()
     // 초기 Difficulty 표시
     UpdateDifficultyUI();
 
-    // 랜덤 Seed 생성
+    // 랜덤 Seed 생성 (1 ~ INT32_MAX)
     if (SeedTextBox)
     {
-        int32 RandomSeed = FMath::Rand();
+        int32 RandomSeed = FMath::RandRange(1, INT32_MAX);
         SeedTextBox->SetText(FText::AsNumber(RandomSeed));
     }
 }
@@ -116,8 +122,8 @@ void UFreeRunSetupWidget::HandleRandomSeedClicked()
     if (!SeedTextBox)
         return;
 
-    // 새로운 랜덤 Seed 생성
-    int32 RandomSeed = FMath::Rand();
+    // 새로운 랜덤 Seed 생성 (1 ~ INT32_MAX)
+    int32 RandomSeed = FMath::RandRange(1, INT32_MAX);
     SeedTextBox->SetText(FText::AsNumber(RandomSeed));
 
     UE_LOG(LogTemp, Log, TEXT("Random Seed generated: %d"), RandomSeed);
@@ -135,16 +141,10 @@ void UFreeRunSetupWidget::HandleGenerateClicked()
     FString SeedString = SeedTextBox->GetText().ToString();
     int32 Seed = FCString::Atoi(*SeedString);
 
-    // GameInstance에 Seed와 Difficulty 저장
-    UGameInstance* GI = GetGameInstance();
-    if (GI)
-    {
-        // GameInstance에 Seed와 Difficulty 저장
-        // TODO: GameInstance에 변수 추가 필요
-        GI->GetWorld()->GetAuthGameMode();
-        
-        UE_LOG(LogTemp, Warning, TEXT("FreeRun Setup - Seed: %d, Difficulty: %d"), Seed, SelectedDifficulty);
-    }
+    // Seed 보정 (MountainGen 규칙: 최소값 1)
+    Seed = FMath::Max(1, Seed);
+
+    UE_LOG(LogTemp, Warning, TEXT("FreeRun Setup - Seed: %d (corrected), Difficulty: %d"), Seed, SelectedDifficulty);
 
     // FreeRun 레벨로 이동 (Seed와 Difficulty를 URL 파라미터로 전달)
     FString LevelURL = FString::Printf(TEXT("%s?Seed=%d&Difficulty=%d"), 
@@ -157,6 +157,39 @@ void UFreeRunSetupWidget::HandleBackClicked()
 {
     UE_LOG(LogTemp, Log, TEXT("Back to Main Menu"));
     UGameplayStatics::OpenLevel(this, MainMenuLevel);
+}
+
+void UFreeRunSetupWidget::HandleSeedTextCommitted(const FText& Text, ETextCommit::Type CommitMethod)
+{
+    // 엔터 키로 커밋된 경우에만 보정
+    if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+        return;
+
+    if (!SeedTextBox)
+        return;
+
+    FString SeedString = Text.ToString();
+    
+    // 빈 문자열이면 기본값 1로 설정
+    if (SeedString.IsEmpty())
+    {
+        SeedTextBox->SetText(FText::AsNumber(1));
+        UE_LOG(LogTemp, Log, TEXT("Empty seed auto-corrected to: 1"));
+        return;
+    }
+
+    // 숫자로 변환
+    int32 Seed = FCString::Atoi(*SeedString);
+
+    // Seed 보정 (MountainGen 규칙: 최소값 1)
+    int32 CorrectedSeed = FMath::Max(1, Seed);
+
+    // 입력값과 보정값이 다르면 자동 보정
+    if (Seed != CorrectedSeed)
+    {
+        SeedTextBox->SetText(FText::AsNumber(CorrectedSeed));
+        UE_LOG(LogTemp, Log, TEXT("Seed auto-corrected: %d -> %d"), Seed, CorrectedSeed);
+    }
 }
 
 void UFreeRunSetupWidget::UpdateDifficultyUI()

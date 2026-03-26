@@ -88,8 +88,19 @@ void AFreeRunGameMode::ApplyMountainSettings(int32 Seed, int32 Difficulty)
             break;
     }
 
-    // 지형 재생성 (MountainGenWorldActor에 Regenerate 함수가 있다면)
-    // MountainActor->Regenerate();
+    // 지형 재생성 시도
+    // Method 1: Blueprint Callable 함수가 있는 경우
+    if (MountainActor->GetClass()->FindFunctionByName(FName("Regenerate")))
+    {
+        MountainActor->ProcessEvent(MountainActor->GetClass()->FindFunctionByName(FName("Regenerate")), nullptr);
+        UE_LOG(LogTemp, Warning, TEXT("Mountain regenerated via Regenerate()"));
+    }
+    // Method 2: MarkComponentsRenderStateDirty (강제 재렌더링)
+    else
+    {
+        MountainActor->MarkComponentsRenderStateDirty();
+        UE_LOG(LogTemp, Warning, TEXT("Mountain components marked for re-rendering"));
+    }
     
     UE_LOG(LogTemp, Warning, TEXT("Mountain settings applied successfully!"));
 }
