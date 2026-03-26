@@ -24,6 +24,7 @@
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
 #include "UI/AltitudeWidget.h"
+#include "UI/PauseMenuWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "MountainGenWorldActor.h"
 #include "MountainGenSettings.h"
@@ -365,6 +366,11 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         if (IsValid(ToggleInventoryAction))
         {
             EIC->BindAction(ToggleInventoryAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnToggleInventoryTriggered);
+        }
+        
+        if (IsValid(PauseAction))
+        {
+            EIC->BindAction(PauseAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnPauseTriggered);
         }
     }
 }
@@ -2061,4 +2067,35 @@ void ADownfallCharacter::UpdateHandShake(USkeletalMeshComponent* HandMesh, float
         HandMesh->SetRelativeLocation(CurrentLocation + ShakeOffset * 0.1f);
     }
     // 스태미나 25% 이상일 때는 아무것도 안 함 (UpdateHandPositions가 정상 작동)
+}
+
+void ADownfallCharacter::OnPauseTriggered(const FInputActionValue& Value)
+{
+    // 이미 일시정지 중이면 무시
+    if (UGameplayStatics::IsGamePaused(GetWorld()))
+    {
+        return;
+    }
+
+    if (!PauseMenuWidgetClass)
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("PauseMenuWidgetClass not set!"));
+        return;
+    }
+
+    APlayerController* PC = GetWorld()->GetFirstPlayerController();
+    if (!PC)
+        return;
+
+    // Pause Widget 생성
+    PauseMenuWidget = CreateWidget<UPauseMenuWidget>(PC, PauseMenuWidgetClass);
+    if (PauseMenuWidget)
+    {
+        PauseMenuWidget->AddToViewport(100);  // 최상위
+        
+        // 게임 일시정지
+        UGameplayStatics::SetGamePaused(GetWorld(), true);
+        
+        UE_LOG(LogDownFall, Warning, TEXT("Game Paused"));
+    }
 }

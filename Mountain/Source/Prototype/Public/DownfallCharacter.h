@@ -135,6 +135,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> ToggleInventoryAction;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr<UInputAction> PauseAction;
+
     // Settings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physics")
     float GripStrength = 3000.0f; // Constraint 당기는 힘 
@@ -326,6 +329,13 @@ public:
     UPROPERTY()
     TObjectPtr<UAltitudeWidget> AltitudeWidget;
 
+    // Pause Menu
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Pause")
+    TSubclassOf<class UPauseMenuWidget> PauseMenuWidgetClass;
+
+    UPROPERTY()
+    TObjectPtr<UPauseMenuWidget> PauseMenuWidget;
+
     // Hand
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hands|Mesh")
     TObjectPtr<USkeletalMeshComponent> LeftHandMesh;
@@ -368,6 +378,7 @@ protected:
     void OnJumpCompleted(const FInputActionValue& Value);
     void OnUseItemTriggered(const FInputActionValue& Value);
     void OnToggleInventoryTriggered(const FInputActionValue& Value);
+    void OnPauseTriggered(const FInputActionValue& Value);
 
     // Debug
     void OnDebugInsanity(const FInputActionValue& Value);
