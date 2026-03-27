@@ -30,6 +30,9 @@ public:
     void OnGenerateClicked();
 
     UFUNCTION(BlueprintCallable, Category = "FreeRun Setup")
+    void OnStartClicked();
+
+    UFUNCTION(BlueprintCallable, Category = "FreeRun Setup")
     void OnBackClicked();
 
 protected:
@@ -55,6 +58,9 @@ protected:
     class UButton* GenerateButton;
 
     UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    class UButton* StartButton;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
     class UButton* BackButton;
 
     // 선택된 Difficulty 표시
@@ -67,6 +73,10 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, Category = "FreeRun Setup")
     FName FreeRunLevel = FName("FreeRun");
+
+    // 미리보기 관련
+    UPROPERTY()
+    TObjectPtr<class AMountainGenWorldActor> PreviewMountain;
 
 private:
     // 현재 선택된 Difficulty (0=Easy, 1=Normal, 2=Hard)
@@ -89,11 +99,22 @@ private:
     void HandleGenerateClicked();
 
     UFUNCTION()
+    void HandleStartClicked();
+
+    UFUNCTION()
     void HandleBackClicked();
 
     UFUNCTION()
     void HandleSeedTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
+    // 미리보기 관련
+    void FindPreviewMountain();
+    void UpdatePreview(int32 Seed, int32 Difficulty);
+    void UpdateSeedFromPreview();
+
     // UI 업데이트
     void UpdateDifficultyUI();
+
+    // Timer 관련
+    FTimerHandle SeedUpdateTimerHandle;
 };

@@ -14,6 +14,14 @@ void AFreeRunGameMode::BeginPlay()
 {
     Super::BeginPlay();
 
+    // ViewMode를 Lit으로 복원 (FreeRunSetup에서 Wireframe이었으므로)
+    APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+    if (PC)
+    {
+        PC->ConsoleCommand(TEXT("viewmode lit"));
+        UE_LOG(LogTemp, Warning, TEXT("FreeRun - ViewMode set to Lit"));
+    }
+
     // URL 파라미터 파싱
     ParseURLParameters();
 
@@ -24,27 +32,47 @@ void AFreeRunGameMode::BeginPlay()
 void AFreeRunGameMode::ParseURLParameters()
 {
     // URL 옵션 문자열 가져오기 (GameModeBase의 OptionsString 멤버 변수 사용)
-    UE_LOG(LogTemp, Warning, TEXT("FreeRun URL Options: %s"), *OptionsString);
+    UE_LOG(LogTemp, Warning, TEXT("========================================"));
+    UE_LOG(LogTemp, Warning, TEXT("FreeRun - Parsing URL Parameters"));
+    UE_LOG(LogTemp, Warning, TEXT("  Full URL Options: '%s'"), *OptionsString);
 
-    // Seed 파라미터 파싱
-    FString SeedString = UGameplayStatics::ParseOption(OptionsString, TEXT("Seed"));
-    if (!SeedString.IsEmpty())
-    {
-        ParsedSeed = FCString::Atoi(*SeedString);
-        UE_LOG(LogTemp, Warning, TEXT("Parsed Seed: %d"), ParsedSeed);
-    }
+    // 수동 파싱 (UGameplayStatics::ParseOption이 제대로 작동하지 않는 경우 대비)
+    TArray<FString> Params;
+    OptionsString.ParseIntoArray(Params, TEXT("&"), true);
 
-    // Difficulty 파라미터 파싱
-    FString DifficultyString = UGameplayStatics::ParseOption(OptionsString, TEXT("Difficulty"));
-    if (!DifficultyString.IsEmpty())
+    for (const FString& Param : Params)
     {
-        ParsedDifficulty = FCString::Atoi(*DifficultyString);
-        UE_LOG(LogTemp, Warning, TEXT("Parsed Difficulty: %d"), ParsedDifficulty);
+        FString Key, Value;
+        if (Param.Split(TEXT("="), &Key, &Value))
+        {
+            // ? 제거
+            Key = Key.Replace(TEXT("?"), TEXT(""));
+            
+            UE_LOG(LogTemp, Log, TEXT("  Parsing: '%s' = '%s'"), *Key, *Value);
+
+            if (Key.Equals(TEXT("Seed"), ESearchCase::IgnoreCase))
+            {
+                ParsedSeed = FCString::Atoi(*Value);
+                UE_LOG(LogTemp, Warning, TEXT("  ✓ Parsed Seed: %d"), ParsedSeed);
+            }
+            else if (Key.Equals(TEXT("Difficulty"), ESearchCase::IgnoreCase))
+            {
+                ParsedDifficulty = FCString::Atoi(*Value);
+                UE_LOG(LogTemp, Warning, TEXT("  ✓ Parsed Difficulty: %d"), ParsedDifficulty);
+            }
+        }
     }
+    
+    UE_LOG(LogTemp, Warning, TEXT("========================================"));
 }
 
 void AFreeRunGameMode::ApplyMountainSettings(int32 Seed, int32 Difficulty)
 {
+    UE_LOG(LogTemp, Warning, TEXT("========================================"));
+    UE_LOG(LogTemp, Warning, TEXT("FreeRun - Applying Mountain Settings"));
+    UE_LOG(LogTemp, Warning, TEXT("  Input Seed: %d"), Seed);
+    UE_LOG(LogTemp, Warning, TEXT("  Input Difficulty: %d"), Difficulty);
+
     // MountainGenWorldActor 찾기
     AMountainGenWorldActor* MountainActor = nullptr;
     
@@ -56,51 +84,49 @@ void AFreeRunGameMode::ApplyMountainSettings(int32 Seed, int32 Difficulty)
 
     if (!MountainActor)
     {
-        UE_LOG(LogTemp, Error, TEXT("MountainGenWorldActor not found in FreeRun level!"));
+        UE_LOG(LogTemp, Error, TEXT("  ✗ MountainGenWorldActor not found in FreeRun level!"));
+        UE_LOG(LogTemp, Warning, TEXT("========================================"));
         return;
     }
 
+    UE_LOG(LogTemp, Warning, TEXT("  ✓ MountainGenWorldActor found: %s"), *MountainActor->GetName());
+
     // Seed 적용
     MountainActor->Settings.Seed = Seed;
-    UE_LOG(LogTemp, Warning, TEXT("Applied Seed: %d"), Seed);
+    UE_LOG(LogTemp, Warning, TEXT("  ✓ Applied Seed: %d"), Seed);
 
     // Difficulty 적용 (0=Easy, 1=Normal, 2=Hard)
     switch (Difficulty)
     {
         case 0: // Easy
             MountainActor->Settings.Difficulty = EMountainGenDifficulty::Easy;
-            UE_LOG(LogTemp, Warning, TEXT("Applied Difficulty: Easy"));
+            UE_LOG(LogTemp, Warning, TEXT("  ✓ Applied Difficulty: Easy (0)"));
             break;
 
         case 1: // Normal
             MountainActor->Settings.Difficulty = EMountainGenDifficulty::Normal;
-            UE_LOG(LogTemp, Warning, TEXT("Applied Difficulty: Normal"));
+            UE_LOG(LogTemp, Warning, TEXT("  ✓ Applied Difficulty: Normal (1)"));
             break;
 
         case 2: // Hard
             MountainActor->Settings.Difficulty = EMountainGenDifficulty::Hard;
-            UE_LOG(LogTemp, Warning, TEXT("Applied Difficulty: Hard"));
+            UE_LOG(LogTemp, Warning, TEXT("  ✓ Applied Difficulty: Hard (2)"));
             break;
 
         default:
             MountainActor->Settings.Difficulty = EMountainGenDifficulty::Normal;
-            UE_LOG(LogTemp, Warning, TEXT("Invalid Difficulty, defaulting to Normal"));
+            UE_LOG(LogTemp, Warning, TEXT("  ⚠ Invalid Difficulty (%d), defaulting to Normal"), Difficulty);
             break;
     }
 
-    // 지형 재생성 시도
-    // Method 1: Blueprint Callable 함수가 있는 경우
-    if (MountainActor->GetClass()->FindFunctionByName(FName("Regenerate")))
-    {
-        MountainActor->ProcessEvent(MountainActor->GetClass()->FindFunctionByName(FName("Regenerate")), nullptr);
-        UE_LOG(LogTemp, Warning, TEXT("Mountain regenerated via Regenerate()"));
-    }
-    // Method 2: MarkComponentsRenderStateDirty (강제 재렌더링)
-    else
-    {
-        MountainActor->MarkComponentsRenderStateDirty();
-        UE_LOG(LogTemp, Warning, TEXT("Mountain components marked for re-rendering"));
-    }
+    // 재생성 전 최종 확인
+    UE_LOG(LogTemp, Warning, TEXT("  Final Settings before Regenerate:"));
+    UE_LOG(LogTemp, Warning, TEXT("    - Settings.Seed: %d"), MountainActor->Settings.Seed);
+    UE_LOG(LogTemp, Warning, TEXT("    - Settings.Difficulty: %d"), (int32)MountainActor->Settings.Difficulty);
+
+    // 재생성 (핵심!)
+    MountainActor->Regenerate();
     
-    UE_LOG(LogTemp, Warning, TEXT("Mountain settings applied successfully!"));
+    UE_LOG(LogTemp, Warning, TEXT("  ✓ Regenerate() called!"));
+    UE_LOG(LogTemp, Warning, TEXT("========================================"));
 }

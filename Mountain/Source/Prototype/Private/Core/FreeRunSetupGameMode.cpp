@@ -13,9 +13,10 @@ void AFreeRunSetupGameMode::BeginPlay()
     Super::BeginPlay();
 
     // Widget 생성 및 표시
+    APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+    
     if (FreeRunSetupWidgetClass)
     {
-        APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
         if (PC)
         {
             FreeRunSetupWidgetInstance = CreateWidget<UFreeRunSetupWidget>(PC, FreeRunSetupWidgetClass);
@@ -29,5 +30,12 @@ void AFreeRunSetupGameMode::BeginPlay()
     else
     {
         UE_LOG(LogTemp, Error, TEXT("FreeRunSetupWidgetClass not set in FreeRunSetupGameMode!"));
+    }
+
+    // ViewMode를 Wireframe으로 설정
+    if (PC)
+    {
+        PC->ConsoleCommand(TEXT("viewmode wireframe"));
+        UE_LOG(LogTemp, Warning, TEXT("FreeRunSetup - ViewMode set to Wireframe"));
     }
 }
