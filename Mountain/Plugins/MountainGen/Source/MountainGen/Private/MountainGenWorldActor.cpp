@@ -337,8 +337,6 @@ void AMountainGenWorldActor::ApplyVoxelMaterialParameters()
     VoxelMID->SetScalarParameterValue(TEXT("OverhangMaxZ"), OverhangMaxZ);
     VoxelMID->SetScalarParameterValue(TEXT("SnowNoiseScale"), SnowNoiseScale);
     VoxelMID->SetScalarParameterValue(TEXT("SnowNoiseStrength"), SnowNoiseStrength);
-    VoxelMID->SetScalarParameterValue(TEXT("SnowHeightStartCm"), SnowHeightStartCm);
-    VoxelMID->SetScalarParameterValue(TEXT("SnowHeightEndCm"), SnowHeightEndCm);
 
     ProcMesh->SetMaterial(0, VoxelMID);
 }
