@@ -1751,6 +1751,14 @@ void ADownfallCharacter::UpdateLensDistortionEffect()
     {
         PostProcessComp->Settings.SceneFringeIntensity = CurrentChromaticAberration;
     }
+    
+    // FilmGrain 업데이트
+    CurrentFilmGrainIntensity = FMath::Lerp(BaseFilmGrainIntensity, MaxFilmGrainIntensity, InsanityNormalized);
+    
+    if (PostProcessComp)
+    {
+        PostProcessComp->Settings.FilmGrainIntensity = CurrentFilmGrainIntensity;
+    }
 }
 
 void ADownfallCharacter::UpdateVignetteEffect(float DeltaTime)
