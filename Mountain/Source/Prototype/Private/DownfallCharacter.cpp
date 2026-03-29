@@ -320,7 +320,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateLensDistortionEffect();
     UpdateVignetteEffect(DeltaTime);
     UpdateDirtMaskEffect();
-    UpdateEdgeBlurEffect(); // NEW!
+    UpdateEdgeBlurEffect();
     UpdateHandPositions(DeltaTime);
     UpdateAltitudeUI();
     UpdateHandStaminaVisuals(DeltaTime);
@@ -1275,6 +1275,9 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
 {
     if (Insanity > 0.0f)
     {
+        // 이전 Insanity 값 저장 (경계 체크용)
+        float PrevInsanity = Insanity;
+        
         // 혼란 상태일 때 (70 이상)
         if (Insanity >= InsanityThreshold)
         {
@@ -1285,6 +1288,21 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
         {
             // 정상 상태: 초당 0.1씩 감소
             Insanity = FMath::Max(0.0f, Insanity - InsanityDecayRate * DeltaTime);
+        }
+        
+        // Altitude Widget Glitch 모드 제어 (80 경계에서만 호출)
+        if (AltitudeWidget)
+        {
+            // 80을 넘어갈 때
+            if (PrevInsanity < 80.0f && Insanity >= 80.0f)
+            {
+                AltitudeWidget->EnableGlitchMode();
+            }
+            // 80 아래로 떨어질 때
+            else if (PrevInsanity >= 80.0f && Insanity < 80.0f)
+            {
+                AltitudeWidget->DisableGlitchMode();
+            }
         }
         
         UpdateInsanityEffects();
