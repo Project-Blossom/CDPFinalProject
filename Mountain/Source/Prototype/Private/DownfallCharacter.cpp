@@ -60,6 +60,8 @@ ADownfallCharacter::ADownfallCharacter()
     // Post Process Component (VFX용)
     PostProcessComp = CreateDefaultSubobject<UPostProcessComponent>(TEXT("PostProcessComp"));
     PostProcessComp->SetupAttachment(FirstPersonCamera);
+    PostProcessComp->Settings.bOverride_SceneFringeIntensity = true;
+    PostProcessComp->Settings.SceneFringeIntensity = BaseChromaticAberration;
     PostProcessComp->bEnabled = true;
     PostProcessComp->bUnbound = false;
     PostProcessComp->BlendWeight = 1.0f;
@@ -174,6 +176,24 @@ void ADownfallCharacter::BeginPlay()
         UE_LOG(LogDownFall, Warning, TEXT("GlitchMaterial not assigned - set in Blueprint"));
     }
     
+    // Lens Distortion Material 초기화
+    if (LensDistortionMaterial)
+    {
+        LensDistortionMaterialInstance = UMaterialInstanceDynamic::Create(LensDistortionMaterial, this);
+        if (LensDistortionMaterialInstance)
+        {
+            LensDistortionMaterialInstance->SetScalarParameterValue(FName("K1"), BaseK1);
+            LensDistortionMaterialInstance->SetScalarParameterValue(FName("K2"), K2);
+            PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, LensDistortionMaterialInstance));
+        
+            UE_LOG(LogTemp, Log, TEXT("Lens Distortion Material initialized"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("Lens Distortion Material not assigned - set in Blueprint"));
+    }
+    
     if (LeftHandMesh)
     {
         LeftHandMaterialInstance = LeftHandMesh->CreateDynamicMaterialInstance(0);
@@ -238,6 +258,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateGlitchEffect();
     UpdateGlitchPatternSwitch(DeltaTime);
     UpdateAttachDesaturation(DeltaTime);
+    UpdateLensDistortionEffect();
     UpdateHandPositions(DeltaTime);
     UpdateAltitudeUI();
     UpdateHandStaminaVisuals(DeltaTime);
@@ -1643,6 +1664,31 @@ float ADownfallCharacter::CalculateNextSwitchInterval() const
     
     // 최소 0.1초는 유지
     return FMath::Max(0.1f, BaseInterval + RandomVariation);
+}
+
+// Chromatic Aberration 포함
+void ADownfallCharacter::UpdateLensDistortionEffect()
+{
+    if (!LensDistortionMaterialInstance)
+        return;
+
+    // Insanity 0~100 범위를 0~1로 정규화
+    float InsanityNormalized = FMath::Clamp(Insanity / MaxInsanity, 0.0f, 1.0f);
+
+    // K1 값 계산: Insanity 증가 시 BaseK1에서 MaxK1로 변화
+    CurrentK1 = FMath::Lerp(BaseK1, MaxK1, InsanityNormalized);
+
+    // Material Parameter 업데이트
+    LensDistortionMaterialInstance->SetScalarParameterValue(FName("K1"), CurrentK1);
+    LensDistortionMaterialInstance->SetScalarParameterValue(FName("K2"), K2);
+
+    // Chromatic Aberration 업데이트
+    CurrentChromaticAberration = FMath::Lerp(BaseChromaticAberration, MaxChromaticAberration, InsanityNormalized);
+    
+    if (PostProcessComp)
+    {
+        PostProcessComp->Settings.SceneFringeIntensity = CurrentChromaticAberration;
+    }
 }
 
 void ADownfallCharacter::RefreshInventoryUIState()

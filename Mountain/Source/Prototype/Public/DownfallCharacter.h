@@ -299,6 +299,34 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "VFX|Glitch")
     float NextSwitchTime = 2.0f;
 
+    // Lens Distortion System (Material-based)
+    UPROPERTY(EditAnywhere, Category = "VFX|LensDistortion")
+    TObjectPtr<UMaterial> LensDistortionMaterial;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> LensDistortionMaterialInstance;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|LensDistortion")
+    float BaseK1 = 0.0f; // Insanity 0일 때 K1 값
+
+    UPROPERTY(EditAnywhere, Category = "VFX|LensDistortion")
+    float MaxK1 = -0.3f; // Insanity 100일 때 K1 값 (음수 = Barrel Distortion)
+
+    UPROPERTY(EditAnywhere, Category = "VFX|LensDistortion")
+    float K2 = 0.0f; // 2차 왜곡 계수 (고정값)
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|LensDistortion")
+    float CurrentK1 = 0.0f;
+    
+    UPROPERTY(EditAnywhere, Category = "VFX|ChromaticAberration")
+    float BaseChromaticAberration = 0.0f; // Insanity 0일 때
+
+    UPROPERTY(EditAnywhere, Category = "VFX|ChromaticAberration")
+    float MaxChromaticAberration = 5.0f; // Insanity 100일 때
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|ChromaticAberration")
+    float CurrentChromaticAberration = 0.0f;
+
     // Attach Desaturation VFX
     UPROPERTY(EditAnywhere, Category = "VFX")
     TObjectPtr<UMaterial> AttachDesaturationMaterial;
@@ -432,6 +460,7 @@ protected:
 private:
     void UpdateGlitchEffect();
     void UpdateGlitchPatternSwitch(float DeltaTime);
+    void UpdateLensDistortionEffect();
     float CalculateNextSwitchInterval() const;
     void ApplyClimbingMappingContext();
     void UpdateAltitudeUI();
