@@ -194,6 +194,20 @@ void ADownfallCharacter::BeginPlay()
         UE_LOG(LogDownFall, Warning, TEXT("Lens Distortion Material not assigned - set in Blueprint"));
     }
     
+    if (VignetteMaterial)
+    {
+        VignetteMaterialInstance = UMaterialInstanceDynamic::Create(VignetteMaterial, this);
+        if (VignetteMaterialInstance)
+        {
+            VignetteMaterialInstance->SetScalarParameterValue(FName("GradientStart"), VignetteGradientStart);
+            VignetteMaterialInstance->SetScalarParameterValue(FName("GradientEnd"), VignetteGradientEnd);
+            VignetteMaterialInstance->SetVectorParameterValue(FName("VignetteOffset"), FLinearColor(0, 0, 0));
+            PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, VignetteMaterialInstance));
+        
+            UE_LOG(LogTemp, Log, TEXT("Vignette Material initialized"));
+        }
+    }
+    
     if (LeftHandMesh)
     {
         LeftHandMaterialInstance = LeftHandMesh->CreateDynamicMaterialInstance(0);
@@ -259,6 +273,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateGlitchPatternSwitch(DeltaTime);
     UpdateAttachDesaturation(DeltaTime);
     UpdateLensDistortionEffect();
+    UpdateVignetteEffect(DeltaTime);
     UpdateHandPositions(DeltaTime);
     UpdateAltitudeUI();
     UpdateHandStaminaVisuals(DeltaTime);
@@ -1689,6 +1704,38 @@ void ADownfallCharacter::UpdateLensDistortionEffect()
     {
         PostProcessComp->Settings.SceneFringeIntensity = CurrentChromaticAberration;
     }
+}
+
+void ADownfallCharacter::UpdateVignetteEffect(float DeltaTime)
+{
+    if (!VignetteMaterialInstance || !FirstPersonCamera)
+        return;
+
+    // 카메라의 회전 속도 계산 (Pitch, Yaw)
+    FRotator CameraRotation = FirstPersonCamera->GetComponentRotation();
+    
+    // 이전 프레임과의 회전 차이 계산
+    static FRotator LastRotation = CameraRotation;
+    FRotator RotationDelta = CameraRotation - LastRotation;
+    LastRotation = CameraRotation;
+
+    // 회전 속도에 비례한 오프셋 계산
+    float PitchOffset = RotationDelta.Pitch * VignetteShiftAmount * DeltaTime;
+    float YawOffset = RotationDelta.Yaw * VignetteShiftAmount * DeltaTime;
+
+    // 오프셋 누적 (부드럽게 감쇠)
+    CurrentVignetteOffset.X = FMath::FInterpTo(CurrentVignetteOffset.X, YawOffset, DeltaTime, 5.0f);
+    CurrentVignetteOffset.Y = FMath::FInterpTo(CurrentVignetteOffset.Y, -PitchOffset, DeltaTime, 5.0f);
+
+    // 오프셋 제한 (-0.1 ~ 0.1)
+    CurrentVignetteOffset.X = FMath::Clamp(CurrentVignetteOffset.X, -0.1f, 0.1f);
+    CurrentVignetteOffset.Y = FMath::Clamp(CurrentVignetteOffset.Y, -0.1f, 0.1f);
+
+    // Material Parameter 업데이트
+    VignetteMaterialInstance->SetVectorParameterValue(
+        FName("VignetteOffset"), 
+        FLinearColor(CurrentVignetteOffset.X, CurrentVignetteOffset.Y, 0.0f)
+    );
 }
 
 void ADownfallCharacter::RefreshInventoryUIState()

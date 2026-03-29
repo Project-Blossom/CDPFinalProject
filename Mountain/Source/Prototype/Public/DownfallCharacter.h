@@ -326,6 +326,24 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "VFX|ChromaticAberration")
     float CurrentChromaticAberration = 0.0f;
+    
+    UPROPERTY(EditAnywhere, Category = "VFX|Vignette")
+    TObjectPtr<UMaterial> VignetteMaterial;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> VignetteMaterialInstance;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|Vignette")
+    float VignetteGradientStart = 0.9f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|Vignette")
+    float VignetteGradientEnd = 0.93f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|Vignette")
+    float VignetteShiftAmount = 0.05f; // 카메라 움직임에 따른 이동 강도
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|Vignette")
+    FVector2D CurrentVignetteOffset = FVector2D::ZeroVector;
 
     // Attach Desaturation VFX
     UPROPERTY(EditAnywhere, Category = "VFX")
@@ -461,6 +479,7 @@ private:
     void UpdateGlitchEffect();
     void UpdateGlitchPatternSwitch(float DeltaTime);
     void UpdateLensDistortionEffect();
+    void UpdateVignetteEffect(float DeltaTime);
     float CalculateNextSwitchInterval() const;
     void ApplyClimbingMappingContext();
     void UpdateAltitudeUI();
