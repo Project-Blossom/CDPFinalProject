@@ -62,6 +62,8 @@ ADownfallCharacter::ADownfallCharacter()
     PostProcessComp->SetupAttachment(FirstPersonCamera);
     PostProcessComp->Settings.bOverride_SceneFringeIntensity = true;
     PostProcessComp->Settings.SceneFringeIntensity = BaseChromaticAberration;
+    PostProcessComp->Settings.bOverride_FilmGrainIntensity = true;
+    PostProcessComp->Settings.FilmGrainIntensity = BaseFilmGrainIntensity;
     PostProcessComp->bEnabled = true;
     PostProcessComp->bUnbound = false;
     PostProcessComp->BlendWeight = 1.0f;
@@ -176,6 +178,49 @@ void ADownfallCharacter::BeginPlay()
         UE_LOG(LogDownFall, Warning, TEXT("GlitchMaterial not assigned - set in Blueprint"));
     }
     
+    // Dirt Mask Material Instance 생성
+    if (DirtMaskMaterial && PostProcessComp)
+    {
+        DirtMaskMaterialInstance = UMaterialInstanceDynamic::Create(DirtMaskMaterial, this);
+        if (DirtMaskMaterialInstance)
+        {
+            DirtMaskMaterialInstance->SetScalarParameterValue(FName("DirtIntensity"), DirtIntensity);
+            DirtMaskMaterialInstance->SetScalarParameterValue(FName("BlurOffset"), DirtBlurOffset);
+            DirtMaskMaterialInstance->SetScalarParameterValue(FName("TintStrength"), DirtTintStrength);
+            DirtMaskMaterialInstance->SetScalarParameterValue(FName("LightResponse"), DirtLightResponse);
+            DirtMaskMaterialInstance->SetScalarParameterValue(FName("LightThreshold"), DirtLightThreshold);
+            DirtMaskMaterialInstance->SetScalarParameterValue(FName("LightSoftness"), DirtLightSoftness);
+            DirtMaskMaterialInstance->SetScalarParameterValue(FName("DirtExposure"), DirtExposure);
+            PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, DirtMaskMaterialInstance));
+            
+            UE_LOG(LogDownFall, Log, TEXT("Dirt Mask Material Instance created"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("DirtMaskMaterial not assigned - set in Blueprint"));
+    }
+    
+    // Edge Blur Material Instance 생성
+    if (EdgeBlurMaterial && PostProcessComp)
+    {
+        EdgeBlurMaterialInstance = UMaterialInstanceDynamic::Create(EdgeBlurMaterial, this);
+        if (EdgeBlurMaterialInstance)
+        {
+            EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurStart"), BlurStart);
+            EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurEnd"), BlurEnd);
+            EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurStrength"), BlurStrength);
+            EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurOffset"), BlurOffset);
+            PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, EdgeBlurMaterialInstance));
+            
+            UE_LOG(LogDownFall, Log, TEXT("Edge Blur Material Instance created"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("EdgeBlurMaterial not assigned - set in Blueprint"));
+    }
+    
     // Lens Distortion Material 초기화
     if (LensDistortionMaterial)
     {
@@ -274,6 +319,8 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateAttachDesaturation(DeltaTime);
     UpdateLensDistortionEffect();
     UpdateVignetteEffect(DeltaTime);
+    UpdateDirtMaskEffect();
+    UpdateEdgeBlurEffect(); // NEW!
     UpdateHandPositions(DeltaTime);
     UpdateAltitudeUI();
     UpdateHandStaminaVisuals(DeltaTime);
@@ -2191,4 +2238,31 @@ void ADownfallCharacter::OnPauseTriggered(const FInputActionValue& Value)
         
         UE_LOG(LogDownFall, Warning, TEXT("Game Paused"));
     }
+}
+
+void ADownfallCharacter::UpdateDirtMaskEffect()
+{
+    if (!DirtMaskMaterialInstance)
+        return;
+
+    // Material Parameter 업데이트 (Details에서 설정한 값 그대로 적용)
+    DirtMaskMaterialInstance->SetScalarParameterValue(FName("DirtIntensity"), DirtIntensity);
+    DirtMaskMaterialInstance->SetScalarParameterValue(FName("BlurOffset"), DirtBlurOffset);
+    DirtMaskMaterialInstance->SetScalarParameterValue(FName("TintStrength"), DirtTintStrength);
+    DirtMaskMaterialInstance->SetScalarParameterValue(FName("LightResponse"), DirtLightResponse);
+    DirtMaskMaterialInstance->SetScalarParameterValue(FName("LightThreshold"), DirtLightThreshold);
+    DirtMaskMaterialInstance->SetScalarParameterValue(FName("LightSoftness"), DirtLightSoftness);
+    DirtMaskMaterialInstance->SetScalarParameterValue(FName("DirtExposure"), DirtExposure);
+}
+
+void ADownfallCharacter::UpdateEdgeBlurEffect()
+{
+    if (!EdgeBlurMaterialInstance)
+        return;
+
+    // Material Parameter 업데이트 (Details에서 설정한 값 그대로 적용)
+    EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurStart"), BlurStart);
+    EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurEnd"), BlurEnd);
+    EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurStrength"), BlurStrength);
+    EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurOffset"), BlurOffset);
 }

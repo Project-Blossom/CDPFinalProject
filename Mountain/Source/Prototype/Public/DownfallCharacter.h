@@ -278,6 +278,53 @@ public:
     UPROPERTY()
     TObjectPtr<UMaterialInstanceDynamic> GlitchMaterialInstance;
 
+    // Dirt Mask System (Lens dirt effect)
+    UPROPERTY(EditAnywhere, Category = "VFX|DirtMask")
+    TObjectPtr<UMaterial> DirtMaskMaterial;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> DirtMaskMaterialInstance;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|DirtMask", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+    float DirtIntensity = 1.0f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|DirtMask", meta = (ClampMin = "0.5", ClampMax = "5.0"))
+    float DirtBlurOffset = 1.5f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|DirtMask", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+    float DirtTintStrength = 1.0f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|DirtMask", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float DirtLightResponse = 1.0f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|DirtMask", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float DirtLightThreshold = 0.6f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|DirtMask", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+    float DirtLightSoftness = 0.2f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|DirtMask", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+    float DirtExposure = 1.0f;
+
+    // Edge Blur System (3-Sample blur)
+    UPROPERTY(EditAnywhere, Category = "VFX|EdgeBlur")
+    TObjectPtr<UMaterial> EdgeBlurMaterial;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> EdgeBlurMaterialInstance;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|EdgeBlur", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float BlurStart = 0.80f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|EdgeBlur", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float BlurEnd = 0.95f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|EdgeBlur", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+    float BlurStrength = 1.0f;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|EdgeBlur", meta = (ClampMin = "0.0", ClampMax = "0.05"))
+    float BlurOffset = 0.002f;
+
     UPROPERTY(EditAnywhere, Category = "VFX|Glitch", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float NoiseIntensity = 0.0f;
 
@@ -326,6 +373,15 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "VFX|ChromaticAberration")
     float CurrentChromaticAberration = 0.0f;
+    
+    UPROPERTY(EditAnywhere, Category = "VFX|FilmGrain")
+    float BaseFilmGrainIntensity = 0.0f; // Insanity 0일 때
+
+    UPROPERTY(EditAnywhere, Category = "VFX|FilmGrain")
+    float MaxFilmGrainIntensity = 1.0f; // Insanity 100일 때
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|FilmGrain")
+    float CurrentFilmGrainIntensity = 0.0f;
     
     UPROPERTY(EditAnywhere, Category = "VFX|Vignette")
     TObjectPtr<UMaterial> VignetteMaterial;
@@ -480,6 +536,8 @@ private:
     void UpdateGlitchPatternSwitch(float DeltaTime);
     void UpdateLensDistortionEffect();
     void UpdateVignetteEffect(float DeltaTime);
+    void UpdateDirtMaskEffect();
+    void UpdateEdgeBlurEffect(); // NEW!
     float CalculateNextSwitchInterval() const;
     void ApplyClimbingMappingContext();
     void UpdateAltitudeUI();
