@@ -1268,6 +1268,32 @@ void ADownfallCharacter::AddInsanity(float Amount)
     Insanity = FMath::Clamp(Insanity + Amount, 0.0f, MaxInsanity);
     UpdateInsanityEffects();
     
+    // Altitude Widget Glitch 모드 제어 (상태 변화 감지)
+    if (AltitudeWidget)
+    {
+        bool bIsNowAboveThreshold = (Insanity >= AltitudeGlitchThreshold);
+        
+        // 상태가 변했을 때만 호출
+        if (bIsNowAboveThreshold != bWasAboveGlitchThreshold)
+        {
+            if (bIsNowAboveThreshold)
+            {
+                // 80 이상으로 변경됨
+                AltitudeWidget->EnableGlitchMode();
+                UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f (+%.1f): Altitude Glitch ENABLED"), Insanity, Amount);
+            }
+            else
+            {
+                // 80 미만으로 변경됨 (음수로 감소 시)
+                AltitudeWidget->DisableGlitchMode();
+                UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f (+%.1f): Altitude Glitch DISABLED"), Insanity, Amount);
+            }
+            
+            // 플래그 업데이트
+            bWasAboveGlitchThreshold = bIsNowAboveThreshold;
+        }
+    }
+    
     UE_LOG(LogDownFall, Log, TEXT("Insanity increased by %.1f, now: %.1f"), Amount, Insanity);
 }
 
@@ -1275,9 +1301,6 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
 {
     if (Insanity > 0.0f)
     {
-        // 이전 Insanity 값 저장 (경계 체크용)
-        float PrevInsanity = Insanity;
-        
         // 혼란 상태일 때 (70 이상)
         if (Insanity >= InsanityThreshold)
         {
@@ -1290,22 +1313,33 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
             Insanity = FMath::Max(0.0f, Insanity - InsanityDecayRate * DeltaTime);
         }
         
-        // Altitude Widget Glitch 모드 제어 (80 경계에서만 호출)
-        if (AltitudeWidget)
-        {
-            // 80을 넘어갈 때
-            if (PrevInsanity < 80.0f && Insanity >= 80.0f)
-            {
-                AltitudeWidget->EnableGlitchMode();
-            }
-            // 80 아래로 떨어질 때
-            else if (PrevInsanity >= 80.0f && Insanity < 80.0f)
-            {
-                AltitudeWidget->DisableGlitchMode();
-            }
-        }
-        
         UpdateInsanityEffects();
+    }
+    
+    // Altitude Widget Glitch 모드 제어 (상태 변화 감지)
+    if (AltitudeWidget)
+    {
+        bool bIsNowAboveThreshold = (Insanity >= AltitudeGlitchThreshold);
+        
+        // 상태가 변했을 때만 호출
+        if (bIsNowAboveThreshold != bWasAboveGlitchThreshold)
+        {
+            if (bIsNowAboveThreshold)
+            {
+                // 80 이상으로 변경됨
+                AltitudeWidget->EnableGlitchMode();
+                UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f: Altitude Glitch ENABLED"), Insanity);
+            }
+            else
+            {
+                // 80 미만으로 변경됨
+                AltitudeWidget->DisableGlitchMode();
+                UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f: Altitude Glitch DISABLED"), Insanity);
+            }
+            
+            // 플래그 업데이트
+            bWasAboveGlitchThreshold = bIsNowAboveThreshold;
+        }
     }
 }
 

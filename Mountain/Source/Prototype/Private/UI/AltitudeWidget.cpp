@@ -91,7 +91,7 @@ void UAltitudeWidget::UpdateAltitude(float CurrentZ, float GroundZ, float MaxHei
 	// 미터 변환 (cm → m)
 	float Meters = RelativeHeight / 100.0f;
 
-	// Glitch 모드가 아닐 때만 정상 위치 업데이트
+	// Glitch 모드가 아닐 때만 정상 위치/텍스트 업데이트
 	if (!bGlitchMode)
 	{
 		UpdateMarkerPosition(Percentage);
@@ -101,9 +101,11 @@ void UAltitudeWidget::UpdateAltitude(float CurrentZ, float GroundZ, float MaxHei
 		{
 			NormalPositionY = PlayerMarker->GetRenderTransform().Translation.Y;
 		}
+		
+		// 정상 고도 텍스트 업데이트
+		UpdateAltitudeText(Meters);
 	}
-	
-	UpdateAltitudeText(Meters);
+	// Glitch 모드일 때는 UpdateGlitchEffect()에서 랜덤 값 처리
 }
 
 void UAltitudeWidget::UpdateGlitchEffect(float DeltaTime)

@@ -169,6 +169,13 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Insanity")
     bool bIsConfused = false;
 
+    // Altitude Widget Glitch 임계값 (80)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Insanity")
+    float AltitudeGlitchThreshold = 80.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Insanity")
+    bool bWasAboveGlitchThreshold = false; // 이전 프레임에 80 이상이었는지
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float StaminaDrainPerSecond = 5.0f;
 
