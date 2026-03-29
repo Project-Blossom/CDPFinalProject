@@ -60,7 +60,7 @@ protected:
 
     // 첫 스테이지 레벨
     UPROPERTY(EditDefaultsOnly, Category = "Save Slot")
-    FName FirstStageLevel = FName("Stage1");
+    FName FirstStageLevel = FName("Stage_1");
 
     // 덮어쓰기 경고 Widget 클래스
     UPROPERTY(EditDefaultsOnly, Category = "Save Slot")

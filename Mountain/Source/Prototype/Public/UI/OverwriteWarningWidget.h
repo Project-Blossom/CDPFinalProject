@@ -39,7 +39,7 @@ protected:
 
     // 첫 스테이지 레벨
     UPROPERTY(EditDefaultsOnly, Category = "Overwrite Warning")
-    FName FirstStageLevel = FName("Stage1");
+    FName FirstStageLevel = FName("Stage_1");
 
     // Fade Widget 클래스
     UPROPERTY(EditDefaultsOnly, Category = "Overwrite Warning")
