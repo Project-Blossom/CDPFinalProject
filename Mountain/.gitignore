@@ -42,3 +42,8 @@ Plugins/*/Intermediate/
 *.app
 *.dylib
 *.so
+
+# Packaged builds
+Windows/
+BuildOutput/
+Dist/
