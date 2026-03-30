@@ -2,16 +2,16 @@
 #include "Item/ItemDefinition.h"
 #include "Item/ItemRegistryDataAsset.h"
 
+#include "UObject/SoftObjectPath.h"
+
 void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
 
     ItemMap.Reset();
 
-    UItemRegistryDataAsset* Registry = LoadObject<UItemRegistryDataAsset>(
-        nullptr,
-        TEXT("/Game/Item/DA_ItemRegistry.DA_ItemRegistry")
-    );
+    static const FSoftObjectPath RegistryPath(TEXT("/Game/Item/DA_ItemRegistry.DA_ItemRegistry"));
+    UItemRegistryDataAsset* Registry = Cast<UItemRegistryDataAsset>(RegistryPath.TryLoad());
 
     UE_LOG(LogTemp, Warning, TEXT("[ItemSubsystem] Registry=%s"), *GetNameSafe(Registry));
 
@@ -24,11 +24,19 @@ void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
     for (const TSoftObjectPtr<UItemDefinition>& SoftDef : Registry->Items)
     {
         UItemDefinition* Def = SoftDef.LoadSynchronous();
-        if (!Def) continue;
-        if (Def->ItemId == NAME_None) continue;
+        if (!Def)
+        {
+            UE_LOG(LogTemp, Error, TEXT("[ItemSubsystem] Failed to load item definition from registry"));
+            continue;
+        }
+
+        if (Def->ItemId == NAME_None)
+        {
+            UE_LOG(LogTemp, Error, TEXT("[ItemSubsystem] Item definition has invalid ItemId: %s"), *GetNameSafe(Def));
+            continue;
+        }
 
         ItemMap.Add(Def->ItemId, Def);
-
         UE_LOG(LogTemp, Warning, TEXT("[ItemSubsystem] Registered ItemId=%s"), *Def->ItemId.ToString());
     }
 }

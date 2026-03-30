@@ -1,6 +1,12 @@
 #include "Core/FreeRunSetupGameMode.h"
 #include "UI/FreeRunSetupWidget.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/Engine.h"
+#include "Engine/EngineBaseTypes.h"
+#include "ShowFlags.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 AFreeRunSetupGameMode::AFreeRunSetupGameMode()
 {
@@ -14,7 +20,7 @@ void AFreeRunSetupGameMode::BeginPlay()
 
     // Widget 생성 및 표시
     APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
-    
+
     if (FreeRunSetupWidgetClass)
     {
         if (PC)
@@ -32,10 +38,24 @@ void AFreeRunSetupGameMode::BeginPlay()
         UE_LOG(LogTemp, Error, TEXT("FreeRunSetupWidgetClass not set in FreeRunSetupGameMode!"));
     }
 
-    // ViewMode를 Wireframe으로 설정
-    if (PC)
+    // PIE 에디터 보정: BeginPlay 직후 한 번 더 FreeRunSetup에만 Wireframe 강제
+    if (GetWorld())
     {
-        PC->ConsoleCommand(TEXT("viewmode wireframe"));
-        UE_LOG(LogTemp, Warning, TEXT("FreeRunSetup - ViewMode set to Wireframe"));
+        FTimerHandle TempHandle;
+        GetWorld()->GetTimerManager().SetTimer(
+            TempHandle,
+            []()
+            {
+                if (GEngine && GEngine->GameViewport)
+                {
+                    ApplyViewMode(EViewModeIndex::VMI_Wireframe, false, GEngine->GameViewport->EngineShowFlags);
+                    GEngine->GameViewport->ViewModeIndex = EViewModeIndex::VMI_Wireframe;
+
+                    UE_LOG(LogTemp, Warning, TEXT("FreeRunSetup - Wireframe reapplied from GameMode delayed"));
+                }
+            },
+            0.05f,
+            false
+        );
     }
 }
