@@ -43,7 +43,7 @@ EBTNodeResult::Type UBTTask_MoveToLocation::ExecuteTask(UBehaviorTreeComponent& 
         }
     }
 
-    UE_LOG(LogTemp, Log, TEXT("BTTask_MoveToLocation: Moving to %s"), *TargetLocation.ToString());
+    //UE_LOG(LogTemp, Log, TEXT("BTTask_MoveToLocation: Moving to %s"), *TargetLocation.ToString());
     
     // InProgress를 반환하면 TickTask가 계속 호출됨
     return EBTNodeResult::InProgress;
@@ -77,7 +77,7 @@ void UBTTask_MoveToLocation::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
     // 도착 체크
     if (Distance <= AcceptanceRadius)
     {
-        UE_LOG(LogTemp, Log, TEXT("BTTask_MoveToLocation: Arrived at target"));
+        //UE_LOG(LogTemp, Log, TEXT("BTTask_MoveToLocation: Arrived at target"));
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
         return;
     }
@@ -89,7 +89,7 @@ void UBTTask_MoveToLocation::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
         // 장애물 기억이 있으면 Task 실패 (목표 재설정 트리거)
         if (FlyingMonster->bHasObstacleMemory)
         {
-            UE_LOG(LogTemp, Warning, TEXT("BTTask_MoveToLocation: Obstacle detected! Task FAILED"));
+            //UE_LOG(LogTemp, Warning, TEXT("BTTask_MoveToLocation: Obstacle detected! Task FAILED"));
             FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
             return;
         }

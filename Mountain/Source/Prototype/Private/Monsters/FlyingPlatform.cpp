@@ -14,7 +14,7 @@ void AFlyingPlatform::BeginPlay()
 {
     Super::BeginPlay();
 
-    UE_LOG(LogMonster, Log, TEXT("%s (Flying Platform) ready for player"), *GetName());
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s (Flying Platform) ready for player"), *GetName());
 }
 
 void AFlyingPlatform::Tick(float DeltaTime)
@@ -29,40 +29,14 @@ void AFlyingPlatform::Tick(float DeltaTime)
         return;
     }
 
-#if !UE_BUILD_SHIPPING
-    // ===== 디버그 시각화 =====
+// [DISABLED FOR DEMO] Debug visualization: Grab sphere, cross marker, sweep range
+#if 0
     FVector GrabLoc = GetGrabLocation();
-    
-    // 1. 잡기 가능 범위 (녹색 구체)
-    DrawDebugSphere(
-        GetWorld(),
-        GrabLoc,
-        500.0f,
-        16,
-        bPlayerAttached ? FColor::Yellow : FColor::Green,
-        false,
-        0.1f,
-        0,
-        3.0f
-    );
-    
-    // 2. GrabPoint 위치 (빨간 십자)
+    DrawDebugSphere(GetWorld(), GrabLoc, 500.0f, 16, bPlayerAttached ? FColor::Yellow : FColor::Green, false, 0.1f, 0, 3.0f);
     DrawDebugLine(GetWorld(), GrabLoc - FVector(50, 0, 0), GrabLoc + FVector(50, 0, 0), FColor::Red, false, 0.1f, 0, 5.0f);
     DrawDebugLine(GetWorld(), GrabLoc - FVector(0, 50, 0), GrabLoc + FVector(0, 50, 0), FColor::Red, false, 0.1f, 0, 5.0f);
     DrawDebugLine(GetWorld(), GrabLoc - FVector(0, 0, 50), GrabLoc + FVector(0, 0, 50), FColor::Red, false, 0.1f, 0, 5.0f);
-    
-    // 3. Sweep 범위 (시안 구체)
-    DrawDebugSphere(
-        GetWorld(),
-        GrabLoc,
-        300.0f,
-        12,
-        FColor::Cyan,
-        false,
-        0.1f,
-        0,
-        2.0f
-    );
+    DrawDebugSphere(GetWorld(), GrabLoc, 300.0f, 12, FColor::Cyan, false, 0.1f, 0, 2.0f);
 #endif
 
     // 기존 배회 로직 (Behavior Tree 없을 때만)
@@ -100,7 +74,7 @@ void AFlyingPlatform::UpdatePatrol(float DeltaTime)
         bIsIdling = false;
         IdleTimer = 0.0f;
         
-        UE_LOG(LogMonster, Log, TEXT("%s new target: %s"), *GetName(), *CurrentTargetLocation.ToString());
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s new target: %s"), *GetName(), *CurrentTargetLocation.ToString());
     }
 
     // 목표로 이동
@@ -119,7 +93,7 @@ void AFlyingPlatform::UpdatePatrol(float DeltaTime)
         {
             bIsIdling = true;
             IdleTimer = 0.0f;
-            UE_LOG(LogMonster, Log, TEXT("%s arrived at target, waiting..."), *GetName());
+            // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s arrived at target, waiting..."), *GetName());
         }
 
         // 대기 중
@@ -140,7 +114,7 @@ void AFlyingPlatform::OnPlayerGrab(ADownfallCharacter* Player)
     bPlayerAttached = true;
     AttachedTime = 0.0f;
     
-    UE_LOG(LogMonster, Log, TEXT("%s grabbed by player"), *GetName());
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s grabbed by player"), *GetName());
 }
 
 void AFlyingPlatform::OnPlayerRelease()
@@ -148,7 +122,7 @@ void AFlyingPlatform::OnPlayerRelease()
     bPlayerAttached = false;
     AttachedTime = 0.0f;
 
-    UE_LOG(LogMonster, Log, TEXT("%s released by player"), *GetName());
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s released by player"), *GetName());
 }
 
 bool AFlyingPlatform::FindNearestGripPoint_Implementation(const FVector& SearchOrigin, float SearchRadius, FGripPointInfo& OutGripInfo)
@@ -165,7 +139,7 @@ bool AFlyingPlatform::FindNearestGripPoint_Implementation(const FVector& SearchO
         OutGripInfo.AverageNormal = FVector::UpVector;
         OutGripInfo.bIsValid = true;
 
-        UE_LOG(LogMonster, Log, TEXT("%s grip point found at distance: %.1f"), *GetName(), Distance);
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s grip point found at distance: %.1f"), *GetName(), Distance);
         return true;
     }
 
@@ -210,10 +184,10 @@ void AFlyingPlatform::OnObstacleDetected(const FVector& ObstacleDirection)
         UBlackboardComponent* Blackboard = AIController->GetBlackboardComponent();
         Blackboard->ClearValue("PatrolLocation");
         
-        UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected! Blackboard PatrolLocation cleared"), *GetName());
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected! Blackboard PatrolLocation cleared"), *GetName());
     }
     else
     {
-        UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected! bHasTarget reset"), *GetName());
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected! bHasTarget reset"), *GetName());
     }
 }

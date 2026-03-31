@@ -17,14 +17,14 @@ EBTNodeResult::Type UBTTask_FindPatrolLocation::ExecuteTask(UBehaviorTreeCompone
     AAIController* AIController = OwnerComp.GetAIOwner();
     if (!AIController)
     {
-        UE_LOG(LogTemp, Error, TEXT("BTTask_FindPatrolLocation: No AIController"));
+        //UE_LOG(LogTemp, Error, TEXT("BTTask_FindPatrolLocation: No AIController"));
         return EBTNodeResult::Failed;
     }
 
     APawn* Pawn = AIController->GetPawn();
     if (!Pawn)
     {
-        UE_LOG(LogTemp, Error, TEXT("BTTask_FindPatrolLocation: No Pawn"));
+        //UE_LOG(LogTemp, Error, TEXT("BTTask_FindPatrolLocation: No Pawn"));
         return EBTNodeResult::Failed;
     }
 
@@ -35,7 +35,7 @@ EBTNodeResult::Type UBTTask_FindPatrolLocation::ExecuteTask(UBehaviorTreeCompone
     if (Attacker)
     {
         PatrolLocation = Attacker->GetRandomPatrolLocationInTerritory();
-        UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Using Territory system for %s"), 
+        //UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Using Territory system for %s"), 
             *Pawn->GetName());
     }
     else
@@ -45,7 +45,7 @@ EBTNodeResult::Type UBTTask_FindPatrolLocation::ExecuteTask(UBehaviorTreeCompone
         if (FlyingMonster)
         {
             PatrolLocation = FlyingMonster->GetRandomPatrolLocation();
-            UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Using GetRandomPatrolLocation for %s"), 
+            //UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Using GetRandomPatrolLocation for %s"), 
                 *Pawn->GetName());
         }
         else
@@ -67,12 +67,12 @@ EBTNodeResult::Type UBTTask_FindPatrolLocation::ExecuteTask(UBehaviorTreeCompone
     {
         BlackboardComp->SetValueAsVector(PatrolLocationKey.SelectedKeyName, PatrolLocation);
         
-        UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Set patrol location to %s"), 
+        //UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Set patrol location to %s"), 
             *PatrolLocation.ToString());
         
         return EBTNodeResult::Succeeded;
     }
 
-    UE_LOG(LogTemp, Error, TEXT("BTTask_FindPatrolLocation: No Blackboard"));
+    //UE_LOG(LogTemp, Error, TEXT("BTTask_FindPatrolLocation: No Blackboard"));
     return EBTNodeResult::Failed;
 }

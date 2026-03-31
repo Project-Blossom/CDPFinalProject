@@ -33,10 +33,10 @@ void AFlyingAttacker::BeginPlay()
         // bCanAttack을 true로 설정
         Blackboard->SetValueAsBool("bCanAttack", true);
         
-        UE_LOG(LogMonster, Log, TEXT("%s Blackboard initialized (bCanAttack: true)"), *GetName());
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s Blackboard initialized (bCanAttack: true)"), *GetName());
     }
 
-    UE_LOG(LogMonster, Log, TEXT("%s (Flying Attacker) ready to hunt"), *GetName());
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s (Flying Attacker) ready to hunt"), *GetName());
 }
 
 void AFlyingAttacker::Tick(float DeltaTime)

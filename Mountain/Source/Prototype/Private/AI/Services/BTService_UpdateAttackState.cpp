@@ -16,26 +16,26 @@ void UBTService_UpdateAttackState::TickNode(UBehaviorTreeComponent& OwnerComp, u
 {
     Super::TickNode(OwnerComp, NodeMemory, DeltaSeconds);
 
-    UE_LOG(LogTemp, Warning, TEXT("BTService_UpdateAttackState::TickNode CALLED!"));
+    //UE_LOG(LogTemp, Warning, TEXT("BTService_UpdateAttackState::TickNode CALLED!"));
 
     AAIController* AIController = OwnerComp.GetAIOwner();
     if (!AIController)
     {
-        UE_LOG(LogTemp, Error, TEXT("UpdateAttackState: NO AIController!"));
+        //UE_LOG(LogTemp, Error, TEXT("UpdateAttackState: NO AIController!"));
         return;
     }
 
     AMonsterBase* Monster = Cast<AMonsterBase>(AIController->GetPawn());
     if (!Monster)
     {
-        UE_LOG(LogTemp, Error, TEXT("UpdateAttackState: NO Monster!"));
+        //UE_LOG(LogTemp, Error, TEXT("UpdateAttackState: NO Monster!"));
         return;
     }
 
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
     if (!BlackboardComp)
     {
-        UE_LOG(LogTemp, Error, TEXT("UpdateAttackState: NO Blackboard!"));
+        //UE_LOG(LogTemp, Error, TEXT("UpdateAttackState: NO Blackboard!"));
         return;
     }
 
@@ -50,10 +50,10 @@ void UBTService_UpdateAttackState::TickNode(UBehaviorTreeComponent& OwnerComp, u
     BlackboardComp->SetValueAsBool(bCanAttackKey.SelectedKeyName, bCanAttack);
     
     // 디버그 로그
-    UE_LOG(LogTemp, Log, TEXT("UpdateAttackState: TargetPlayer=%s, LastAttackTime=%.1f, Current=%.1f, TimeSince=%.1f, bCanAttack=%s"),
-        Monster->TargetPlayer ? TEXT("YES") : TEXT("NO"),
-        LastAttackTime,
-        CurrentTime,
-        TimeSinceAttack,
-        bCanAttack ? TEXT("TRUE") : TEXT("FALSE"));
+    // [DISABLED FOR DEMO] UE_LOG(LogTemp, Log, TEXT("UpdateAttackState: TargetPlayer=%s, LastAttackTime=%.1f, Current=%.1f, TimeSince=%.1f, bCanAttack=%s"),
+    //    Monster->TargetPlayer ? TEXT("YES") : TEXT("NO"),
+    //    LastAttackTime,
+    //    CurrentTime,
+    //    TimeSinceAttack,
+    //    bCanAttack ? TEXT("TRUE") : TEXT("FALSE"));
 }

@@ -37,7 +37,7 @@ AMonsterBase::AMonsterBase()
     PerceptionComponent->ConfigureSense(*SightConfig);
     PerceptionComponent->SetDominantSense(SightConfig->GetSenseImplementation());
     
-    UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured (Sight DOMINANT + Hearing)"));
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured (Sight DOMINANT + Hearing)"));
 }
 
 void AMonsterBase::BeginPlay()
@@ -54,51 +54,40 @@ void AMonsterBase::BeginPlay()
         // CRITICAL: Perception 활성화
         PerceptionComponent->Activate(true);
         
-        UE_LOG(LogMonster, Warning, TEXT("%s Perception activated! SightRadius: %.1f"), *GetName(), SightRadius);
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s Perception activated! SightRadius: %.1f"), *GetName(), SightRadius);
     }
     else
     {
-        UE_LOG(LogMonster, Error, TEXT("%s PerceptionComponent is NULL!"), *GetName());
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Error, TEXT("%s PerceptionComponent is NULL!"), *GetName());
     }
 
-    UE_LOG(LogMonster, Log, TEXT("%s spawned with %.1f health"), *GetName(), CurrentHealth);
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s spawned with %.1f health"), *GetName(), CurrentHealth);
 }
 
 void AMonsterBase::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    // Debug: 플레이어 감지 상태 표시
-#if !UE_BUILD_SHIPPING
+    // [DISABLED FOR DEMO] Debug visualization: Player detection line
+#if 0
     if (TargetPlayer)
     {
-        DrawDebugLine(
-            GetWorld(),
-            GetActorLocation(),
-            TargetPlayer->GetActorLocation(),
-            FColor::Red,
-            false,
-            0.1f,
-            0,
-            2.0f
-        );
+        DrawDebugLine(GetWorld(), GetActorLocation(), TargetPlayer->GetActorLocation(), FColor::Red, false, 0.1f, 0, 2.0f);
     }
 #endif
 }
 
 void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
-    UE_LOG(LogMonster, Warning, TEXT("%s OnPerceptionUpdated! Actor: %s, Successfully Sensed: %s"), 
-        *GetName(), 
-        Actor ? *Actor->GetName() : TEXT("NULL"),
-        Stimulus.WasSuccessfullySensed() ? TEXT("YES") : TEXT("NO"));
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s OnPerceptionUpdated! Actor: %s, Successfully Sensed: %s"), 
+        // *GetName(), Actor ? *Actor->GetName() : TEXT("NULL"), Stimulus.WasSuccessfullySensed() ? TEXT("YES") : TEXT("NO"));
 
     if (!Actor) return;
 
     ADownfallCharacter* Player = Cast<ADownfallCharacter>(Actor);
     if (!Player)
     {
-        UE_LOG(LogMonster, Warning, TEXT("%s Actor is not DownfallCharacter: %s"), *GetName(), *Actor->GetClass()->GetName());
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s Actor is not DownfallCharacter: %s"), *GetName(), *Actor->GetClass()->GetName());
         return;
     }
 
@@ -106,8 +95,8 @@ void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
     {
         // 플레이어 인식
         TargetPlayer = Player;
-        UE_LOG(LogMonster, Warning, TEXT("%s DETECTED player at distance: %.1f"), 
-            *GetName(), FVector::Dist(GetActorLocation(), Player->GetActorLocation()));
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s DETECTED player at distance: %.1f"), 
+            // *GetName(), FVector::Dist(GetActorLocation(), Player->GetActorLocation()));
     }
     else
     {
@@ -118,14 +107,14 @@ void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
         if (Distance > LoseSightRadius)
         {
             TargetPlayer = nullptr;
-            UE_LOG(LogMonster, Warning, TEXT("%s LOST player (distance: %.1f > %.1f)"), 
-                *GetName(), Distance, LoseSightRadius);
+            // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s LOST player (distance: %.1f > %.1f)"), 
+                // *GetName(), Distance, LoseSightRadius);
         }
         else
         {
             // 아직 범위 내 - TargetPlayer 유지
-            UE_LOG(LogMonster, Log, TEXT("%s Sight temporarily lost but player still in range (%.1f)"), 
-                *GetName(), Distance);
+            // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s Sight temporarily lost but player still in range (%.1f)"), 
+                // *GetName(), Distance);
         }
     }
 }
@@ -135,8 +124,8 @@ void AMonsterBase::TakeDamageCustom(float Damage)
     CurrentHealth -= Damage;
     CurrentHealth = FMath::Max(0.0f, CurrentHealth);
     
-    UE_LOG(LogMonster, Log, TEXT("%s took %.1f damage, remaining HP: %.1f"), 
-        *GetName(), Damage, CurrentHealth);
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s took %.1f damage, remaining HP: %.1f"), 
+        // *GetName(), Damage, CurrentHealth);
 
     if (CurrentHealth <= 0.0f)
     {
@@ -146,7 +135,7 @@ void AMonsterBase::TakeDamageCustom(float Damage)
 
 void AMonsterBase::Die()
 {
-    UE_LOG(LogMonster, Warning, TEXT("%s died"), *GetName());
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s died"), *GetName());
     
     // TODO: Death animation, effects, rewards
     

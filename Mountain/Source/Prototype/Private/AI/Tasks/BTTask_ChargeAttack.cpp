@@ -37,7 +37,7 @@ EBTNodeResult::Type UBTTask_ChargeAttack::ExecuteTask(UBehaviorTreeComponent& Ow
     
     if (!TargetPlayer)
     {
-        UE_LOG(LogTemp, Warning, TEXT("BTTask_ChargeAttack: No target player - FAILED"));
+        //UE_LOG(LogTemp, Warning, TEXT("BTTask_ChargeAttack: No target player - FAILED"));
         return EBTNodeResult::Failed;
     }
 
@@ -46,7 +46,7 @@ EBTNodeResult::Type UBTTask_ChargeAttack::ExecuteTask(UBehaviorTreeComponent& Ow
     
     ChargeStartTime = OwnerComp.GetWorld()->GetTimeSeconds();
     
-    UE_LOG(LogTemp, Warning, TEXT("BTTask_ChargeAttack: START charging attack toward player"));
+    //UE_LOG(LogTemp, Warning, TEXT("BTTask_ChargeAttack: START charging attack toward player"));
     
     return EBTNodeResult::InProgress;
 }
@@ -77,7 +77,7 @@ void UBTTask_ChargeAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
     
     if (ChargeElapsed >= ChargeTime)
     {
-        UE_LOG(LogTemp, Warning, TEXT("BTTask_ChargeAttack: Charge COMPLETE - SUCCEEDED"));
+        //UE_LOG(LogTemp, Warning, TEXT("BTTask_ChargeAttack: Charge COMPLETE - SUCCEEDED"));
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
         return;
     }

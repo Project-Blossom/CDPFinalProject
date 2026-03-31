@@ -30,7 +30,7 @@ EBTNodeResult::Type UBTTask_SetAttackCooldown::ExecuteTask(UBehaviorTreeComponen
         BB->SetValueAsBool("bCanAttack", false);
     }
     
-    UE_LOG(LogTemp, Warning, TEXT("BTTask_SetAttackCooldown: LastAttackTime set to %.2f, bCanAttack set to FALSE"), CurrentTime);
+    //UE_LOG(LogTemp, Warning, TEXT("BTTask_SetAttackCooldown: LastAttackTime set to %.2f, bCanAttack set to FALSE"), CurrentTime);
     
     return EBTNodeResult::Succeeded;
 }

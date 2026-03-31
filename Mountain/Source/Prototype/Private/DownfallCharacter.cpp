@@ -113,18 +113,18 @@ void ADownfallCharacter::BeginPlay()
 {
     Super::BeginPlay();
 
-    UE_LOG(LogDownFall, Log, TEXT("DownfallCharacter BeginPlay called!"));
+    // [DISABLED FOR DEMO] UE_LOG(LogDownFall, Log, TEXT("DownfallCharacter BeginPlay called!"));
 
     // StimuliSource 등록
     if (StimuliSource)
     {
         StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
         StimuliSource->RegisterWithPerceptionSystem();
-        UE_LOG(LogDownFall, Warning, TEXT("Player StimuliSource registered for Sight"));
+        // [DISABLED FOR DEMO] UE_LOG(LogDownFall, Warning, TEXT("Player StimuliSource registered for Sight"));
     }
     else
     {
-        UE_LOG(LogDownFall, Error, TEXT("Player StimuliSource is NULL! Creating at runtime..."));
+        // [DISABLED FOR DEMO] UE_LOG(LogDownFall, Error, TEXT("Player StimuliSource is NULL! Creating at runtime..."));
         
         // 런타임에 생성 시도
         StimuliSource = NewObject<UAIPerceptionStimuliSourceComponent>(this, TEXT("StimuliSourceRuntime"));
@@ -133,7 +133,7 @@ void ADownfallCharacter::BeginPlay()
             StimuliSource->RegisterComponent();
             StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
             StimuliSource->RegisterWithPerceptionSystem();
-            UE_LOG(LogDownFall, Warning, TEXT("Player StimuliSource created at runtime"));
+            // [DISABLED FOR DEMO] UE_LOG(LogDownFall, Warning, TEXT("Player StimuliSource created at runtime"));
         }
     }
 
@@ -344,7 +344,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
             NAME_None
         );
 
-        UE_LOG(LogDownFall, Verbose, TEXT("Player making noise at speed: %.1f (threshold: %.1f)"), Speed, NoiseThreshold);
+        // [DISABLED FOR DEMO] UE_LOG(LogDownFall, Verbose, TEXT("Player making noise at speed: %.1f (threshold: %.1f)"), Speed, NoiseThreshold);
     }
 
     // 착지 감지 및 Physics → Walking 모드 전환
@@ -387,16 +387,17 @@ void ADownfallCharacter::Tick(float DeltaTime)
 
                 GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 
-                UE_LOG(LogDownFall, Log, TEXT("Landed on walkable surface (%.1f°) - Physics disabled"), SlopeAngle);
+                // [DISABLED FOR DEMO] UE_LOG(LogDownFall, Log, TEXT("Landed on walkable surface (%.1f°) - Physics disabled"), SlopeAngle);
             }
             else
             {
-                UE_LOG(LogDownFall, Log, TEXT("Hit steep slope (%.1f°) - Physics continues"), SlopeAngle);
+                // [DISABLED FOR DEMO] UE_LOG(LogDownFall, Log, TEXT("Hit steep slope (%.1f°) - Physics continues"), SlopeAngle);
             }
         }
     }
 
-#if !UE_BUILD_SHIPPING
+// [DISABLED FOR DEMO] Debug visualization
+#if 0
     DrawDebugInfo();
 #endif
 }

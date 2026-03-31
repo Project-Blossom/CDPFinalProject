@@ -15,7 +15,7 @@ void AFlyingMonster::BeginPlay()
 
     IdleLocation = GetActorLocation();
     
-    UE_LOG(LogMonster, Log, TEXT("%s idle location set: %s"), *GetName(), *IdleLocation.ToString());
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s idle location set: %s"), *GetName(), *IdleLocation.ToString());
 }
 
 void AFlyingMonster::Tick(float DeltaTime)
@@ -45,7 +45,8 @@ void AFlyingMonster::FlyToLocation(FVector TargetLocation, float Speed, bool bAv
             {
                 FinalDirection = AvoidanceDirection;
                 
-#if !UE_BUILD_SHIPPING
+                // [DISABLED FOR DEMO] Debug avoidance direction line
+#if 0
                 DrawDebugLine(GetWorld(), CurrentLocation, CurrentLocation + FinalDirection * 200.0f, 
                     FColor::Orange, false, 0.1f, 0, 5.0f);
 #endif
@@ -60,9 +61,10 @@ void AFlyingMonster::FlyToLocation(FVector TargetLocation, float Speed, bool bAv
                 // 장애물 발견 - 목표 재설정으로 변경!
                 OnObstacleDetected(DesiredDirection);
                 
-                UE_LOG(LogMonster, Warning, TEXT("%s: Obstacle detected! Calling OnObstacleDetected"), *GetName());
+                // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s: Obstacle detected! Calling OnObstacleDetected"), *GetName());
                 
-#if !UE_BUILD_SHIPPING
+                // [DISABLED FOR DEMO] Debug obstacle detection line and sphere
+#if 0
                 DrawDebugLine(GetWorld(), CurrentLocation, HitLocation, FColor::Red, false, 1.0f, 0, 3.0f);
                 DrawDebugSphere(GetWorld(), HitLocation, 30.0f, 8, FColor::Red, false, 1.0f);
 #endif
@@ -116,7 +118,7 @@ FVector AFlyingMonster::GetRandomPatrolLocation() const
             if (Attempt == MaxAttempts - 1)
             {
                 const_cast<AFlyingMonster*>(this)->bHasObstacleMemory = false;
-                UE_LOG(LogMonster, Log, TEXT("%s obstacle memory cleared"), *GetName());
+            // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s obstacle memory cleared"), *GetName());
             }
         }
         else
@@ -138,14 +140,14 @@ FVector AFlyingMonster::GetRandomPatrolLocation() const
         // 이 위치가 암벽 안인지 체크
         if (IsLocationValid(TargetLocation))
         {
-            UE_LOG(LogMonster, Verbose, TEXT("%s: Valid patrol location found on attempt %d%s"), 
-                *GetName(), Attempt + 1, bHasObstacleMemory ? TEXT(" (opposite hemisphere)") : TEXT(""));
+            // [DISABLED FOR DEMO] UE_LOG(LogMonster, Verbose, TEXT("%s: Valid patrol location found on attempt %d%s"), 
+                // *GetName(), Attempt + 1, bHasObstacleMemory ? TEXT(" (opposite hemisphere)") : TEXT(""));
             return TargetLocation;
         }
     }
     
     // 실패하면 IdleLocation 위쪽으로 (안전한 위치)
-    UE_LOG(LogMonster, Warning, TEXT("%s: Failed to find valid patrol location, using safe fallback"), *GetName());
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s: Failed to find valid patrol location, using safe fallback"), *GetName());
     const_cast<AFlyingMonster*>(this)->bHasObstacleMemory = false;  // 기억 초기화
     return IdleLocation + FVector(0, 0, 300.0f);
 }
@@ -264,8 +266,8 @@ void AFlyingMonster::OnObstacleDetected(const FVector& ObstacleDirection)
     LastObstacleDirection = ObstacleDirection;
     bHasObstacleMemory = true;
     
-    UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected in direction %s"), 
-        *GetName(), *ObstacleDirection.ToString());
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected in direction %s"), 
+        // *GetName(), *ObstacleDirection.ToString());
 }
 
 FVector AFlyingMonster::GenerateOppositeHemisphereOffset(float Radius, float VerticalRange)
@@ -297,14 +299,14 @@ FVector AFlyingMonster::GenerateOppositeHemisphereOffset(float Radius, float Ver
         // OppositeHemisphereAngle(90도) 이상 반대면 OK
         if (AngleDegrees >= OppositeHemisphereAngle)
         {
-            UE_LOG(LogMonster, Log, TEXT("%s found opposite direction: %.1f degrees from obstacle (distance: %.1f)"), 
-                *GetName(), AngleDegrees, RandomOffset.Size());
+            // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s found opposite direction: %.1f degrees from obstacle (distance: %.1f)"), 
+                // *GetName(), AngleDegrees, RandomOffset.Size());
             return RandomOffset;
         }
     }
     
     // 실패 시: 정확히 반대 방향 (5배 거리)
-    UE_LOG(LogMonster, Warning, TEXT("%s failed to find opposite hemisphere, using exact opposite"), 
-        *GetName());
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s failed to find opposite hemisphere, using exact opposite"), 
+        // *GetName());
     return -LastObstacleDirection * ExtendedRadius;
 }

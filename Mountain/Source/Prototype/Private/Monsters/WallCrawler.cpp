@@ -42,11 +42,10 @@ void AWallCrawler::BeginPlay()
         // bCanAttach을 true로 설정
         Blackboard->SetValueAsBool("bCanAttach", true);
         
-        UE_LOG(LogMonster, Log, TEXT("%s Blackboard initialized (bCanAttach: true)"), *GetName());
+        // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s Blackboard initialized (bCanAttach: true)"), *GetName());
     }
     
-    UE_LOG(LogMonster, Warning, TEXT("%s BeginPlay: TargetPlayer = NULL, DetectionGauge = 0, SpawnTime = %.1f"), 
-        *GetName(), SpawnTime);
+    // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s BeginPlay: TargetPlayer = NULL, DetectionGauge = 0, SpawnTime = %.1f"), *GetName(), SpawnTime);
     
     // CRITICAL: MonsterBase의 OnPerceptionUpdated 바인딩 해제 후 WallCrawler 것으로 재바인딩
     if (PerceptionComponent)
@@ -191,58 +190,34 @@ void AWallCrawler::Tick(float DeltaTime)
         }
     }
 
-#if !UE_BUILD_SHIPPING
+// [DISABLED FOR DEMO] Debug visualization: AI range, status text, gauge, target info
+#if 0
     if (!bAttachedToPlayer)
     {
         FVector ActorLoc = GetActorLocation();
-        
-        // AI 감지 범위
         DrawDebugSphere(GetWorld(), ActorLoc, 1000.0f, 16, FColor::Yellow, false, 0.1f, 0, 1.0f);
-        
-        // 상태 텍스트
-        FString StatusText = bIsStunned ? TEXT("STUNNED") : 
-                            bIsOnWall ? TEXT("ON WALL") : TEXT("NO WALL");
-        FColor StatusColor = bIsStunned ? FColor::Purple : 
-                            bIsOnWall ? FColor::Green : FColor::Red;
-        
-        DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 50), 
-            StatusText, nullptr, StatusColor, 0.0f, true);
-        
-        // Stun 타이머
+        FString StatusText = bIsStunned ? TEXT("STUNNED") : bIsOnWall ? TEXT("ON WALL") : TEXT("NO WALL");
+        FColor StatusColor = bIsStunned ? FColor::Purple : bIsOnWall ? FColor::Green : FColor::Red;
+        DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 50), StatusText, nullptr, StatusColor, 0.0f, true);
         if (bIsStunned)
         {
-            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 70), 
-                FString::Printf(TEXT("Stun: %.1fs"), StunTimer), 
-                nullptr, FColor::Purple, 0.0f, true);
+            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 70), FString::Printf(TEXT("Stun: %.1fs"), StunTimer), nullptr, FColor::Purple, 0.0f, true);
         }
-        
-        // 감지 게이지
         if (DetectionGauge > 0.0f || PotentialTarget)
         {
-            FColor GaugeColor = DetectionGauge >= DetectionGaugeMax ? FColor::Red : 
-                               DetectionGauge > DetectionGaugeMax * 0.5f ? FColor::Orange : FColor::Yellow;
-            
-            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 90), 
-                FString::Printf(TEXT("Gauge: %.0f/%.0f"), DetectionGauge, DetectionGaugeMax), 
-                nullptr, GaugeColor, 0.0f, true);
+            FColor GaugeColor = DetectionGauge >= DetectionGaugeMax ? FColor::Red : DetectionGauge > DetectionGaugeMax * 0.5f ? FColor::Orange : FColor::Yellow;
+            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 90), FString::Printf(TEXT("Gauge: %.0f/%.0f"), DetectionGauge, DetectionGaugeMax), nullptr, GaugeColor, 0.0f, true);
         }
-        
-        // Target 상태
         if (TargetPlayer)
         {
-            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 110), 
-                FString::Printf(TEXT("TARGET: %.0fcm"), FVector::Dist(ActorLoc, TargetPlayer->GetActorLocation())), 
-                nullptr, FColor::Red, 0.0f, true);
+            DrawDebugString(GetWorld(), ActorLoc + FVector(0, 0, 110), FString::Printf(TEXT("TARGET: %.0fcm"), FVector::Dist(ActorLoc, TargetPlayer->GetActorLocation())), nullptr, FColor::Red, 0.0f, true);
         }
     }
     else
     {
-        // Shake 게이지
         if (GEngine)
         {
-            GEngine->AddOnScreenDebugMessage(-1, 0.0f, 
-                AccumulatedShake > ShakeThreshold * 0.7f ? FColor::Red : FColor::Yellow,
-                FString::Printf(TEXT("WallCrawler Attached! Shake: %.0f / %.0f"), AccumulatedShake, ShakeThreshold));
+            GEngine->AddOnScreenDebugMessage(-1, 0.0f, AccumulatedShake > ShakeThreshold * 0.7f ? FColor::Red : FColor::Yellow, FString::Printf(TEXT("WallCrawler Attached! Shake: %.0f / %.0f"), AccumulatedShake, ShakeThreshold));
         }
     }
 #endif
@@ -685,13 +660,11 @@ void AWallCrawler::UpdateShakeDetection(float DeltaTime)
         return;
     }
     
-#if !UE_BUILD_SHIPPING
+    // [DISABLED FOR DEMO] Debug shake visualization
+#if 0
     if (GEngine && FrameShake > 0.1f)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 0.0f, 
-            AccumulatedShake > ShakeThreshold * 0.7f ? FColor::Red : FColor::Yellow,
-            FString::Printf(TEXT("Shake: %.0f/%.0f (Frame: %.1f)"), 
-                AccumulatedShake, ShakeThreshold, FrameShake));
+        GEngine->AddOnScreenDebugMessage(-1, 0.0f, AccumulatedShake > ShakeThreshold * 0.7f ? FColor::Red : FColor::Yellow, FString::Printf(TEXT("Shake: %.0f/%.0f (Frame: %.1f)"), AccumulatedShake, ShakeThreshold, FrameShake));
     }
 #endif
 }

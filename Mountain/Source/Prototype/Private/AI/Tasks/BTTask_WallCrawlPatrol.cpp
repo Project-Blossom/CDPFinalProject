@@ -20,7 +20,7 @@ EBTNodeResult::Type UBTTask_WallCrawlPatrol::ExecuteTask(UBehaviorTreeComponent&
 
     ElapsedTime = 0.0f;
 
-    UE_LOG(LogTemp, Log, TEXT("BTTask_WallCrawlPatrol: START patrol"));
+    //UE_LOG(LogTemp, Log, TEXT("BTTask_WallCrawlPatrol: START patrol"));
 
     return EBTNodeResult::InProgress;
 }
@@ -49,7 +49,7 @@ void UBTTask_WallCrawlPatrol::TickTask(UBehaviorTreeComponent& OwnerComp, uint8*
     // PatrolDuration 동안 순찰 후 성공
     if (ElapsedTime >= PatrolDuration)
     {
-        UE_LOG(LogTemp, Log, TEXT("BTTask_WallCrawlPatrol: COMPLETE - patrol finished"));
+        //UE_LOG(LogTemp, Log, TEXT("BTTask_WallCrawlPatrol: COMPLETE - patrol finished"));
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
     }
 }

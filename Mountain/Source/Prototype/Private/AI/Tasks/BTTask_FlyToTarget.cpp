@@ -17,21 +17,21 @@ EBTNodeResult::Type UBTTask_FlyToTarget::ExecuteTask(UBehaviorTreeComponent& Own
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
     if (!BlackboardComp)
     {
-        UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: No Blackboard"));
+        //UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: No Blackboard"));
         return EBTNodeResult::Failed;
     }
 
     AAIController* AIController = OwnerComp.GetAIOwner();
     if (!AIController)
     {
-        UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: No AIController"));
+        //UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: No AIController"));
         return EBTNodeResult::Failed;
     }
 
     AFlyingMonster* FlyingMonster = Cast<AFlyingMonster>(AIController->GetPawn());
     if (!FlyingMonster)
     {
-        UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: Not a FlyingMonster"));
+        //UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: Not a FlyingMonster"));
         return EBTNodeResult::Failed;
     }
 
@@ -40,7 +40,7 @@ EBTNodeResult::Type UBTTask_FlyToTarget::ExecuteTask(UBehaviorTreeComponent& Own
     
     if (BlackboardComp->IsVectorValueSet(TargetKey.SelectedKeyName))
     {
-        UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Target is Vector (stored location)"));
+        //UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Target is Vector (stored location)"));
         bHasValidTarget = true;
     }
     else
@@ -48,21 +48,21 @@ EBTNodeResult::Type UBTTask_FlyToTarget::ExecuteTask(UBehaviorTreeComponent& Own
         UObject* TargetObject = BlackboardComp->GetValueAsObject(TargetKey.SelectedKeyName);
         if (TargetObject)
         {
-            UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Target is Object (dynamic tracking)"));
+            //UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Target is Object (dynamic tracking)"));
             bHasValidTarget = true;
         }
     }
     
     if (!bHasValidTarget)
     {
-        UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: No valid target (neither Vector nor Object)"));
+        //UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: No valid target (neither Vector nor Object)"));
         return EBTNodeResult::Failed;
     }
 
     // Task 시작 시 충돌 플래그 초기화
     bHasHitPlayerThisTask = false;
 
-    UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Flying to target"));
+    //UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Flying to target"));
     
     return EBTNodeResult::InProgress;
 }
@@ -92,7 +92,7 @@ void UBTTask_FlyToTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Nod
     {
         // Vector 키 - 저장된 위치 사용 (추적 X)
         TargetLocation = BlackboardComp->GetValueAsVector(TargetKey.SelectedKeyName);
-        UE_LOG(LogTemp, Verbose, TEXT("BTTask_FlyToTarget: Using stored Vector target (no tracking)"));
+        //UE_LOG(LogTemp, Verbose, TEXT("BTTask_FlyToTarget: Using stored Vector target (no tracking)"));
     }
     else
     {
@@ -103,11 +103,11 @@ void UBTTask_FlyToTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Nod
         if (TargetActor)
         {
             TargetLocation = TargetActor->GetActorLocation();
-            UE_LOG(LogTemp, Verbose, TEXT("BTTask_FlyToTarget: Using Actor target (tracking)"));
+            //UE_LOG(LogTemp, Verbose, TEXT("BTTask_FlyToTarget: Using Actor target (tracking)"));
         }
         else
         {
-            UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: Invalid target key"));
+            //UE_LOG(LogTemp, Error, TEXT("BTTask_FlyToTarget: Invalid target key"));
             FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
             return;
         }
@@ -132,14 +132,14 @@ void UBTTask_FlyToTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Nod
                 Player->AddInsanity(InsanityDamage);
                 bHasHitPlayerThisTask = true;
                 
-                UE_LOG(LogTemp, Warning, TEXT("BTTask_FlyToTarget: HIT player! (+%.1f Insanity)"), InsanityDamage);
+                //UE_LOG(LogTemp, Warning, TEXT("BTTask_FlyToTarget: HIT player! (+%.1f Insanity)"), InsanityDamage);
             }
         }
     }
     
     if (Distance <= AcceptanceRadius)
     {
-        UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Arrived at target"));
+        //UE_LOG(LogTemp, Log, TEXT("BTTask_FlyToTarget: Arrived at target"));
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
         return;
     }

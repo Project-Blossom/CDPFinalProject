@@ -20,26 +20,26 @@ void UBTService_UpdateAttachState::TickNode(UBehaviorTreeComponent& OwnerComp, u
 {
     Super::TickNode(OwnerComp, NodeMemory, DeltaSeconds);
 
-    UE_LOG(LogTemp, Warning, TEXT("BTService_UpdateAttachState::TickNode CALLED!"));
+    //UE_LOG(LogTemp, Warning, TEXT("BTService_UpdateAttachState::TickNode CALLED!"));
 
     AAIController* AIController = OwnerComp.GetAIOwner();
     if (!AIController)
     {
-        UE_LOG(LogTemp, Error, TEXT("UpdateAttachState: NO AIController!"));
+        //UE_LOG(LogTemp, Error, TEXT("UpdateAttachState: NO AIController!"));
         return;
     }
 
     AWallCrawler* WallCrawler = Cast<AWallCrawler>(AIController->GetPawn());
     if (!WallCrawler)
     {
-        UE_LOG(LogTemp, Error, TEXT("UpdateAttachState: NO WallCrawler!"));
+        //UE_LOG(LogTemp, Error, TEXT("UpdateAttachState: NO WallCrawler!"));
         return;
     }
 
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
     if (!BlackboardComp)
     {
-        UE_LOG(LogTemp, Error, TEXT("UpdateAttachState: NO Blackboard!"));
+        //UE_LOG(LogTemp, Error, TEXT("UpdateAttachState: NO Blackboard!"));
         return;
     }
 
@@ -67,12 +67,12 @@ void UBTService_UpdateAttachState::TickNode(UBehaviorTreeComponent& OwnerComp, u
     bool bCanAttach = TimeSinceAttach >= AttachCooldown;
     BlackboardComp->SetValueAsBool(bCanAttachKey.SelectedKeyName, bCanAttach);
     
-    UE_LOG(LogTemp, Log, TEXT("UpdateAttachState: TargetPlayer=%s, LastAttachTime=%.1f, Current=%.1f, TimeSince=%.1f, bCanAttach=%s, Attached=%s, Stunned=%s"),
-        WallCrawler->TargetPlayer ? TEXT("YES") : TEXT("NO"),
-        LastAttachTime,
-        CurrentTime,
-        TimeSinceAttach,
-        bCanAttach ? TEXT("TRUE") : TEXT("FALSE"),
-        WallCrawler->bAttachedToPlayer ? TEXT("YES") : TEXT("NO"),
-        WallCrawler->bIsStunned ? TEXT("YES") : TEXT("NO"));
+    //UE_LOG(LogTemp, Log, TEXT("UpdateAttachState: TargetPlayer=%s, LastAttachTime=%.1f, Current=%.1f, TimeSince=%.1f, bCanAttach=%s, Attached=%s, Stunned=%s"),
+    //    WallCrawler->TargetPlayer ? TEXT("YES") : TEXT("NO"),
+    //    LastAttachTime,
+    //    CurrentTime,
+    //    TimeSinceAttach,
+    //    bCanAttach ? TEXT("TRUE") : TEXT("FALSE"),
+    //    WallCrawler->bAttachedToPlayer ? TEXT("YES") : TEXT("NO"),
+    //    WallCrawler->bIsStunned ? TEXT("YES") : TEXT("NO"));
 }

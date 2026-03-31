@@ -56,7 +56,7 @@ void UGripPointFinderComponent::CacheClimbableSurfaces()
             ClimbableSurface.SetInterface(Cast<IClimbableSurface>(Actor));
 
             CachedClimbableSurfaces.Add(ClimbableSurface);
-            UE_LOG(LogGripFinder, Log, TEXT("Found climbable surface: %s"), *Actor->GetName());
+            // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Log, TEXT("Found climbable surface: %s"), *Actor->GetName());
         }
     }
 }
@@ -65,7 +65,7 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
 {
     if (!IsValid(GetWorld()))
     {
-        UE_LOG(LogGripFinder, Error, TEXT("World is invalid"));
+        // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Error, TEXT("World is invalid"));
         return false;
     }
 
@@ -76,7 +76,7 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
     FHitResult InitialHit;
     if (!FindInitialHitPoint(CameraLocation, CameraForward, InitialHit))
     {
-        UE_LOG(LogGripFinder, Verbose, TEXT("No surface found in camera direction"));
+        // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Verbose, TEXT("No surface found in camera direction"));
 
         // 1-1. 레이로 아무것도 못 맞췄을 때만 보조적으로 특수 climbable actor 탐색
         //      (완전 fallback 용도)
@@ -106,34 +106,13 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
 
                     OutGripInfo = ActorGripInfo;
 
-#if !UE_BUILD_SHIPPING
-                    // 디버그: fallback 특수 그립 감지 시각화
-                    DrawDebugLine(
-                        GetWorld(),
-                        CameraLocation,
-                        ActorGripInfo.WorldLocation,
-                        FColor::Magenta,
-                        false,
-                        0.5f,
-                        0,
-                        3.0f
-                    );
-
-                    DrawDebugSphere(
-                        GetWorld(),
-                        ActorGripInfo.WorldLocation,
-                        30.0f,
-                        8,
-                        FColor::Magenta,
-                        false,
-                        0.5f,
-                        0,
-                        2.0f
-                    );
+                    // [DISABLED FOR DEMO] Debug visualization: Fallback grip detection
+#if 0
+                    DrawDebugLine(GetWorld(), CameraLocation, ActorGripInfo.WorldLocation, FColor::Magenta, false, 0.5f, 0, 3.0f);
+                    DrawDebugSphere(GetWorld(), ActorGripInfo.WorldLocation, 30.0f, 8, FColor::Magenta, false, 0.5f, 0, 2.0f);
 #endif
 
-                    UE_LOG(LogGripFinder, Log, TEXT("Fallback climbable grip point: %s at distance %.1f"),
-                        *SurfaceObject->GetName(), Distance);
+                    // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Log, TEXT("Fallback climbable grip point: %s at distance %.1f"), *SurfaceObject->GetName(), Distance);
                     return true;
                 }
             }
@@ -167,34 +146,13 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
 
                 OutGripInfo = ActorGripInfo;
 
-#if !UE_BUILD_SHIPPING
-                // 디버그: 실제 레이로 맞춘 특수 그립 감지 시각화
-                DrawDebugLine(
-                    GetWorld(),
-                    CameraLocation,
-                    ActorGripInfo.WorldLocation,
-                    FColor::Magenta,
-                    false,
-                    0.5f,
-                    0,
-                    3.0f
-                );
-
-                DrawDebugSphere(
-                    GetWorld(),
-                    ActorGripInfo.WorldLocation,
-                    30.0f,
-                    8,
-                    FColor::Magenta,
-                    false,
-                    0.5f,
-                    0,
-                    2.0f
-                );
+                // [DISABLED FOR DEMO] Debug visualization: Hit climbable grip detection
+#if 0
+                DrawDebugLine(GetWorld(), CameraLocation, ActorGripInfo.WorldLocation, FColor::Magenta, false, 0.5f, 0, 3.0f);
+                DrawDebugSphere(GetWorld(), ActorGripInfo.WorldLocation, 30.0f, 8, FColor::Magenta, false, 0.5f, 0, 2.0f);
 #endif
 
-                UE_LOG(LogGripFinder, Log, TEXT("Hit climbable grip point: %s at distance %.1f"),
-                    *HitActor->GetName(), Distance);
+                // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Log, TEXT("Hit climbable grip point: %s at distance %.1f"), *HitActor->GetName(), Distance);
                 return true;
             }
         }
@@ -208,7 +166,7 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
     const float Distance = FVector::Dist(CameraLocation, InitialHit.Location);
     if (Distance > MaxReachDistance)
     {
-        UE_LOG(LogGripFinder, Verbose, TEXT("Surface too far: %.1f cm (max: %.1f cm)"), Distance, MaxReachDistance);
+        // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Verbose, TEXT("Surface too far: %.1f cm (max: %.1f cm)"), Distance, MaxReachDistance);
         return false;
     }
 
@@ -217,14 +175,14 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
 
     if (!CalculateAverageSurfaceAngle(InitialHit.Location, InitialHit.Normal, AverageSurfaceAngle, AverageNormal))
     {
-        UE_LOG(LogGripFinder, Warning, TEXT("Failed to calculate average surface angle"));
+        // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Warning, TEXT("Failed to calculate average surface angle"));
         return false;
     }
 
     if (AverageSurfaceAngle < MinSurfaceAngle || AverageSurfaceAngle > MaxSurfaceAngle)
     {
-        UE_LOG(LogGripFinder, Verbose, TEXT("Surface angle %.1f° out of range [%.1f - %.1f]"),
-            AverageSurfaceAngle, MinSurfaceAngle, MaxSurfaceAngle);
+        // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Verbose, TEXT("Surface angle %.1f° out of range [%.1f - %.1f]"), 
+            // AverageSurfaceAngle, MinSurfaceAngle, MaxSurfaceAngle);
         return false;
     }
 
@@ -237,8 +195,8 @@ bool UGripPointFinderComponent::FindGripPoint(const FVector& CameraLocation, con
     OutGripInfo.SourceActor = nullptr;     // 일반 지형은 개별 액터를 잡는 게 아님
     OutGripInfo.GripKind = EGripKind::Surface;
 
-    UE_LOG(LogGripFinder, Log, TEXT("Grip found: Angle=%.1f°, Quality=%.2f, Distance=%.1f cm"),
-        AverageSurfaceAngle, OutGripInfo.GripQuality, Distance);
+    // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Log, TEXT("Grip found: Angle=%.1f°, Quality=%.2f, Distance=%.1f cm"), 
+        // AverageSurfaceAngle, OutGripInfo.GripQuality, Distance);
 
     return true;
 }
@@ -284,7 +242,7 @@ bool UGripPointFinderComponent::FindInitialHitPoint(const FVector& Start, const 
     UProceduralMeshComponent* ProcMesh = Cast<UProceduralMeshComponent>(OutHit.Component.Get());
     if (!IsValid(ProcMesh))
     {
-        UE_LOG(LogGripFinder, Verbose, TEXT("Hit unsupported component: %s"), *GetNameSafe(OutHit.Component.Get()));
+        // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Verbose, TEXT("Hit unsupported component: %s"), *GetNameSafe(OutHit.Component.Get()));
         return false;
     }
 
@@ -360,7 +318,7 @@ bool UGripPointFinderComponent::CalculateAverageSurfaceAngle(const FVector& HitP
     DotProduct = FMath::Clamp(DotProduct, -1.0f, 1.0f);
     OutAngleDegrees = FMath::RadiansToDegrees(FMath::Acos(DotProduct));
 
-    UE_LOG(LogGripFinder, Verbose, TEXT("Sampled %d normals, Avg Angle: %.1f°"), SampledNormals.Num(), OutAngleDegrees);
+    // [DISABLED FOR DEMO] UE_LOG(LogGripFinder, Verbose, TEXT("Sampled %d normals, Avg Angle: %.1f°"), SampledNormals.Num(), OutAngleDegrees);
 
     return true;
 }
