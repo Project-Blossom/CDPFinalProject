@@ -472,6 +472,21 @@ void AMountainGenWorldActor::BeginPlay()
 {
     Super::BeginPlay();
 
+    if (ProcMesh)
+    {
+        const bool bHasExistingSection = (ProcMesh->GetNumSections() > 0);
+        const bool bHasValidBounds = (ProcMesh->Bounds.GetBox().IsValid != 0);
+
+        if (bHasExistingSection || bHasValidBounds)
+        {
+            UpdateGeneratedMeshStateAndBroadcast();
+        }
+        else if (!bAsyncWorking)
+        {
+            BuildChunkAndMesh();
+        }
+    }
+
     const bool bNeedAnyRuntimeKey =
         bEnableRandomSeedKey ||
         bEnableOnScreenToggleKey;
@@ -566,6 +581,8 @@ void AMountainGenWorldActor::Tick(float DeltaSeconds)
     ApplyVoxelMaterialParameters();
 
     Settings.Seed = Result.FinalSettings.Seed;
+
+    UpdateGeneratedMeshStateAndBroadcast();
 
     UI_Status(FString::Printf(TEXT("[MountainGen] 시드 변경 완료: %d"), Settings.Seed), 2.5f, FColor::Yellow);
 
@@ -904,6 +921,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
         Settings.Seed = S.Seed;
 
+        UpdateGeneratedMeshStateAndBroadcast();
+
         if (bDebugPipeline)
             DebugPrintGT(FString::Printf(TEXT("[MountainGen][Editor] DONE Seed=%d"), Settings.Seed), 2.0f, FColor::Green);
 
@@ -1096,4 +1115,26 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     }
                 });
         });
+}
+
+void AMountainGenWorldActor::UpdateGeneratedMeshStateAndBroadcast()
+{
+    bHasGeneratedMesh = false;
+    GeneratedWorldBounds = FBox(EForceInit::ForceInit);
+
+    if (!ProcMesh)
+    {
+        return;
+    }
+
+    const FBox Box = ProcMesh->Bounds.GetBox();
+    if (Box.IsValid == 0)
+    {
+        return;
+    }
+
+    GeneratedWorldBounds = Box;
+    bHasGeneratedMesh = true;
+
+    OnMountainGenerated.Broadcast(this);
 }

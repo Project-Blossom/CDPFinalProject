@@ -24,6 +24,8 @@ struct FMGAsyncResult
     FChunkMeshData MeshData;
 };
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMountainGenerated, AMountainGenWorldActor*, Generator);
+
 UCLASS()
 class MOUNTAINGEN_API AMountainGenWorldActor : public AActor
 {
@@ -61,6 +63,57 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MountainGen|Debug")
     void SetOnScreenMessagesEnabled(bool bEnabled);
 
+    UFUNCTION(BlueprintPure, Category = "MountainGen|Runtime")
+    bool HasGeneratedMesh() const
+    {
+        return bHasGeneratedMesh;
+    }
+
+    UFUNCTION(BlueprintPure, Category = "MountainGen|Runtime")
+    FBox GetGeneratedWorldBounds() const
+    {
+        return GeneratedWorldBounds;
+    }
+
+    UFUNCTION(BlueprintPure, Category = "MountainGen|Spawn")
+    FVector GetTerrainOriginWorld() const
+    {
+        const float FrontX = FMath::Max(200.f, Settings.CliffThicknessCm);
+        return GetActorLocation() - FVector(FrontX, 0.f, 0.f);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "MountainGen|Spawn")
+    FVector GetFrontDirectionWorld() const
+    {
+        return FVector::ForwardVector;
+    }
+
+    UFUNCTION(BlueprintPure, Category = "MountainGen|Spawn")
+    float GetFrontSurfaceWorldX() const
+    {
+        return GetActorLocation().X;
+    }
+
+    UFUNCTION(BlueprintPure, Category = "MountainGen|Spawn")
+    float GetSuggestedFrontSpawnDepthCm() const
+    {
+        if (Settings.FrontBandDepthCm > 0.f)
+        {
+            return Settings.FrontBandDepthCm;
+        }
+
+        return FMath::Clamp(Settings.CliffDepthCm * 0.25f, 1200.f, 6000.f);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "MountainGen|Spawn")
+    float GetSignedFrontDepthCm(const FVector& WorldPoint) const
+    {
+        const FVector TerrainOrigin = GetTerrainOriginWorld();
+        const float FrontX = FMath::Max(200.f, Settings.CliffThicknessCm);
+        const float LocalX = WorldPoint.X - TerrainOrigin.X;
+        return (FrontX - LocalX);
+    }
+
 public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen")
     TObjectPtr<UProceduralMeshComponent> ProcMesh;
@@ -77,6 +130,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Runtime")
     bool bEnableOnScreenToggleKey = true;
+
+    UPROPERTY(BlueprintAssignable, Category = "MountainGen|Runtime")
+    FOnMountainGenerated OnMountainGenerated;
 
     // ---------- Debug ----------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug")
@@ -111,6 +167,7 @@ private:
     void BuildChunkAndMesh();
     void UI_Status(const FString& Msg, float Seconds = 2.0f, FColor Color = FColor::Cyan) const;
     void ApplyVoxelMaterialParameters();
+    void UpdateGeneratedMeshStateAndBroadcast();
 
     static FString MakeMetricsLine(
         const FMountainGenSettings& S,
@@ -133,6 +190,12 @@ private:
 
     UPROPERTY(Transient)
     TObjectPtr<UMaterialInstanceDynamic> VoxelMID = nullptr;
+
+    UPROPERTY(Transient)
+    bool bHasGeneratedMesh = false;
+
+    UPROPERTY(Transient)
+    FBox GeneratedWorldBounds = FBox(EForceInit::ForceInit);
 
 #if WITH_EDITOR
     FTimerHandle EditorRegenTimer;

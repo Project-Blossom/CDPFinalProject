@@ -23,6 +23,8 @@ public class Prototype : ModuleRules
             "PhysicsCore",
             "SlateCore",
             "DeveloperSettings",
+            "GameplayTasks",
+            "NavigationSystem",
             "MountainGen"
         });
 
