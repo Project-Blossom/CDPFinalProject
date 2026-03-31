@@ -21,7 +21,7 @@ public:
 
 protected:
     UPROPERTY(EditAnywhere, Category = "Movement")
-    float RetreatDistance = 300.0f;  // 후퇴 거리 (3m)
+    float RetreatDistance = 50.0f;  // 후퇴 거리 (0.5m)
     
     UPROPERTY(EditAnywhere, Category = "Movement")
     float RetreatSpeed = 400.0f;  // 후퇴 속도

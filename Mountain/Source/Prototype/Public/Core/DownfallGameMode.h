@@ -46,13 +46,13 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Stage")
     FName ResultLevelName = FName("StageResult");
 
+    // Fade Out Widget 클래스
+    UPROPERTY(EditDefaultsOnly, Category = "Stage")
+    TSubclassOf<class UFadeWidget> FadeOutWidgetClass;
+
     // Fade Out 시간
     UPROPERTY(EditDefaultsOnly, Category = "Stage")
     float FadeOutDuration = 2.0f;
-
-    // Fade Out Post Process Material
-    UPROPERTY(EditDefaultsOnly, Category = "Stage")
-    TObjectPtr<class UMaterialInterface> FadeOutMaterial;
 
     // Fade In Widget 클래스 (게임 시작 시)
     UPROPERTY(EditDefaultsOnly, Category = "Stage")
@@ -64,18 +64,12 @@ protected:
 
 private:
     bool bStageCompleted = false;
-    bool bFadingOut = false;
-    FTimerHandle FadeOutTimerHandle;
     
-    // Post Process Material Instance
+    // Fade Out Widget Instance
     UPROPERTY()
-    TObjectPtr<class UMaterialInstanceDynamic> FadeOutMaterialInstance;
-    
-    // Fade 진행도
-    float CurrentFadeAlpha = 0.0f;
+    TObjectPtr<class UFadeWidget> FadeOutWidget;
 
     void StartFadeOut();
-    void UpdateFadeOut(float DeltaTime);
     void OnFadeOutComplete();
 
 protected:

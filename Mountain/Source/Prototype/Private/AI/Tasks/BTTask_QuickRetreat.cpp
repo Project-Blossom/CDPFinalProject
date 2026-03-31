@@ -57,8 +57,12 @@ void UBTTask_QuickRetreat::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
     // 완료 조건: 목표 거리 도달 또는 시간 초과
     if (DistanceTraveled >= RetreatDistance || TimeElapsed >= MaxRetreatTime)
     {
-        UE_LOG(LogTemp, Log, TEXT("BTTask_QuickRetreat: Retreat complete (%.1fcm, %.2fs)"), 
+        UE_LOG(LogTemp, Warning, TEXT("BTTask_QuickRetreat: Retreat complete (%.1fcm, %.2fs) - Ready for re-detection"), 
             DistanceTraveled, TimeElapsed);
+        
+        // 후퇴 완료 후 재감지를 위해 준비
+        // Service가 다시 거리를 체크할 것임
+        
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
         return;
     }
