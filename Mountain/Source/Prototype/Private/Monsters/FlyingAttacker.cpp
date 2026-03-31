@@ -54,7 +54,7 @@ void AFlyingAttacker::Tick(float DeltaTime)
     // 기존 로직 (Behavior Tree 없을 때만)
     UpdateAttackBehavior(DeltaTime);
 
-#if !UE_BUILD_SHIPPING
+#if 0
     // 디버그 시각화
     FVector ActorLoc = GetActorLocation();
     
@@ -458,7 +458,7 @@ void AFlyingAttacker::InitializeTerritory()
         UE_LOG(LogMonster, Log, TEXT("%s Territory Octant %d (%.1f, %.1f, %.1f): %.1fcm"), 
             *GetName(), i, Direction.X, Direction.Y, Direction.Z, MaxDistance);
             
-#if !UE_BUILD_SHIPPING
+#if 0
         // 디버그 시각화 (3D)
         DrawDebugLine(GetWorld(), StartLocation, StartLocation + Direction * MaxDistance, 
             FColor::Cyan, true, -1.0f, 0, 10.0f);

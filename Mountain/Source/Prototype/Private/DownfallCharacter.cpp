@@ -1593,7 +1593,7 @@ void ADownfallCharacter::AbductByPlatform(bool bIsLeftHand, AFlyingPlatform* Pla
 }
 
 // Debug
-#if !UE_BUILD_SHIPPING
+#if 0
 void ADownfallCharacter::DrawDebugInfo()
 {
     if (!GEngine) return;
@@ -1727,7 +1727,7 @@ void ADownfallCharacter::UpdateGlitchEffect()
         CurrentNoiseIntensity
     );
     
-#if !UE_BUILD_SHIPPING
+#if 0
     // 디버그 표시
     if (GEngine)
     {

@@ -36,7 +36,7 @@ EBTNodeResult::Type UBTTask_FindPatrolLocation::ExecuteTask(UBehaviorTreeCompone
     {
         PatrolLocation = Attacker->GetRandomPatrolLocationInTerritory();
         //UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Using Territory system for %s"), 
-            *Pawn->GetName());
+            //*Pawn->GetName());
     }
     else
     {
@@ -46,7 +46,7 @@ EBTNodeResult::Type UBTTask_FindPatrolLocation::ExecuteTask(UBehaviorTreeCompone
         {
             PatrolLocation = FlyingMonster->GetRandomPatrolLocation();
             //UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Using GetRandomPatrolLocation for %s"), 
-                *Pawn->GetName());
+                //*Pawn->GetName());
         }
         else
         {
@@ -68,7 +68,7 @@ EBTNodeResult::Type UBTTask_FindPatrolLocation::ExecuteTask(UBehaviorTreeCompone
         BlackboardComp->SetValueAsVector(PatrolLocationKey.SelectedKeyName, PatrolLocation);
         
         //UE_LOG(LogTemp, Log, TEXT("BTTask_FindPatrolLocation: Set patrol location to %s"), 
-            *PatrolLocation.ToString());
+            //*PatrolLocation.ToString());
         
         return EBTNodeResult::Succeeded;
     }
