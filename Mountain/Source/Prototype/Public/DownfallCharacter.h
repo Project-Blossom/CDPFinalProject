@@ -182,6 +182,70 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float StaminaRecoverPerSecond = 15.0f;
 
+    // 경사각 구간 경계값
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Thresholds", meta = (ClampMin = "0.0", ClampMax = "180.0", UIMin = "0.0", UIMax = "180.0"))
+    float CeilingAngleThreshold = 30.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Thresholds", meta = (ClampMin = "0.0", ClampMax = "180.0", UIMin = "0.0", UIMax = "180.0"))
+    float SteepAngleThreshold = 60.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Thresholds", meta = (ClampMin = "0.0", ClampMax = "180.0", UIMin = "0.0", UIMax = "180.0"))
+    float VerticalAngleThreshold = 90.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Thresholds", meta = (ClampMin = "0.0", ClampMax = "180.0", UIMin = "0.0", UIMax = "180.0"))
+    float OverhangAngleThreshold = 120.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Thresholds", meta = (ClampMin = "0.0", ClampMax = "180.0", UIMin = "0.0", UIMax = "180.0"))
+    float SteepOverhangAngleThreshold = 150.0f;
+
+    // 경사각 구간별 배율
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.1", UIMax = "5.0"))
+    float CeilingAngleMultiplier = 3.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.1", UIMax = "5.0"))
+    float SteepAngleMultiplier = 1.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.1", UIMax = "5.0"))
+    float VerticalAngleMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.1", UIMax = "5.0"))
+    float OverhangAngleMultiplier = 1.2f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.1", UIMax = "5.0"))
+    float SteepOverhangAngleMultiplier = 2.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.1", UIMax = "5.0"))
+    float FloorAngleMultiplier = 0.5f;
+
+    // 품질 구간 경계값
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Quality Thresholds", meta = (ClampMin = "0.0", ClampMax = "10.0", UIMin = "0.0", UIMax = "5.0"))
+    float VeryPoorQualityThreshold = 0.3f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Quality Thresholds", meta = (ClampMin = "0.0", ClampMax = "10.0", UIMin = "0.0", UIMax = "5.0"))
+    float PoorQualityThreshold = 0.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Quality Thresholds", meta = (ClampMin = "0.0", ClampMax = "10.0", UIMin = "0.0", UIMax = "5.0"))
+    float GoodQualityThreshold = 0.8f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Quality Thresholds", meta = (ClampMin = "0.0", ClampMax = "10.0", UIMin = "0.0", UIMax = "10.0"))
+    float AnchorQualityThreshold = 5.0f;
+
+    // 품질 구간별 배율
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Quality Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.5", UIMax = "5.0"))
+    float VeryPoorQualityMultiplier = 2.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Quality Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.5", UIMax = "5.0"))
+    float PoorQualityMultiplier = 1.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Quality Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.5", UIMax = "5.0"))
+    float NormalQualityMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Quality Multipliers", meta = (ClampMin = "0.1", ClampMax = "10.0", UIMin = "0.5", UIMax = "5.0"))
+    float GoodQualityMultiplier = 0.8f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Quality Multipliers", meta = (ClampMin = "0.01", ClampMax = "1.0", UIMin = "0.1", UIMax = "1.0"))
+    float AnchorQualityMultiplier = 0.2f;
+
     // State
     UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
     FHandData LeftHand;

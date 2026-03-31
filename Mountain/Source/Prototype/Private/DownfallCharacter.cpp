@@ -1225,18 +1225,64 @@ float ADownfallCharacter::GetStaminaDrainRate(const FHandData& Hand) const
 {
     float BaseDrain = StaminaDrainPerSecond;
 
-    // Phase 1: 단순 품질 기반 (Phase 3에서 곡선 매핑으로 교체 예정)
-    if (Hand.CurrentGrip.GripQuality < 0.5f)
+    // 경사각 기반 배율 계산
+    float Angle = Hand.CurrentGrip.SurfaceAngleDegrees;
+    float AngleMultiplier = 1.0f;
+    
+    if (Angle < CeilingAngleThreshold)
     {
-        BaseDrain *= 2.0f;
+        AngleMultiplier = CeilingAngleMultiplier;
     }
-    else if (Hand.CurrentGrip.GripQuality >= 5.0f)
+    else if (Angle < SteepAngleThreshold)
     {
-        // 앵커 전용 특수값
-        // GripQuality = 5.0f 이상이면 매우 안정적인 고정점으로 간주
-        BaseDrain *= 0.2f;
+        AngleMultiplier = SteepAngleMultiplier;
     }
-
+    else if (Angle < VerticalAngleThreshold)
+    {
+        AngleMultiplier = VerticalAngleMultiplier;
+    }
+    else if (Angle < OverhangAngleThreshold)
+    {
+        AngleMultiplier = OverhangAngleMultiplier;
+    }
+    else if (Angle < SteepOverhangAngleThreshold)
+    {
+        AngleMultiplier = SteepOverhangAngleMultiplier;
+    }
+    else
+    {
+        AngleMultiplier = FloorAngleMultiplier;
+    }
+    
+    BaseDrain *= AngleMultiplier;
+    
+    // 품질 기반 배율 계산
+    float Quality = Hand.CurrentGrip.GripQuality;
+    float QualityMultiplier = 1.0f;
+    
+    if (Quality >= AnchorQualityThreshold)
+    {
+        QualityMultiplier = AnchorQualityMultiplier;
+    }
+    else if (Quality >= GoodQualityThreshold)
+    {
+        QualityMultiplier = GoodQualityMultiplier;
+    }
+    else if (Quality >= PoorQualityThreshold)
+    {
+        QualityMultiplier = NormalQualityMultiplier;
+    }
+    else if (Quality >= VeryPoorQualityThreshold)
+    {
+        QualityMultiplier = PoorQualityMultiplier;
+    }
+    else
+    {
+        QualityMultiplier = VeryPoorQualityMultiplier;
+    }
+    
+    BaseDrain *= QualityMultiplier;
+    
     return BaseDrain;
 }
 
