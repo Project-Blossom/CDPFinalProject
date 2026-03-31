@@ -312,8 +312,43 @@ AMountainGenWorldActor::AMountainGenWorldActor()
 
 void AMountainGenWorldActor::UI_Status(const FString& Msg, float Seconds, FColor Color) const
 {
+    if (!bEnableOnScreenMessages)
+    {
+        return;
+    }
+
     if (GEngine)
+    {
         GEngine->AddOnScreenDebugMessage(-1, Seconds, Color, Msg);
+    }
+}
+
+void AMountainGenWorldActor::ToggleOnScreenMessages()
+{
+    bEnableOnScreenMessages = !bEnableOnScreenMessages;
+
+    if (GEngine)
+    {
+        const FString Msg = bEnableOnScreenMessages
+            ? TEXT("[MountainGen] 화면 출력: ON")
+            : TEXT("[MountainGen] 화면 출력: OFF");
+
+        GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, Msg);
+    }
+}
+
+void AMountainGenWorldActor::SetOnScreenMessagesEnabled(bool bEnabled)
+{
+    bEnableOnScreenMessages = bEnabled;
+
+    if (GEngine)
+    {
+        const FString Msg = bEnableOnScreenMessages
+            ? TEXT("[MountainGen] 화면 출력: ON")
+            : TEXT("[MountainGen] 화면 출력: OFF");
+
+        GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, Msg);
+    }
 }
 
 void AMountainGenWorldActor::ApplyVoxelMaterialParameters()
@@ -437,10 +472,20 @@ void AMountainGenWorldActor::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (!bEnableRandomSeedKey) return;
+    const bool bNeedAnyRuntimeKey =
+        bEnableRandomSeedKey ||
+        bEnableOnScreenToggleKey;
+
+    if (!bNeedAnyRuntimeKey)
+    {
+        return;
+    }
 
     APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
-    if (!PC) return;
+    if (!PC)
+    {
+        return;
+    }
 
     EnableInput(PC);
 
@@ -452,13 +497,21 @@ void AMountainGenWorldActor::BeginPlay()
         PC->PushInputComponent(InputComponent);
     }
 
-    InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
-    InputComponent->BindKey(EKeys::NumPadOne, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
+    if (bEnableRandomSeedKey)
+    {
+        InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
+        InputComponent->BindKey(EKeys::NumPadOne, IE_Pressed, this, &AMountainGenWorldActor::RandomizeSeed);
 
-    UI_Status(TEXT("[MountainGen] 1 키: 시드 랜덤 변경"), 2.0f, FColor::Green);
+        InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AMountainGenWorldActor::CycleDifficulty);
+        InputComponent->BindKey(EKeys::NumPadTwo, IE_Pressed, this, &AMountainGenWorldActor::CycleDifficulty);
 
-    InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AMountainGenWorldActor::CycleDifficulty);
-    InputComponent->BindKey(EKeys::NumPadTwo, IE_Pressed, this, &AMountainGenWorldActor::CycleDifficulty);
+        UI_Status(TEXT("[MountainGen] 1 키: 시드 랜덤 변경"), 2.0f, FColor::Green);
+    }
+
+    if (bEnableOnScreenToggleKey)
+    {
+        InputComponent->BindKey(EKeys::P, IE_Pressed, this, &AMountainGenWorldActor::ToggleOnScreenMessages);
+    }
 }
 
 void AMountainGenWorldActor::Tick(float DeltaSeconds)

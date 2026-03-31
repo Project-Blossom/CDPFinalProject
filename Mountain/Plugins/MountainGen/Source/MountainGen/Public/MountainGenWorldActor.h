@@ -55,6 +55,12 @@ public:
     UFUNCTION()
     void CycleDifficulty();
 
+    UFUNCTION(BlueprintCallable, Category = "MountainGen|Debug")
+    void ToggleOnScreenMessages();
+
+    UFUNCTION(BlueprintCallable, Category = "MountainGen|Debug")
+    void SetOnScreenMessagesEnabled(bool bEnabled);
+
 public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen")
     TObjectPtr<UProceduralMeshComponent> ProcMesh;
@@ -69,7 +75,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Runtime")
     bool bEnableRandomSeedKey = true;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Runtime")
+    bool bEnableOnScreenToggleKey = true;
+
     // ---------- Debug ----------
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug")
+    bool bEnableOnScreenMessages = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug")
     bool bDebugSeedSearch = true;
 
