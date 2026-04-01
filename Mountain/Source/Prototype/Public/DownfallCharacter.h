@@ -84,6 +84,9 @@ public:
     virtual void Tick(float DeltaTime) override;
     virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+    UFUNCTION(BlueprintCallable, Category = "Debug|Movement")
+    void ToggleFlyMode();
+
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
     TObjectPtr<UCameraComponent> FirstPersonCamera;
@@ -139,6 +142,15 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> PauseAction;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Debug|Movement")
+    bool bDebugFlyMode = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug|Movement", meta = (ClampMin = "100.0"))
+    float DebugFlySpeed = 1200.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug|Movement", meta = (ClampMin = "100.0"))
+    float DebugFlyVerticalSpeed = 1000.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Optimization")
     float PlatformAbductionCheckInterval = 0.10f;

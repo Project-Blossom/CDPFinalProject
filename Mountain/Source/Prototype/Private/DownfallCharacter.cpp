@@ -337,6 +337,29 @@ void ADownfallCharacter::Tick(float DeltaTime)
     StartLowFrequencyUpdatesIfNeeded();
     StopLowFrequencyUpdatesIfPossible();
 
+    if (bDebugFlyMode)
+    {
+        APlayerController* PC = Cast<APlayerController>(GetController());
+        if (PC)
+        {
+            float VerticalInput = 0.0f;
+
+            if (PC->IsInputKeyDown(EKeys::SpaceBar))
+            {
+                VerticalInput += 1.0f;
+            }
+            if (PC->IsInputKeyDown(EKeys::LeftControl) || PC->IsInputKeyDown(EKeys::RightControl))
+            {
+                VerticalInput -= 1.0f;
+            }
+
+            if (!FMath::IsNearlyZero(VerticalInput))
+            {
+                AddMovementInput(FVector::UpVector, VerticalInput * (DebugFlyVerticalSpeed / FMath::Max(1.0f, DebugFlySpeed)));
+            }
+        }
+    }
+
     // AI Hearing: 의도적인 움직임만 소음 발생
     FVector Velocity = GetVelocity();
     float Speed = Velocity.Size();
@@ -416,6 +439,66 @@ void ADownfallCharacter::Tick(float DeltaTime)
 #endif
 }
 
+void ADownfallCharacter::ToggleFlyMode()
+{
+    UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+    UCapsuleComponent* Capsule = GetCapsuleComponent();
+
+    if (!MoveComp || !Capsule)
+    {
+        return;
+    }
+
+    if (bIsClimbing)
+    {
+        if (LeftHand.State == EHandState::Gripping)
+        {
+            ReleaseGrip(true);
+        }
+
+        if (RightHand.State == EHandState::Gripping)
+        {
+            ReleaseGrip(false);
+        }
+
+        UpdateClimbingState();
+    }
+
+    Capsule->SetSimulatePhysics(false);
+    Capsule->SetPhysicsLinearVelocity(FVector::ZeroVector);
+    Capsule->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+    MoveComp->StopMovementImmediately();
+
+    bDebugFlyMode = !bDebugFlyMode;
+
+    if (bDebugFlyMode)
+    {
+        MoveComp->GravityScale = 0.0f;
+        MoveComp->BrakingDecelerationFlying = DebugFlySpeed * 2.0f;
+        MoveComp->MaxFlySpeed = DebugFlySpeed;
+        MoveComp->SetMovementMode(MOVE_Flying);
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Yellow, TEXT("Fly Mode ON"));
+        }
+
+        UE_LOG(LogDownFall, Warning, TEXT("Fly Mode ON"));
+    }
+    else
+    {
+        MoveComp->GravityScale = 1.0f;
+        MoveComp->SetMovementMode(MOVE_Walking);
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Yellow, TEXT("Fly Mode OFF"));
+        }
+
+        UE_LOG(LogDownFall, Warning, TEXT("Fly Mode OFF"));
+    }
+}
+
 void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
     Super::SetupPlayerInputComponent(PlayerInputComponent);
@@ -471,6 +554,9 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
             EIC->BindAction(PauseAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnPauseTriggered);
         }
     }
+
+    PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode);
+    PlayerInputComponent->BindKey(EKeys::NumPadThree, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode);
 }
 
 void ADownfallCharacter::OnUseItemTriggered(const FInputActionValue& Value)
@@ -710,6 +796,11 @@ void ADownfallCharacter::OnMove(const FInputActionValue& Value)
 
 void ADownfallCharacter::OnJumpStarted(const FInputActionValue& Value)
 {
+    if (bDebugFlyMode)
+    {
+        return;
+    }
+
     // 등반 중이면 양손 놓고 점프
     if (bIsClimbing)
     {
@@ -757,6 +848,11 @@ void ADownfallCharacter::OnJumpStarted(const FInputActionValue& Value)
 
 void ADownfallCharacter::OnJumpCompleted(const FInputActionValue& Value)
 {
+    if (bDebugFlyMode)
+    {
+        return;
+    }
+
     // 일반 점프 종료
     StopJumping();
 }
@@ -1703,6 +1799,11 @@ void ADownfallCharacter::DrawDebugInfo()
     GEngine->AddOnScreenDebugMessage(
         LineIndex++, 0.0f, FColor::Yellow,
         FString::Printf(TEXT("Movement: %s"), *MovementMode)
+    );
+
+    GEngine->AddOnScreenDebugMessage(
+        LineIndex++, 0.0f, bDebugFlyMode ? FColor::Yellow : FColor::Silver,
+        FString::Printf(TEXT("Fly Mode: %s | Space Up / Ctrl Down"), bDebugFlyMode ? TEXT("ON") : TEXT("OFF"))
     );
 
     // Insanity 표시
