@@ -408,9 +408,11 @@ void ADownfallCharacter::Tick(float DeltaTime)
         }
     }
 
-    // [DISABLED FOR DEMO] Debug visualization
-#if 0
-    DrawDebugInfo();
+#if !UE_BUILD_SHIPPING
+    if (CachedMountainActor.IsValid() && CachedMountainActor->bEnableOnScreenMessages)
+    {
+        DrawDebugInfo();
+    }
 #endif
 }
 
@@ -1605,12 +1607,12 @@ void ADownfallCharacter::AbductByPlatform(bool bIsLeftHand, AFlyingPlatform* Pla
 }
 
 // Debug
-#if 0
+#if !UE_BUILD_SHIPPING
 void ADownfallCharacter::DrawDebugInfo()
 {
     if (!GEngine) return;
 
-    int32 LineIndex = 1;
+    int32 LineIndex = 100;
 
     // 등반 상태
     FString ClimbingStatus = bIsClimbing ? TEXT("Climbing") : TEXT("Not Climbing");
