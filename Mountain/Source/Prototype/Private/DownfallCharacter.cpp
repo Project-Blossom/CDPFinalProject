@@ -29,6 +29,8 @@
 #include "MountainGenWorldActor.h"
 #include "MountainGenSettings.h"
 #include "Core/DownfallGameMode.h"
+#include "TimerManager.h"
+#include <limits>
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -56,7 +58,7 @@ ADownfallCharacter::ADownfallCharacter()
     RightHandMesh->SetRelativeScale3D(FVector(0.3f));
     RightHandMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     RightHandMesh->SetCastShadow(false);
-    
+
     // Post Process Component (VFX용)
     PostProcessComp = CreateDefaultSubobject<UPostProcessComponent>(TEXT("PostProcessComp"));
     PostProcessComp->SetupAttachment(FirstPersonCamera);
@@ -125,7 +127,7 @@ void ADownfallCharacter::BeginPlay()
     else
     {
         // [DISABLED FOR DEMO] UE_LOG(LogDownFall, Error, TEXT("Player StimuliSource is NULL! Creating at runtime..."));
-        
+
         // 런타임에 생성 시도
         StimuliSource = NewObject<UAIPerceptionStimuliSourceComponent>(this, TEXT("StimuliSourceRuntime"));
         if (StimuliSource)
@@ -166,10 +168,10 @@ void ADownfallCharacter::BeginPlay()
             GlitchMaterialInstance->SetScalarParameterValue(FName("NoiseIntensity"), 0.0f);
             GlitchMaterialInstance->SetScalarParameterValue(FName("CurrentPattern"), 0.0f);
             PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, GlitchMaterialInstance));
-            
+
             // 첫 전환 시간 계산
             NextSwitchTime = CalculateNextSwitchInterval();
-            
+
             UE_LOG(LogDownFall, Log, TEXT("Glitch Material Instance created"));
         }
     }
@@ -177,7 +179,7 @@ void ADownfallCharacter::BeginPlay()
     {
         UE_LOG(LogDownFall, Warning, TEXT("GlitchMaterial not assigned - set in Blueprint"));
     }
-    
+
     // Dirt Mask Material Instance 생성
     if (DirtMaskMaterial && PostProcessComp)
     {
@@ -192,7 +194,7 @@ void ADownfallCharacter::BeginPlay()
             DirtMaskMaterialInstance->SetScalarParameterValue(FName("LightSoftness"), DirtLightSoftness);
             DirtMaskMaterialInstance->SetScalarParameterValue(FName("DirtExposure"), DirtExposure);
             PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, DirtMaskMaterialInstance));
-            
+
             UE_LOG(LogDownFall, Log, TEXT("Dirt Mask Material Instance created"));
         }
     }
@@ -200,7 +202,7 @@ void ADownfallCharacter::BeginPlay()
     {
         UE_LOG(LogDownFall, Warning, TEXT("DirtMaskMaterial not assigned - set in Blueprint"));
     }
-    
+
     // Edge Blur Material Instance 생성
     if (EdgeBlurMaterial && PostProcessComp)
     {
@@ -212,7 +214,7 @@ void ADownfallCharacter::BeginPlay()
             EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurStrength"), BlurStrength);
             EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurOffset"), BlurOffset);
             PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, EdgeBlurMaterialInstance));
-            
+
             UE_LOG(LogDownFall, Log, TEXT("Edge Blur Material Instance created"));
         }
     }
@@ -220,7 +222,7 @@ void ADownfallCharacter::BeginPlay()
     {
         UE_LOG(LogDownFall, Warning, TEXT("EdgeBlurMaterial not assigned - set in Blueprint"));
     }
-    
+
     // Lens Distortion Material 초기화
     if (LensDistortionMaterial)
     {
@@ -230,7 +232,7 @@ void ADownfallCharacter::BeginPlay()
             LensDistortionMaterialInstance->SetScalarParameterValue(FName("K1"), BaseK1);
             LensDistortionMaterialInstance->SetScalarParameterValue(FName("K2"), K2);
             PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, LensDistortionMaterialInstance));
-        
+
             UE_LOG(LogTemp, Log, TEXT("Lens Distortion Material initialized"));
         }
     }
@@ -238,7 +240,7 @@ void ADownfallCharacter::BeginPlay()
     {
         UE_LOG(LogDownFall, Warning, TEXT("Lens Distortion Material not assigned - set in Blueprint"));
     }
-    
+
     if (VignetteMaterial)
     {
         VignetteMaterialInstance = UMaterialInstanceDynamic::Create(VignetteMaterial, this);
@@ -248,11 +250,11 @@ void ADownfallCharacter::BeginPlay()
             VignetteMaterialInstance->SetScalarParameterValue(FName("GradientEnd"), VignetteGradientEnd);
             VignetteMaterialInstance->SetVectorParameterValue(FName("VignetteOffset"), FLinearColor(0, 0, 0));
             PostProcessComp->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, VignetteMaterialInstance));
-        
+
             UE_LOG(LogTemp, Log, TEXT("Vignette Material initialized"));
         }
     }
-    
+
     if (LeftHandMesh)
     {
         LeftHandMaterialInstance = LeftHandMesh->CreateDynamicMaterialInstance(0);
@@ -261,7 +263,7 @@ void ADownfallCharacter::BeginPlay()
             UE_LOG(LogDownFall, Log, TEXT("Left Hand Material Instance created"));
         }
     }
-    
+
     if (RightHandMesh)
     {
         RightHandMaterialInstance = RightHandMesh->CreateDynamicMaterialInstance(0);
@@ -280,7 +282,7 @@ void ADownfallCharacter::BeginPlay()
 
     RefreshInventoryUIState();
     ApplyClimbingMappingContext();
-    
+
     // Altitude Widget
     if (AltitudeWidgetClass)
     {
@@ -295,9 +297,17 @@ void ADownfallCharacter::BeginPlay()
     {
         UE_LOG(LogDownFall, Warning, TEXT("AltitudeWidgetClass not assigned"));
     }
-    
+
+    CachedMountainActor = FindMountainGenActor();
+
+    ApplyDirtMaskParameters(true);
+    ApplyEdgeBlurParameters(true);
+    UpdateAltitudeUI();
+
     InitialGroundHeight = GetGroundHeight();
     UE_LOG(LogDownFall, Log, TEXT("Initial ground height: %.2f"), InitialGroundHeight);
+
+    StartLowFrequencyUpdatesIfNeeded();
 }
 
 void ADownfallCharacter::Tick(float DeltaTime)
@@ -313,17 +323,19 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateStamina(DeltaTime);
     UpdateInsanity(DeltaTime);
     UpdateClimbingState();
-    CheckForPlatformAbduction();
     UpdateGlitchEffect();
     UpdateGlitchPatternSwitch(DeltaTime);
     UpdateAttachDesaturation(DeltaTime);
     UpdateLensDistortionEffect();
     UpdateVignetteEffect(DeltaTime);
-    UpdateDirtMaskEffect();
-    UpdateEdgeBlurEffect();
     UpdateHandPositions(DeltaTime);
-    UpdateAltitudeUI();
     UpdateHandStaminaVisuals(DeltaTime);
+
+    ApplyDirtMaskParameters(false);
+    ApplyEdgeBlurParameters(false);
+
+    StartLowFrequencyUpdatesIfNeeded();
+    StopLowFrequencyUpdatesIfPossible();
 
     // AI Hearing: 의도적인 움직임만 소음 발생
     FVector Velocity = GetVelocity();
@@ -396,7 +408,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
         }
     }
 
-// [DISABLED FOR DEMO] Debug visualization
+    // [DISABLED FOR DEMO] Debug visualization
 #if 0
     DrawDebugInfo();
 #endif
@@ -434,7 +446,7 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         {
             EIC->BindAction(JumpAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnJumpStarted);
             EIC->BindAction(JumpAction, ETriggerEvent::Completed, this, &ADownfallCharacter::OnJumpCompleted);
-            
+
             // Debug: Insanity Test
             if (DebugInsanityAction)
             {
@@ -451,7 +463,7 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         {
             EIC->BindAction(ToggleInventoryAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnToggleInventoryTriggered);
         }
-        
+
         if (IsValid(PauseAction))
         {
             EIC->BindAction(PauseAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnPauseTriggered);
@@ -700,7 +712,7 @@ void ADownfallCharacter::OnJumpStarted(const FInputActionValue& Value)
     if (bIsClimbing)
     {
         UE_LOG(LogDownFall, Log, TEXT("Jump from climbing - releasing grips"));
-        
+
         // 양손 모두 놓기
         if (LeftHand.State == EHandState::Gripping)
         {
@@ -713,10 +725,10 @@ void ADownfallCharacter::OnJumpStarted(const FInputActionValue& Value)
 
         // Physics OFF (ReleaseGrip에서 이미 했지만 명시적으로)
         GetCapsuleComponent()->SetSimulatePhysics(false);
-        
+
         // 카메라 반대 방향으로 밀기 (벽에서 멀어지기)
         FVector PushDirection = FVector::ZeroVector;
-        
+
         if (FirstPersonCamera)
         {
             FVector CameraForward = FirstPersonCamera->GetForwardVector();
@@ -724,14 +736,14 @@ void ADownfallCharacter::OnJumpStarted(const FInputActionValue& Value)
             PushDirection.Z = 0; // 수평으로만
             PushDirection.Normalize();
         }
-        
+
         // 밀어내기 (수평) + 점프 (수직)
         FVector JumpVelocity = PushDirection * 300.0f + FVector::UpVector * 400.0f;
-        
+
         // Velocity 직접 설정
         GetCharacterMovement()->SetMovementMode(MOVE_Falling);
         GetCharacterMovement()->Velocity = JumpVelocity;
-        
+
         UE_LOG(LogDownFall, Log, TEXT("Jump velocity: %s"), *JumpVelocity.ToString());
     }
     else
@@ -1112,7 +1124,7 @@ void ADownfallCharacter::SetupConstraint(UPhysicsConstraintComponent* Constraint
     }
 
     Constraint->SetWorldLocation(TargetLocation);
-    
+
     Constraint->SetConstrainedComponents(
         GetCapsuleComponent(),
         NAME_None,
@@ -1229,7 +1241,7 @@ float ADownfallCharacter::GetStaminaDrainRate(const FHandData& Hand) const
     // 경사각 기반 배율 계산
     float Angle = Hand.CurrentGrip.SurfaceAngleDegrees;
     float AngleMultiplier = 1.0f;
-    
+
     if (Angle < CeilingAngleThreshold)
     {
         AngleMultiplier = CeilingAngleMultiplier;
@@ -1254,13 +1266,13 @@ float ADownfallCharacter::GetStaminaDrainRate(const FHandData& Hand) const
     {
         AngleMultiplier = FloorAngleMultiplier;
     }
-    
+
     BaseDrain *= AngleMultiplier;
-    
+
     // 품질 기반 배율 계산
     float Quality = Hand.CurrentGrip.GripQuality;
     float QualityMultiplier = 1.0f;
-    
+
     if (Quality >= AnchorQualityThreshold)
     {
         QualityMultiplier = AnchorQualityMultiplier;
@@ -1281,9 +1293,9 @@ float ADownfallCharacter::GetStaminaDrainRate(const FHandData& Hand) const
     {
         QualityMultiplier = VeryPoorQualityMultiplier;
     }
-    
+
     BaseDrain *= QualityMultiplier;
-    
+
     return BaseDrain;
 }
 
@@ -1314,12 +1326,12 @@ void ADownfallCharacter::AddInsanity(float Amount)
 {
     Insanity = FMath::Clamp(Insanity + Amount, 0.0f, MaxInsanity);
     UpdateInsanityEffects();
-    
+
     // Altitude Widget Glitch 모드 제어 (상태 변화 감지)
     if (AltitudeWidget)
     {
         bool bIsNowAboveThreshold = (Insanity >= AltitudeGlitchThreshold);
-        
+
         // 상태가 변했을 때만 호출
         if (bIsNowAboveThreshold != bWasAboveGlitchThreshold)
         {
@@ -1335,12 +1347,12 @@ void ADownfallCharacter::AddInsanity(float Amount)
                 AltitudeWidget->DisableGlitchMode();
                 UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f (+%.1f): Altitude Glitch DISABLED"), Insanity, Amount);
             }
-            
+
             // 플래그 업데이트
             bWasAboveGlitchThreshold = bIsNowAboveThreshold;
         }
     }
-    
+
     UE_LOG(LogDownFall, Log, TEXT("Insanity increased by %.1f, now: %.1f"), Amount, Insanity);
 }
 
@@ -1359,15 +1371,15 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
             // 정상 상태: 초당 0.1씩 감소
             Insanity = FMath::Max(0.0f, Insanity - InsanityDecayRate * DeltaTime);
         }
-        
+
         UpdateInsanityEffects();
     }
-    
+
     // Altitude Widget Glitch 모드 제어 (상태 변화 감지)
     if (AltitudeWidget)
     {
         bool bIsNowAboveThreshold = (Insanity >= AltitudeGlitchThreshold);
-        
+
         // 상태가 변했을 때만 호출
         if (bIsNowAboveThreshold != bWasAboveGlitchThreshold)
         {
@@ -1383,7 +1395,7 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
                 AltitudeWidget->DisableGlitchMode();
                 UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f: Altitude Glitch DISABLED"), Insanity);
             }
-            
+
             // 플래그 업데이트
             bWasAboveGlitchThreshold = bIsNowAboveThreshold;
         }
@@ -1393,14 +1405,14 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
 void ADownfallCharacter::UpdateInsanityEffects()
 {
     bool bShouldBeConfused = Insanity >= InsanityThreshold;
-    
+
     if (bShouldBeConfused != bIsConfused)
     {
         bIsConfused = bShouldBeConfused;
-        
+
         if (bIsConfused)
         {
-            UE_LOG(LogDownFall, Warning, TEXT("Insanity confusion effect enabled! (%.1f >= %.1f)"), 
+            UE_LOG(LogDownFall, Warning, TEXT("Insanity confusion effect enabled! (%.1f >= %.1f)"),
                 Insanity, InsanityThreshold);
         }
         else
@@ -1588,7 +1600,7 @@ void ADownfallCharacter::AbductByPlatform(bool bIsLeftHand, AFlyingPlatform* Pla
     // 3. Platform에게 알림
     Platform->OnPlayerGrab(this);
 
-    UE_LOG(LogDownFall, Warning, TEXT("%s hand abducted by Platform: %s"), 
+    UE_LOG(LogDownFall, Warning, TEXT("%s hand abducted by Platform: %s"),
         bIsLeftHand ? TEXT("Left") : TEXT("Right"), *Platform->GetName());
 }
 
@@ -1599,7 +1611,7 @@ void ADownfallCharacter::DrawDebugInfo()
     if (!GEngine) return;
 
     int32 LineIndex = 1;
-    
+
     // 등반 상태
     FString ClimbingStatus = bIsClimbing ? TEXT("Climbing") : TEXT("Not Climbing");
     GEngine->AddOnScreenDebugMessage(
@@ -1616,14 +1628,14 @@ void ADownfallCharacter::DrawDebugInfo()
             LineIndex++, 0.0f, FColor::Green,
             FString::Printf(TEXT("Left Slope: %.1f°"), SlopeAngle)
         );
-        
+
         // 스태미나 소모량
         float DrainRate = GetStaminaDrainRate(LeftHand);
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Green,
             FString::Printf(TEXT("Left Drain: %.2f/s"), DrainRate)
         );
-        
+
         // 현재 스태미나
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Green,
@@ -1647,14 +1659,14 @@ void ADownfallCharacter::DrawDebugInfo()
             LineIndex++, 0.0f, FColor::Blue,
             FString::Printf(TEXT("Right Slope: %.1f°"), SlopeAngle)
         );
-        
+
         // 스태미나 소모량
         float DrainRate = GetStaminaDrainRate(RightHand);
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Blue,
             FString::Printf(TEXT("Right Drain: %.2f/s"), DrainRate)
         );
-        
+
         // 현재 스태미나
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Blue,
@@ -1681,10 +1693,10 @@ void ADownfallCharacter::DrawDebugInfo()
     FString MovementMode;
     switch (GetCharacterMovement()->MovementMode)
     {
-        case MOVE_Walking: MovementMode = TEXT("Walking"); break;
-        case MOVE_Falling: MovementMode = TEXT("Falling"); break;
-        case MOVE_Flying: MovementMode = TEXT("Flying"); break;
-        default: MovementMode = TEXT("Other"); break;
+    case MOVE_Walking: MovementMode = TEXT("Walking"); break;
+    case MOVE_Falling: MovementMode = TEXT("Falling"); break;
+    case MOVE_Flying: MovementMode = TEXT("Flying"); break;
+    default: MovementMode = TEXT("Other"); break;
     }
     GEngine->AddOnScreenDebugMessage(
         LineIndex++, 0.0f, FColor::Yellow,
@@ -1695,7 +1707,7 @@ void ADownfallCharacter::DrawDebugInfo()
     FColor InsanityColor = bIsConfused ? FColor::Red : FColor::Magenta;
     GEngine->AddOnScreenDebugMessage(
         LineIndex++, 0.0f, InsanityColor,
-        FString::Printf(TEXT("Insanity: %.1f / %.1f %s"), 
+        FString::Printf(TEXT("Insanity: %.1f / %.1f %s"),
             Insanity, MaxInsanity, bIsConfused ? TEXT("[CONFUSED]") : TEXT(""))
     );
 }
@@ -1705,37 +1717,37 @@ void ADownfallCharacter::UpdateGlitchEffect()
 {
     if (!GlitchMaterialInstance)
         return;
-    
+
     // Insanity에 따라 NoiseIntensity 조절 (점진적, 0~100 → 0~1)
     float TargetIntensity = FMath::GetMappedRangeValueClamped(
         FVector2D(0.0f, 100.0f),  // Insanity 범위
         FVector2D(0.0f, 1.0f),     // NoiseIntensity 범위
         Insanity
     );
-    
+
     // 부드러운 전환
     CurrentNoiseIntensity = FMath::FInterpTo(
-        CurrentNoiseIntensity, 
-        TargetIntensity, 
-        GetWorld()->GetDeltaSeconds(), 
+        CurrentNoiseIntensity,
+        TargetIntensity,
+        GetWorld()->GetDeltaSeconds(),
         2.0f
     );
-    
+
     // Material Parameter 업데이트
     GlitchMaterialInstance->SetScalarParameterValue(
-        FName("NoiseIntensity"), 
+        FName("NoiseIntensity"),
         CurrentNoiseIntensity
     );
-    
+
 #if 0
     // 디버그 표시
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(
-            1, 
-            0.0f, 
+            1,
+            0.0f,
             FColor::Red,
-            FString::Printf(TEXT("Glitch: %.0f%% (Insanity: %.1f, Pattern: %d)"), 
+            FString::Printf(TEXT("Glitch: %.0f%% (Insanity: %.1f, Pattern: %d)"),
                 CurrentNoiseIntensity * 100.0f, Insanity, CurrentPattern)
         );
     }
@@ -1752,14 +1764,14 @@ void ADownfallCharacter::ShowAttachDesaturation(float Amount)
 
     bShowingDesaturation = true;
     DesaturationAmount = Amount;
-    
+
     UE_LOG(LogDownFall, Log, TEXT("ShowAttachDesaturation: Amount=%.2f"), Amount);
 }
 
 void ADownfallCharacter::HideAttachDesaturation()
 {
     bShowingDesaturation = false;
-    
+
     UE_LOG(LogDownFall, Log, TEXT("HideAttachDesaturation called"));
 }
 
@@ -1786,24 +1798,24 @@ void ADownfallCharacter::UpdateGlitchPatternSwitch(float DeltaTime)
 {
     if (!GlitchMaterialInstance)
         return;
-    
+
     TimeSinceLastSwitch += DeltaTime;
-    
+
     if (TimeSinceLastSwitch >= NextSwitchTime)
     {
         // 패턴 전환 (0 → 1 → 2 → 0)
         CurrentPattern = (CurrentPattern + 1) % 3;
-        
+
         GlitchMaterialInstance->SetScalarParameterValue(
-            FName("CurrentPattern"), 
+            FName("CurrentPattern"),
             (float)CurrentPattern
         );
-        
+
         // 다음 전환 시간 계산
         TimeSinceLastSwitch = 0.0f;
         NextSwitchTime = CalculateNextSwitchInterval();
-        
-        UE_LOG(LogDownFall, Log, TEXT("Glitch Pattern switched to %d, next switch in %.2f seconds"), 
+
+        UE_LOG(LogDownFall, Log, TEXT("Glitch Pattern switched to %d, next switch in %.2f seconds"),
             CurrentPattern, NextSwitchTime);
     }
 }
@@ -1816,13 +1828,13 @@ float ADownfallCharacter::CalculateNextSwitchInterval() const
         FVector2D(1.0f, 5.0f),     // 전환 빈도 배율
         Insanity
     );
-    
+
     // 기본 간격을 빈도로 나눔
     float BaseInterval = PatternSwitchBaseInterval / FrequencyMultiplier;
-    
+
     // 랜덤 변동 추가
     float RandomVariation = FMath::RandRange(-PatternSwitchRandomness, PatternSwitchRandomness);
-    
+
     // 최소 0.1초는 유지
     return FMath::Max(0.1f, BaseInterval + RandomVariation);
 }
@@ -1845,15 +1857,15 @@ void ADownfallCharacter::UpdateLensDistortionEffect()
 
     // Chromatic Aberration 업데이트
     CurrentChromaticAberration = FMath::Lerp(BaseChromaticAberration, MaxChromaticAberration, InsanityNormalized);
-    
+
     if (PostProcessComp)
     {
         PostProcessComp->Settings.SceneFringeIntensity = CurrentChromaticAberration;
     }
-    
+
     // FilmGrain 업데이트
     CurrentFilmGrainIntensity = FMath::Lerp(BaseFilmGrainIntensity, MaxFilmGrainIntensity, InsanityNormalized);
-    
+
     if (PostProcessComp)
     {
         PostProcessComp->Settings.FilmGrainIntensity = CurrentFilmGrainIntensity;
@@ -1867,7 +1879,7 @@ void ADownfallCharacter::UpdateVignetteEffect(float DeltaTime)
 
     // 카메라의 회전 속도 계산 (Pitch, Yaw)
     FRotator CameraRotation = FirstPersonCamera->GetComponentRotation();
-    
+
     // 이전 프레임과의 회전 차이 계산
     static FRotator LastRotation = CameraRotation;
     FRotator RotationDelta = CameraRotation - LastRotation;
@@ -1887,7 +1899,7 @@ void ADownfallCharacter::UpdateVignetteEffect(float DeltaTime)
 
     // Material Parameter 업데이트
     VignetteMaterialInstance->SetVectorParameterValue(
-        FName("VignetteOffset"), 
+        FName("VignetteOffset"),
         FLinearColor(CurrentVignetteOffset.X, CurrentVignetteOffset.Y, 0.0f)
     );
 }
@@ -2153,66 +2165,174 @@ void ADownfallCharacter::UpdateHandPositions(float DeltaTime)
 FVector ADownfallCharacter::GetHandTargetPosition(bool bIsLeftHand) const
 {
     const FHandData& Hand = bIsLeftHand ? LeftHand : RightHand;
-    
+
     // 손이 잡고 있으면
     if (Hand.State == EHandState::Gripping && Hand.CurrentGrip.bIsValid)
     {
         // 월드 공간의 Grip 위치를 카메라 로컬 공간으로 변환
         FVector GripWorldLocation = Hand.CurrentGrip.WorldLocation;
-        
+
         if (FirstPersonCamera)
         {
             FTransform CameraTransform = FirstPersonCamera->GetComponentTransform();
             FVector LocalGripPos = CameraTransform.InverseTransformPosition(GripWorldLocation);
-            
+
             return LocalGripPos;
         }
     }
-    
+
     // 손을 놓았으면 휴식 위치로
     return bIsLeftHand ? LeftHandRestPosition : RightHandRestPosition;
+}
+
+void ADownfallCharacter::RefreshLowFrequencyUpdates()
+{
+    CheckForPlatformAbduction();
+    UpdateAltitudeUI();
+}
+
+void ADownfallCharacter::StartLowFrequencyUpdatesIfNeeded()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    const bool bNeedsPlatformCheck =
+        (LeftHand.State == EHandState::Gripping || RightHand.State == EHandState::Gripping);
+
+    const bool bNeedsAltitudeUI = (AltitudeWidget != nullptr);
+
+    if (!bNeedsPlatformCheck && !bNeedsAltitudeUI)
+    {
+        return;
+    }
+
+    const float SafePlatformInterval = FMath::Max(0.02f, PlatformAbductionCheckInterval);
+    const float SafeAltitudeInterval = FMath::Max(0.02f, AltitudeUpdateInterval);
+    const float SafeInterval = FMath::Min(SafePlatformInterval, SafeAltitudeInterval);
+
+    if (!World->GetTimerManager().IsTimerActive(LowFrequencyUpdateTimerHandle))
+    {
+        World->GetTimerManager().SetTimer(
+            LowFrequencyUpdateTimerHandle,
+            this,
+            &ADownfallCharacter::RefreshLowFrequencyUpdates,
+            SafeInterval,
+            true
+        );
+    }
+}
+
+void ADownfallCharacter::StopLowFrequencyUpdatesIfPossible()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    const bool bNeedsPlatformCheck =
+        (LeftHand.State == EHandState::Gripping || RightHand.State == EHandState::Gripping);
+
+    const bool bNeedsAltitudeUI = (AltitudeWidget != nullptr);
+
+    if (!bNeedsPlatformCheck && !bNeedsAltitudeUI)
+    {
+        World->GetTimerManager().ClearTimer(LowFrequencyUpdateTimerHandle);
+    }
+}
+
+void ADownfallCharacter::ApplyDirtMaskParameters(bool bForce)
+{
+    if (!DirtMaskMaterialInstance)
+    {
+        return;
+    }
+
+    auto ApplyIfChanged = [bForce](UMaterialInstanceDynamic* MID, const TCHAR* ParamName, float NewValue, float& CachedValue)
+        {
+            if (bForce || !FMath::IsNearlyEqual(CachedValue, NewValue))
+            {
+                MID->SetScalarParameterValue(FName(ParamName), NewValue);
+                CachedValue = NewValue;
+            }
+        };
+
+    ApplyIfChanged(DirtMaskMaterialInstance, TEXT("DirtIntensity"), DirtIntensity, CachedDirtIntensity);
+    ApplyIfChanged(DirtMaskMaterialInstance, TEXT("BlurOffset"), DirtBlurOffset, CachedDirtBlurOffset);
+    ApplyIfChanged(DirtMaskMaterialInstance, TEXT("TintStrength"), DirtTintStrength, CachedDirtTintStrength);
+    ApplyIfChanged(DirtMaskMaterialInstance, TEXT("LightResponse"), DirtLightResponse, CachedDirtLightResponse);
+    ApplyIfChanged(DirtMaskMaterialInstance, TEXT("LightThreshold"), DirtLightThreshold, CachedDirtLightThreshold);
+    ApplyIfChanged(DirtMaskMaterialInstance, TEXT("LightSoftness"), DirtLightSoftness, CachedDirtLightSoftness);
+    ApplyIfChanged(DirtMaskMaterialInstance, TEXT("DirtExposure"), DirtExposure, CachedDirtExposure);
+}
+
+void ADownfallCharacter::ApplyEdgeBlurParameters(bool bForce)
+{
+    if (!EdgeBlurMaterialInstance)
+    {
+        return;
+    }
+
+    auto ApplyIfChanged = [bForce](UMaterialInstanceDynamic* MID, const TCHAR* ParamName, float NewValue, float& CachedValue)
+        {
+            if (bForce || !FMath::IsNearlyEqual(CachedValue, NewValue))
+            {
+                MID->SetScalarParameterValue(FName(ParamName), NewValue);
+                CachedValue = NewValue;
+            }
+        };
+
+    ApplyIfChanged(EdgeBlurMaterialInstance, TEXT("BlurStart"), BlurStart, CachedBlurStart);
+    ApplyIfChanged(EdgeBlurMaterialInstance, TEXT("BlurEnd"), BlurEnd, CachedBlurEnd);
+    ApplyIfChanged(EdgeBlurMaterialInstance, TEXT("BlurStrength"), BlurStrength, CachedBlurStrength);
+    ApplyIfChanged(EdgeBlurMaterialInstance, TEXT("BlurOffset"), BlurOffset, CachedBlurOffset);
 }
 
 void ADownfallCharacter::UpdateAltitudeUI()
 {
     if (!AltitudeWidget)
+    {
         return;
+    }
 
     float CurrentZ = GetActorLocation().Z;
-    float MaxHeight = 5000.0f; // 기본값 500m
-    
-    AMountainGenWorldActor* MountainActor = FindMountainGenActor();
+    float MaxHeight = 5000.0f;
+
+    AMountainGenWorldActor* MountainActor = CachedMountainActor.Get();
+    if (!MountainActor)
+    {
+        MountainActor = FindMountainGenActor();
+        CachedMountainActor = MountainActor;
+    }
+
     if (MountainActor)
     {
         MaxHeight = MountainActor->Settings.CliffHeightCm;
     }
-    
+
     AltitudeWidget->UpdateAltitude(CurrentZ, InitialGroundHeight, MaxHeight);
 }
 
 AMountainGenWorldActor* ADownfallCharacter::FindMountainGenActor()
 {
-    // 캐싱 (매 프레임 찾지 않기)
-    static AMountainGenWorldActor* CachedActor = nullptr;
-    
-    if (CachedActor)
-        return CachedActor;
-    
-    // 월드에서 찾기
     TArray<AActor*> FoundActors;
     UGameplayStatics::GetAllActorsOfClass(GetWorld(), AMountainGenWorldActor::StaticClass(), FoundActors);
-    
+
     if (FoundActors.Num() > 0)
     {
-        CachedActor = Cast<AMountainGenWorldActor>(FoundActors[0]);
-        UE_LOG(LogDownFall, Log, TEXT("MountainGenWorldActor found: %s"), *CachedActor->GetName());
+        AMountainGenWorldActor* Found = Cast<AMountainGenWorldActor>(FoundActors[0]);
+        if (Found)
+        {
+            UE_LOG(LogDownFall, Log, TEXT("MountainGenWorldActor found: %s"), *Found->GetName());
+        }
+        return Found;
     }
-    else
-    {
-        UE_LOG(LogDownFall, Warning, TEXT("MountainGenWorldActor not found in level"));
-    }
-    
-    return CachedActor;
+
+    UE_LOG(LogDownFall, Warning, TEXT("MountainGenWorldActor not found in level"));
+    return nullptr;
 }
 
 float ADownfallCharacter::GetGroundHeight() const
@@ -2221,10 +2341,10 @@ float ADownfallCharacter::GetGroundHeight() const
     FHitResult Hit;
     FVector Start = GetActorLocation();
     FVector End = Start - FVector(0, 0, 100000.0f); // 1000m 아래까지
-    
+
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(this);
-    
+
     bool bHit = GetWorld()->LineTraceSingleByChannel(
         Hit,
         Start,
@@ -2232,12 +2352,12 @@ float ADownfallCharacter::GetGroundHeight() const
         ECC_WorldStatic,
         Params
     );
-    
+
     if (bHit)
     {
         return Hit.Location.Z;
     }
-    
+
     // 못 찾으면 0
     return 0.0f;
 }
@@ -2250,7 +2370,7 @@ void ADownfallCharacter::UpdateHandStaminaVisuals(float DeltaTime)
         UpdateHandMaterial(LeftHandMaterialInstance, LeftHand.Stamina);
         UpdateHandShake(LeftHandMesh, LeftHand.Stamina, DeltaTime, LeftHandRestPosition);
     }
-    
+
     // 오른손 업데이트
     if (RightHandMaterialInstance && RightHandMesh)
     {
@@ -2263,12 +2383,12 @@ void ADownfallCharacter::UpdateHandMaterial(UMaterialInstanceDynamic* MaterialIn
 {
     if (!MaterialInstance)
         return;
-    
+
     // 스태미나 값을 0~1 범위로 정규화
     float StaminaPercent = FMath::Clamp(Stamina / 100.0f, 0.0f, 1.0f);
-    
+
     float ColorBlendStrength = 0.0f;
-    
+
     if (StaminaPercent >= 0.6f)
     {
         ColorBlendStrength = 0.0f;
@@ -2281,7 +2401,7 @@ void ADownfallCharacter::UpdateHandMaterial(UMaterialInstanceDynamic* MaterialIn
     {
         ColorBlendStrength = 0.95f;
     }
-    
+
     // Material Parameter 설정
     MaterialInstance->SetScalarParameterValue(FName("StaminaBlend"), ColorBlendStrength);
 }
@@ -2290,26 +2410,26 @@ void ADownfallCharacter::UpdateHandShake(USkeletalMeshComponent* HandMesh, float
 {
     if (!HandMesh)
         return;
-    
+
     float StaminaPercent = FMath::Clamp(Stamina / 100.0f, 0.0f, 1.0f);
-    
+
     // 25% 이하일 때만 떨림 추가
     if (StaminaPercent <= 0.25f)
     {
         HandShakeTimer += DeltaTime * HandShakeSpeed;
-        
+
         // 떨림 강도 (스태미나가 낮을수록 강하게)
         float ShakeAmount = (1.0f - (StaminaPercent / 0.25f)) * HandShakeIntensity;
-        
+
         // Sin/Cos으로 자연스러운 떨림 생성
         FVector ShakeOffset;
         ShakeOffset.X = FMath::Sin(HandShakeTimer * 1.3f) * ShakeAmount;
         ShakeOffset.Y = FMath::Cos(HandShakeTimer * 1.7f) * ShakeAmount;
         ShakeOffset.Z = FMath::Sin(HandShakeTimer * 2.1f) * ShakeAmount * 0.5f;
-        
+
         // 현재 위치 가져오기
         FVector CurrentLocation = HandMesh->GetRelativeLocation();
-        
+
         // 떨림만 추가 (작은 값으로)
         HandMesh->SetRelativeLocation(CurrentLocation + ShakeOffset * 0.1f);
     }
@@ -2339,10 +2459,10 @@ void ADownfallCharacter::OnPauseTriggered(const FInputActionValue& Value)
     if (PauseMenuWidget)
     {
         PauseMenuWidget->AddToViewport(100);  // 최상위
-        
+
         // 게임 일시정지
         UGameplayStatics::SetGamePaused(GetWorld(), true);
-        
+
         UE_LOG(LogDownFall, Warning, TEXT("Game Paused"));
     }
 }

@@ -297,17 +297,16 @@ static void MG_CullMeshIslands(FChunkMeshData& Out, int32 MinTrisToKeep, bool bK
 
 AMountainGenWorldActor::AMountainGenWorldActor()
 {
-    PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bStartWithTickEnabled = false;
 
     ProcMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProcMesh"));
     SetRootComponent(ProcMesh);
 
-    ProcMesh->SetMobility(EComponentMobility::Movable);
-    ProcMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
-    ProcMesh->bUseComplexAsSimpleCollision = true;
     ProcMesh->bUseAsyncCooking = true;
-
-    AutoReceiveInput = EAutoReceiveInput::Player0;
+    ProcMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+    ProcMesh->SetGenerateOverlapEvents(false);
+    ProcMesh->SetMobility(EComponentMobility::Static);
 }
 
 void AMountainGenWorldActor::UI_Status(const FString& Msg, float Seconds, FColor Color) const
@@ -529,18 +528,12 @@ void AMountainGenWorldActor::BeginPlay()
     }
 }
 
-void AMountainGenWorldActor::Tick(float DeltaSeconds)
+void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, bool bShowRuntimeSeedMessage)
 {
-    Super::Tick(DeltaSeconds);
-
-    if (!PendingResult.bValid)
-        return;
-
-    FMGAsyncResult Result = MoveTemp(PendingResult);
-    PendingResult.bValid = false;
-
     if (Result.BuildSerial != InFlightBuildSerial)
+    {
         return;
+    }
 
     if (!ProcMesh)
     {
@@ -557,11 +550,16 @@ void AMountainGenWorldActor::Tick(float DeltaSeconds)
         UI_Status(TEXT("[MountainGen] 생성 실패: MeshData 비어있음"), 2.0f, FColor::Red);
         bAsyncWorking = false;
         InFlightBuildSerial = 0;
+
+        if (bRegenQueued)
+        {
+            bRegenQueued = false;
+            BuildChunkAndMesh();
+        }
         return;
     }
 
-    TArray<FLinearColor> Colors;
-    Colors.SetNumZeroed(Result.MeshData.Vertices.Num());
+    ReusableColors.SetNumZeroed(Result.MeshData.Vertices.Num());
 
     ProcMesh->CreateMeshSection_LinearColor(
         0,
@@ -569,7 +567,7 @@ void AMountainGenWorldActor::Tick(float DeltaSeconds)
         Result.MeshData.Triangles,
         Result.MeshData.Normals,
         Result.MeshData.UV0,
-        Colors,
+        ReusableColors,
         Result.MeshData.Tangents,
         Result.FinalSettings.bCreateCollision
     );
@@ -584,7 +582,10 @@ void AMountainGenWorldActor::Tick(float DeltaSeconds)
 
     UpdateGeneratedMeshStateAndBroadcast();
 
-    UI_Status(FString::Printf(TEXT("[MountainGen] 시드 변경 완료: %d"), Settings.Seed), 2.5f, FColor::Yellow);
+    if (bShowRuntimeSeedMessage)
+    {
+        UI_Status(FString::Printf(TEXT("[MountainGen] 시드 변경 완료: %d"), Settings.Seed), 2.5f, FColor::Yellow);
+    }
 
     bAsyncWorking = false;
     InFlightBuildSerial = 0;
@@ -864,9 +865,12 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             );
         }
 
-        MG_WeldVertices_Quantized(MeshData, S.VoxelSizeCm * 0.15f);
+        if (bEnablePostWeld)
+        {
+            MG_WeldVertices_Quantized(MeshData, S.VoxelSizeCm * PostWeldEpsilonScale);
+        }
 
-        if (bDebugPipeline)
+        if (bDebugPipeline && bEnablePostWeld)
         {
             DebugPrintGT(
                 FString::Printf(TEXT("[Mesh][Weld] V=%d  T=%d"),
@@ -877,9 +881,12 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             );
         }
 
-        MG_CullMeshIslands(MeshData, 200, true);
+        if (bEnableIslandCull)
+        {
+            MG_CullMeshIslands(MeshData, MinTrisToKeepAfterCull, true);
+        }
 
-        if (bDebugPipeline)
+        if (bDebugPipeline && bEnableIslandCull)
         {
             DebugPrintGT(
                 FString::Printf(TEXT("[Mesh][Cull] V=%d  T=%d"),
@@ -899,8 +906,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             return;
         }
 
-        TArray<FLinearColor> Colors;
-        Colors.SetNumZeroed(MeshData.Vertices.Num());
+        ReusableColors.SetNumZeroed(MeshData.Vertices.Num());
 
         ProcMesh->CreateMeshSection_LinearColor(
             0,
@@ -908,7 +914,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             MeshData.Triangles,
             MeshData.Normals,
             MeshData.UV0,
-            Colors,
+            ReusableColors,
             MeshData.Tangents,
             S.bCreateCollision
         );
@@ -939,6 +945,14 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         return;
     }
 
+    const bool bLocalEnablePostWeld = bEnablePostWeld;
+    const float LocalPostWeldEpsilonScale = PostWeldEpsilonScale;
+    const bool bLocalEnableIslandCull = bEnableIslandCull;
+    const int32 LocalMinTrisToKeepAfterCull = MinTrisToKeepAfterCull;
+    const bool bLocalDebugPipeline = bDebugPipeline;
+    const bool bLocalDebugSeedSearch = bDebugSeedSearch;
+    const int32 LocalDebugPrintEveryNAttempt = DebugPrintEveryNAttempt;
+
     const int32 LocalBuildSerial = ++CurrentBuildSerial;
     bAsyncWorking = true;
     InFlightBuildSerial = LocalBuildSerial;
@@ -954,7 +968,10 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         WorldMin, WorldMax,
         ChunkOriginWorld, ActorWorld, SampleOriginWorld,
         SampleX, SampleY, SampleZ, Voxel,
-        InputSeed, TriesForSeedSearch, LocalBuildSerial]() mutable
+        InputSeed, TriesForSeedSearch, LocalBuildSerial,
+        bLocalEnablePostWeld, LocalPostWeldEpsilonScale,
+        bLocalEnableIslandCull, LocalMinTrisToKeepAfterCull,
+        bLocalDebugPipeline, bLocalDebugSeedSearch, LocalDebugPrintEveryNAttempt]() mutable
         {
             if (!WeakThis.IsValid()) return;
 
@@ -968,7 +985,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 };
 
             // ---- AutoTune ----
-            if (WeakThis->bDebugPipeline)
+            if (bLocalDebugPipeline)
             {
                 const FMGMetrics M0 = MGComputeMetricsQuick(S, TerrainOriginWorld, WorldMin, WorldMax);
                 bool okO = false, okS = false;
@@ -981,7 +998,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 MGClampToDifficultyBounds(S);
             }
 
-            if (WeakThis->bDebugPipeline)
+            if (bLocalDebugPipeline)
             {
                 const FMGMetrics M1 = MGComputeMetricsQuick(S, TerrainOriginWorld, WorldMin, WorldMax);
                 bool okO = false, okS = false;
@@ -998,15 +1015,15 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     TriesForSeedSearch,
                     S.bRetrySeedUntilSatisfied,
                     S.MaxSeedAttempts,
-                    WeakThis->bDebugSeedSearch,
-                    WeakThis->DebugPrintEveryNAttempt,
+                    bLocalDebugSeedSearch,
+                    LocalDebugPrintEveryNAttempt,
                     DebugPrint
                 );
 
             S.Seed = FinalSeed;
             MGDeriveReproducibleDomainFromSeed(S, FinalSeed);
 
-            if (WeakThis->bDebugPipeline)
+            if (bLocalDebugPipeline)
             {
                 const FMGMetrics MF = MGComputeMetricsQuick(S, TerrainOriginWorld, WorldMin, WorldMax);
                 bool okO = false, okS = false;
@@ -1056,7 +1073,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 MeshData
             );
 
-            if (WeakThis->bDebugPipeline)
+            if (bLocalDebugPipeline)
             {
                 DebugPrint(
                     FString::Printf(TEXT("[Mesh][Raw ] V=%d  T=%d"),
@@ -1067,45 +1084,52 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 );
             }
 
-            MG_WeldVertices_Quantized(MeshData, S.VoxelSizeCm * 0.15f);
-
-            if (WeakThis->bDebugPipeline)
+            if (bLocalEnablePostWeld)
             {
-                DebugPrint(
-                    FString::Printf(TEXT("[Mesh][Weld] V=%d  T=%d"),
-                        MeshData.Vertices.Num(),
-                        MeshData.Triangles.Num() / 3),
-                    4.0f,
-                    FColor::Silver
-                );
+                MG_WeldVertices_Quantized(MeshData, S.VoxelSizeCm * LocalPostWeldEpsilonScale);
+
+                if (bLocalDebugPipeline)
+                {
+                    DebugPrint(
+                        FString::Printf(TEXT("[Mesh][Weld] V=%d  T=%d"),
+                            MeshData.Vertices.Num(),
+                            MeshData.Triangles.Num() / 3),
+                        4.0f,
+                        FColor::Silver
+                    );
+                }
             }
 
-            MG_CullMeshIslands(MeshData, 200, true);
-
-            if (WeakThis->bDebugPipeline)
+            if (bLocalEnableIslandCull)
             {
-                DebugPrint(
-                    FString::Printf(TEXT("[Mesh][Cull] V=%d  T=%d"),
-                        MeshData.Vertices.Num(),
-                        MeshData.Triangles.Num() / 3),
-                    4.0f,
-                    FColor::Silver
-                );
+                MG_CullMeshIslands(MeshData, LocalMinTrisToKeepAfterCull, true);
+
+                if (bLocalDebugPipeline)
+                {
+                    DebugPrint(
+                        FString::Printf(TEXT("[Mesh][Cull] V=%d  T=%d"),
+                            MeshData.Vertices.Num(),
+                            MeshData.Triangles.Num() / 3),
+                        4.0f,
+                        FColor::Silver
+                    );
+                }
             }
 
             // ---- GameThread apply ----
             AsyncTask(ENamedThreads::GameThread,
-                [WeakThis, FinalS = S, MeshData = MoveTemp(MeshData), LocalBuildSerial]() mutable
+                [WeakThis, FinalS = S, MeshData = MoveTemp(MeshData), LocalBuildSerial, bLocalDebugPipeline]() mutable
                 {
                     if (!WeakThis.IsValid()) return;
                     if (WeakThis->InFlightBuildSerial != LocalBuildSerial) return;
 
-                    WeakThis->PendingResult.bValid = true;
-                    WeakThis->PendingResult.BuildSerial = LocalBuildSerial;
-                    WeakThis->PendingResult.FinalSettings = FinalS;
-                    WeakThis->PendingResult.MeshData = MoveTemp(MeshData);
+                    FMGAsyncResult Result;
+                    Result.bValid = true;
+                    Result.BuildSerial = LocalBuildSerial;
+                    Result.FinalSettings = FinalS;
+                    Result.MeshData = MoveTemp(MeshData);
 
-                    if (WeakThis->bDebugPipeline)
+                    if (bLocalDebugPipeline)
                     {
                         WeakThis->UI_Status(
                             FString::Printf(TEXT("[MountainGen] 시드 확정: %d"), FinalS.Seed),
@@ -1113,6 +1137,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                             FColor::Green
                         );
                     }
+
+                    WeakThis->ApplyGeneratedMeshResult(MoveTemp(Result), true);
                 });
         });
 }

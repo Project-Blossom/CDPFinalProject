@@ -36,7 +36,6 @@ public:
 
     virtual void OnConstruction(const FTransform& Transform) override;
     virtual void BeginPlay() override;
-    virtual void Tick(float DeltaSeconds) override;
 
 #if WITH_EDITOR
     virtual bool ShouldTickIfViewportsOnly() const override { return true; }
@@ -147,15 +146,28 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Debug", meta = (ClampMin = "1", ClampMax = "200"))
     int32 DebugPrintEveryNAttempt = 10;
 
+    // ---------- Optimization ----------
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization")
+    bool bEnablePostWeld = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization", meta = (ClampMin = "0.01"))
+    float PostWeldEpsilonScale = 0.15f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization")
+    bool bEnableIslandCull = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization", meta = (ClampMin = "1"))
+    int32 MinTrisToKeepAfterCull = 200;
+
     // ---------- Material : Snow / Rock Auto Blend ----------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")
-    float SnowSlopeMinZ = 0.0f;   // 이 값 이하부터 바위 비율 증가
+    float SnowSlopeMinZ = 0.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")
-    float SnowSlopeMaxZ = 0.8660254f;   // 이 값 이상이면 눈 비율 증가
+    float SnowSlopeMaxZ = 0.8660254f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")
-    float OverhangMaxZ = 0.0f;   // 이 값 이하는 강제 바위
+    float OverhangMaxZ = 0.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock", meta = (ClampMin = "0.0"))
     float SnowNoiseScale = 0.0008f;
@@ -165,6 +177,7 @@ public:
 
 private:
     void BuildChunkAndMesh();
+    void ApplyGeneratedMeshResult(FMGAsyncResult&& Result, bool bShowRuntimeSeedMessage);
     void UI_Status(const FString& Msg, float Seconds = 2.0f, FColor Color = FColor::Cyan) const;
     void ApplyVoxelMaterialParameters();
     void UpdateGeneratedMeshStateAndBroadcast();
@@ -184,7 +197,6 @@ private:
     bool bRegenQueued = false;
     int32 CurrentBuildSerial = 0;
     int32 InFlightBuildSerial = 0;
-    FMGAsyncResult PendingResult;
 
     TArray<FLinearColor> ReusableColors;
 

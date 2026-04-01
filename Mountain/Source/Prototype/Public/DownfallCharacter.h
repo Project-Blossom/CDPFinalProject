@@ -7,6 +7,8 @@
 #include "Climbing/IClimbableSurface.h"
 #include "Engine/PostProcessVolume.h"
 #include "Item/InventoryComponent.h"
+#include "TimerManager.h"
+#include <limits>
 #include "DownfallCharacter.generated.h"
 
 class UInputMappingContext;
@@ -137,6 +139,12 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> PauseAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Optimization")
+    float PlatformAbductionCheckInterval = 0.10f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Optimization")
+    float AltitudeUpdateInterval = 0.10f;
 
     // Settings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physics")
@@ -435,7 +443,7 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "VFX|LensDistortion")
     float CurrentK1 = 0.0f;
-    
+
     UPROPERTY(EditAnywhere, Category = "VFX|ChromaticAberration")
     float BaseChromaticAberration = 0.0f; // Insanity 0일 때
 
@@ -444,7 +452,7 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "VFX|ChromaticAberration")
     float CurrentChromaticAberration = 0.0f;
-    
+
     UPROPERTY(EditAnywhere, Category = "VFX|FilmGrain")
     float BaseFilmGrainIntensity = 0.0f; // Insanity 0일 때
 
@@ -453,7 +461,7 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "VFX|FilmGrain")
     float CurrentFilmGrainIntensity = 0.0f;
-    
+
     UPROPERTY(EditAnywhere, Category = "VFX|Vignette")
     TObjectPtr<UMaterial> VignetteMaterial;
 
@@ -608,7 +616,12 @@ private:
     void UpdateLensDistortionEffect();
     void UpdateVignetteEffect(float DeltaTime);
     void UpdateDirtMaskEffect();
-    void UpdateEdgeBlurEffect(); // NEW!
+    void UpdateEdgeBlurEffect();
+    void ApplyDirtMaskParameters(bool bForce = false);
+    void ApplyEdgeBlurParameters(bool bForce = false);
+    void RefreshLowFrequencyUpdates();
+    void StartLowFrequencyUpdatesIfNeeded();
+    void StopLowFrequencyUpdatesIfPossible();
     float CalculateNextSwitchInterval() const;
     void ApplyClimbingMappingContext();
     void UpdateAltitudeUI();
@@ -625,4 +638,20 @@ private:
     FVector2D LastCursorInputDir = FVector2D::ZeroVector;
     bool bCursorInputHeld = false;
     float NextCursorRepeatTime = 0.0f;
+
+    FTimerHandle LowFrequencyUpdateTimerHandle;
+    TWeakObjectPtr<class AMountainGenWorldActor> CachedMountainActor;
+
+    float CachedDirtIntensity = -std::numeric_limits<float>::max();
+    float CachedDirtBlurOffset = -std::numeric_limits<float>::max();
+    float CachedDirtTintStrength = -std::numeric_limits<float>::max();
+    float CachedDirtLightResponse = -std::numeric_limits<float>::max();
+    float CachedDirtLightThreshold = -std::numeric_limits<float>::max();
+    float CachedDirtLightSoftness = -std::numeric_limits<float>::max();
+    float CachedDirtExposure = -std::numeric_limits<float>::max();
+
+    float CachedBlurStart = -std::numeric_limits<float>::max();
+    float CachedBlurEnd = -std::numeric_limits<float>::max();
+    float CachedBlurStrength = -std::numeric_limits<float>::max();
+    float CachedBlurOffset = -std::numeric_limits<float>::max();
 };
