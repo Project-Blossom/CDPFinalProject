@@ -10,6 +10,14 @@ class AFlyingPlatform;
 class AFlyingAttacker;
 class AMountainGenWorldActor;
 
+UENUM()
+enum class EMonsterSpawnKind : uint8
+{
+    WallCrawler,
+    FlyingPlatform,
+    FlyingAttacker
+};
+
 USTRUCT()
 struct FSpawnProbeResult
 {
@@ -29,7 +37,7 @@ enum class ESpawnFailReason : uint8
     NoClass,
     NoSurfaceSample,
     OutsideFrontBand,
-    MonsterDistance,
+    SameTypeDistance,
     InsideRock,
     HeightTraceFailed,
     HeightOutOfRange,
@@ -98,11 +106,23 @@ public:
     int32 FlyingAttackerCount = 4;
 
     // =====================================================
+    // Same-Type Distribution Rules
+    // =====================================================
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distribution", meta = (ClampMin = "0.0"))
+    float WallCrawlerMinDistance = 300.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distribution", meta = (ClampMin = "0.0"))
+    float FlyingPlatformMinDistance = 900.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distribution", meta = (ClampMin = "0.0"))
+    float FlyingAttackerMinDistance = 1200.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distribution", meta = (ClampMin = "8", ClampMax = "512"))
+    int32 FrontBandCandidateTries = 96;
+
+    // =====================================================
     // General Rules
     // =====================================================
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "0.0"))
-    float MinDistanceBetweenMonsters = 250.0f;
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "1"))
     int32 MaxAttemptsPerWallCrawler = 300;
 
@@ -118,7 +138,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "0.0"))
     float FrontSpawnDepthOverrideCm = 6000.0f;
 
-    // 앞면이면 되고 꼭 절벽 바로 옆일 필요는 없게
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General")
     bool bRequireCliffProximityForFlying = false;
 
@@ -176,7 +195,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FlyingPlatform", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float PlatformSupportMaxAbsNormalZ = 0.85f;
 
-    // 벽 안 생성 방지용
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FlyingPlatform", meta = (ClampMin = "0.0"))
     float PlatformOverlapCheckRadius = 120.0f;
 
@@ -245,7 +263,10 @@ private:
     bool GetMountainBounds(FBox& OutBounds) const;
     bool GetFrontBandBounds(FBox& OutBounds) const;
 
-    bool IsFarEnoughFromOtherMonsters(const FVector& Location) const;
+    float GetMinDistanceForKind(EMonsterSpawnKind Kind) const;
+    bool IsFarEnoughFromSameType(const FVector& Location, EMonsterSpawnKind Kind) const;
+    float GetNearestSameTypeDistance(const FVector& Location, EMonsterSpawnKind Kind) const;
+
     bool IsInsideRock(const FVector& Location, float CheckDistance = 60.0f) const;
     bool HasLocalClearance(const FVector& Location, float Radius, float HalfHeight) const;
     bool TraceHeightAboveGround(const FVector& Location, float& OutHeight) const;
@@ -254,7 +275,7 @@ private:
 
     bool TraceMountainOnly(const FVector& Start, const FVector& End, FHitResult& OutHit) const;
     bool SampleMountainSurface(FHitResult& OutHit, float MinAbsNormalZ, float MaxAbsNormalZ, ESpawnFailReason* OutFailReason = nullptr) const;
-    bool SampleFrontBandAirLocation(FVector& OutLocation, float HorizontalRadius, float MinZOffset, float MaxZOffset) const;
+    bool SampleFrontBandAirLocation(FVector& OutLocation, float HorizontalRadius, float MinZOffset, float MaxZOffset, EMonsterSpawnKind Kind) const;
     bool IsPointWithinFrontSpawnBand(const FVector& WorldPoint) const;
 
     bool FindWallCrawlerSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
