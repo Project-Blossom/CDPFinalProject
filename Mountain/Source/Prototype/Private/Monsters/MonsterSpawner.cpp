@@ -28,7 +28,7 @@ const TCHAR* AMonsterSpawner::GetFailReasonText(ESpawnFailReason Reason)
     case ESpawnFailReason::NoClass: return TEXT("NoClass");
     case ESpawnFailReason::NoSurfaceSample: return TEXT("NoSurfaceSample");
     case ESpawnFailReason::OutsideFrontBand: return TEXT("OutsideFrontBand");
-    case ESpawnFailReason::MonsterDistance: return TEXT("MonsterDistance");
+    case ESpawnFailReason::SameTypeDistance: return TEXT("SameTypeDistance");
     case ESpawnFailReason::InsideRock: return TEXT("InsideRock");
     case ESpawnFailReason::HeightTraceFailed: return TEXT("HeightTraceFailed");
     case ESpawnFailReason::HeightOutOfRange: return TEXT("HeightOutOfRange");
@@ -191,8 +191,30 @@ bool AMonsterSpawner::GetFrontBandBounds(FBox& OutBounds) const
     return OutBounds.IsValid != 0;
 }
 
-bool AMonsterSpawner::IsFarEnoughFromOtherMonsters(const FVector& Location) const
+float AMonsterSpawner::GetMinDistanceForKind(EMonsterSpawnKind Kind) const
 {
+    switch (Kind)
+    {
+    case EMonsterSpawnKind::WallCrawler:
+        return WallCrawlerMinDistance;
+    case EMonsterSpawnKind::FlyingPlatform:
+        return FlyingPlatformMinDistance;
+    case EMonsterSpawnKind::FlyingAttacker:
+        return FlyingAttackerMinDistance;
+    default:
+        return 0.0f;
+    }
+}
+
+bool AMonsterSpawner::IsFarEnoughFromSameType(const FVector& Location, EMonsterSpawnKind Kind) const
+{
+    const float RequiredDistance = GetMinDistanceForKind(Kind);
+
+    if (RequiredDistance <= 0.0f)
+    {
+        return true;
+    }
+
     for (AMonsterBase* Monster : SpawnedMonsters)
     {
         if (!IsValid(Monster))
@@ -200,13 +222,75 @@ bool AMonsterSpawner::IsFarEnoughFromOtherMonsters(const FVector& Location) cons
             continue;
         }
 
-        if (FVector::Dist(Monster->GetActorLocation(), Location) < MinDistanceBetweenMonsters)
+        bool bSameType = false;
+
+        switch (Kind)
+        {
+        case EMonsterSpawnKind::WallCrawler:
+            bSameType = Monster->IsA(AWallCrawler::StaticClass());
+            break;
+        case EMonsterSpawnKind::FlyingPlatform:
+            bSameType = Monster->IsA(AFlyingPlatform::StaticClass());
+            break;
+        case EMonsterSpawnKind::FlyingAttacker:
+            bSameType = Monster->IsA(AFlyingAttacker::StaticClass());
+            break;
+        default:
+            break;
+        }
+
+        if (!bSameType)
+        {
+            continue;
+        }
+
+        if (FVector::Dist(Monster->GetActorLocation(), Location) < RequiredDistance)
         {
             return false;
         }
     }
 
     return true;
+}
+
+float AMonsterSpawner::GetNearestSameTypeDistance(const FVector& Location, EMonsterSpawnKind Kind) const
+{
+    float NearestDist = BIG_NUMBER;
+
+    for (AMonsterBase* Monster : SpawnedMonsters)
+    {
+        if (!IsValid(Monster))
+        {
+            continue;
+        }
+
+        bool bSameType = false;
+
+        switch (Kind)
+        {
+        case EMonsterSpawnKind::WallCrawler:
+            bSameType = Monster->IsA(AWallCrawler::StaticClass());
+            break;
+        case EMonsterSpawnKind::FlyingPlatform:
+            bSameType = Monster->IsA(AFlyingPlatform::StaticClass());
+            break;
+        case EMonsterSpawnKind::FlyingAttacker:
+            bSameType = Monster->IsA(AFlyingAttacker::StaticClass());
+            break;
+        default:
+            break;
+        }
+
+        if (!bSameType)
+        {
+            continue;
+        }
+
+        const float Dist = FVector::Dist(Monster->GetActorLocation(), Location);
+        NearestDist = FMath::Min(NearestDist, Dist);
+    }
+
+    return NearestDist;
 }
 
 bool AMonsterSpawner::IsInsideRock(const FVector& Location, float CheckDistance) const
@@ -469,7 +553,7 @@ bool AMonsterSpawner::SampleMountainSurface(FHitResult& OutHit, float MinAbsNorm
     return false;
 }
 
-bool AMonsterSpawner::SampleFrontBandAirLocation(FVector& OutLocation, float HorizontalRadius, float MinZOffset, float MaxZOffset) const
+bool AMonsterSpawner::SampleFrontBandAirLocation(FVector& OutLocation, float HorizontalRadius, float MinZOffset, float MaxZOffset, EMonsterSpawnKind Kind) const
 {
     OutLocation = FVector::ZeroVector;
 
@@ -479,7 +563,13 @@ bool AMonsterSpawner::SampleFrontBandAirLocation(FVector& OutLocation, float Hor
         return false;
     }
 
-    for (int32 Attempt = 0; Attempt < 128; ++Attempt)
+    bool bFoundAny = false;
+    float BestScore = -FLT_MAX;
+    FVector BestLocation = FVector::ZeroVector;
+
+    const int32 CandidateTries = FMath::Max(8, FrontBandCandidateTries);
+
+    for (int32 Attempt = 0; Attempt < CandidateTries; ++Attempt)
     {
         const FVector Candidate(
             FMath::FRandRange(FrontBounds.Min.X, FrontBounds.Max.X),
@@ -488,11 +578,6 @@ bool AMonsterSpawner::SampleFrontBandAirLocation(FVector& OutLocation, float Hor
         );
 
         if (!IsPointWithinFrontSpawnBand(Candidate))
-        {
-            continue;
-        }
-
-        if (!IsFarEnoughFromOtherMonsters(Candidate))
         {
             continue;
         }
@@ -523,11 +608,39 @@ bool AMonsterSpawner::SampleFrontBandAirLocation(FVector& OutLocation, float Hor
             continue;
         }
 
-        OutLocation = Candidate;
-        return true;
+        if (!IsFarEnoughFromSameType(Candidate, Kind))
+        {
+            continue;
+        }
+
+        float NearestSameTypeDist = GetNearestSameTypeDistance(Candidate, Kind);
+        if (NearestSameTypeDist == BIG_NUMBER)
+        {
+            NearestSameTypeDist = 100000.0f;
+        }
+
+        const float CenterY = (FrontBounds.Min.Y + FrontBounds.Max.Y) * 0.5f;
+        const float HalfY = FMath::Max(1.0f, (FrontBounds.Max.Y - FrontBounds.Min.Y) * 0.5f);
+        const float YCenteredness = 1.0f - FMath::Abs(Candidate.Y - CenterY) / HalfY;
+
+        // 같은 종류와의 분산이 핵심. Y 보정은 약하게만 준다.
+        const float Score = NearestSameTypeDist + (YCenteredness * 50.0f);
+
+        if (!bFoundAny || Score > BestScore)
+        {
+            bFoundAny = true;
+            BestScore = Score;
+            BestLocation = Candidate;
+        }
     }
 
-    return false;
+    if (!bFoundAny)
+    {
+        return false;
+    }
+
+    OutLocation = BestLocation;
+    return true;
 }
 
 bool AMonsterSpawner::FindWallCrawlerSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const
@@ -554,9 +667,9 @@ bool AMonsterSpawner::FindWallCrawlerSpawn(FSpawnProbeResult& OutResult, ESpawnF
     const FVector CandidateLocation =
         SurfaceHit.ImpactPoint + SurfaceHit.ImpactNormal * FMath::Max(WallCrawlerSpawnOffset, RequiredStickDistance + 5.0f);
 
-    if (!IsFarEnoughFromOtherMonsters(CandidateLocation))
+    if (!IsFarEnoughFromSameType(CandidateLocation, EMonsterSpawnKind::WallCrawler))
     {
-        OutFailReason = ESpawnFailReason::MonsterDistance;
+        OutFailReason = ESpawnFailReason::SameTypeDistance;
         return false;
     }
 
@@ -635,7 +748,8 @@ bool AMonsterSpawner::FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpa
             CandidateLocation,
             FMath::Max(PlatformClearanceRadius, PatrolRadius * 0.75f),
             PlatformMinHeightAboveGround,
-            PlatformMaxHeightAboveGround))
+            PlatformMaxHeightAboveGround,
+            EMonsterSpawnKind::FlyingPlatform))
         {
             OutFailReason = ESpawnFailReason::NoSurfaceSample;
             return false;
@@ -648,9 +762,9 @@ bool AMonsterSpawner::FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpa
         return false;
     }
 
-    if (!IsFarEnoughFromOtherMonsters(CandidateLocation))
+    if (!IsFarEnoughFromSameType(CandidateLocation, EMonsterSpawnKind::FlyingPlatform))
     {
-        OutFailReason = ESpawnFailReason::MonsterDistance;
+        OutFailReason = ESpawnFailReason::SameTypeDistance;
         return false;
     }
 
@@ -783,7 +897,8 @@ bool AMonsterSpawner::FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpa
             CandidateLocation,
             FMath::Max(AttackerLocalClearanceRadius, TerritoryRadius * 0.35f),
             AttackerMinHeightAboveGround,
-            AttackerMaxHeightAboveGround))
+            AttackerMaxHeightAboveGround,
+            EMonsterSpawnKind::FlyingAttacker))
         {
             OutFailReason = ESpawnFailReason::NoSurfaceSample;
             return false;
@@ -796,9 +911,9 @@ bool AMonsterSpawner::FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpa
         return false;
     }
 
-    if (!IsFarEnoughFromOtherMonsters(CandidateLocation))
+    if (!IsFarEnoughFromSameType(CandidateLocation, EMonsterSpawnKind::FlyingAttacker))
     {
-        OutFailReason = ESpawnFailReason::MonsterDistance;
+        OutFailReason = ESpawnFailReason::SameTypeDistance;
         return false;
     }
 
