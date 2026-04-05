@@ -130,7 +130,8 @@ bool AFlyingPlatform::FindNearestGripPoint_Implementation(const FVector& SearchO
     FVector GripLocation = GetGrabLocation();
     float Distance = FVector::Dist(SearchOrigin, GripLocation);
 
-    if (Distance <= SearchRadius)
+    // FlyingPlatform 전용 감지 반경 사용 (SearchRadius 무시)
+    if (Distance <= GripDetectionRadius)
     {
         OutGripInfo.WorldLocation = GripLocation;
         OutGripInfo.SurfaceNormal = FVector::UpVector;

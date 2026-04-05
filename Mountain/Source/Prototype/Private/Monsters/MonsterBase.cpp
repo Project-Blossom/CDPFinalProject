@@ -11,6 +11,9 @@ AMonsterBase::AMonsterBase()
 {
     PrimaryActorTick.bCanEverTick = true;
 
+    // AI Controller 설정
+    AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
     // AI Perception Setup
     PerceptionComponent = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("PerceptionComponent"));
     

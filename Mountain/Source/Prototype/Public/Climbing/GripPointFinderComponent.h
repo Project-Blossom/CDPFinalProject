@@ -38,7 +38,7 @@ public:
 
     // 설정 파라미터
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Search")
-    float MaxReachDistance = 500.0f; // Ray 최대 거리 (cm) - FlyingPlatform용으로 증가
+    float MaxReachDistance = 500.0f; // Ray 최대 거리 (cm)
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Search")
     float MinSurfaceAngle = 30.0f; // 최소 경사각 (도)
@@ -47,7 +47,7 @@ public:
     float MaxSurfaceAngle = 170.0f; // 최대 경사각 (도)
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Search")
-    float SurfaceSampleRadius = 200.0f; // 경사 계산용 샘플 반경 (cm) - FlyingPlatform 잡기 쉽게 증가
+    float SurfaceSampleRadius = 50.0f; // 경사 계산용 샘플 반경 (cm)
 
 protected:
     virtual void BeginPlay() override;

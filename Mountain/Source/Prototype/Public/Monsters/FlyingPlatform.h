@@ -42,6 +42,9 @@ public:
     UPROPERTY(EditAnywhere, Category = "Platform")
     FName GrabSocketName = "GrabSocket";
     
+    UPROPERTY(EditAnywhere, Category = "Platform")
+    float GripDetectionRadius = 300.0f; // FlyingPlatform 전용 잡기 감지 반경 (cm)
+    
     // ============================================
     // Patrol State
     // ============================================

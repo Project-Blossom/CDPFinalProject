@@ -33,6 +33,18 @@ void UBTService_UpdateDetection::TickNode(UBehaviorTreeComponent& OwnerComp, uin
         BlackboardComp->SetValueAsObject(TargetPlayerKey.SelectedKeyName, Cast<UObject>(Monster->TargetPlayer));
         
         // DetectionGauge 업데이트
-        BlackboardComp->SetValueAsFloat(DetectionGaugeKey.SelectedKeyName, Monster->GetDetectionGauge());
+        float CurrentGauge = Monster->GetDetectionGauge();
+        BlackboardComp->SetValueAsFloat(DetectionGaugeKey.SelectedKeyName, CurrentGauge);
+        
+        // [DEBUG] DetectionGauge 로그
+#if !UE_BUILD_SHIPPING
+        if (CurrentGauge > 0.0f || Monster->TargetPlayer)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[UPDATE DETECTION] %s | DetectionGauge: %.1f | TargetPlayer: %s"), 
+                *Monster->GetName(), 
+                CurrentGauge,
+                Monster->TargetPlayer ? TEXT("YES") : TEXT("NO"));
+        }
+#endif
     }
 }
