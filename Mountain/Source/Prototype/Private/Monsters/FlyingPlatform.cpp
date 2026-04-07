@@ -1,7 +1,10 @@
 #include "Monsters/FlyingPlatform.h"
 #include "DownfallCharacter.h"
+#include "Monsters/WallCrawler.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 #include "AIController.h"
 #include "BrainComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -191,4 +194,96 @@ void AFlyingPlatform::OnObstacleDetected(const FVector& ObstacleDirection)
     {
         // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected! bHasTarget reset"), *GetName());
     }
+}
+
+// ========================================
+// Carrier System (WallCrawler Transport)
+// ========================================
+
+AWallCrawler* AFlyingPlatform::FindNearbyWallCrawler()
+{
+    // 모든 WallCrawler 찾기
+    TArray<AActor*> FoundActors;
+    UGameplayStatics::GetAllActorsOfClass(GetWorld(), AWallCrawler::StaticClass(), FoundActors);
+
+    // 가장 가까운 WallCrawler 찾기
+    AWallCrawler* NearestCrawler = nullptr;
+    float MinDistance = WallCrawlerDetectionRadius;
+
+    for (AActor* Actor : FoundActors)
+    {
+        AWallCrawler* Crawler = Cast<AWallCrawler>(Actor);
+        if (Crawler && !Crawler->bIsCarried && Crawler->bIsOnWall)
+        {
+            float Distance = FVector::Dist(GetActorLocation(), Crawler->GetActorLocation());
+            if (Distance < MinDistance)
+            {
+                MinDistance = Distance;
+                NearestCrawler = Crawler;
+            }
+        }
+    }
+
+    if (NearestCrawler)
+    {
+        UE_LOG(LogMonster, Log, TEXT("%s: Found nearby WallCrawler: %s (Distance: %.1f)"), 
+            *GetName(), *NearestCrawler->GetName(), MinDistance);
+
+        NearestCrawler->AttachToCarrier(this);
+        CarriedCrawler = NearestCrawler;
+
+#if !UE_BUILD_SHIPPING
+        DrawDebugSphere(GetWorld(), NearestCrawler->GetActorLocation(), 50.0f, 12, FColor::Green, false, 2.0f, 0, 5.0f);
+#endif
+    }
+
+    return NearestCrawler;
+}
+
+void AFlyingPlatform::DropWallCrawler()
+{
+    if (!CarriedCrawler)
+    {
+        UE_LOG(LogMonster, Warning, TEXT("%s: DropWallCrawler - No crawler to drop"), *GetName());
+        return;
+    }
+
+    UE_LOG(LogMonster, Log, TEXT("%s: Dropping WallCrawler: %s"), *GetName(), *CarriedCrawler->GetName());
+
+    // WallCrawler 떨어뜨리기 (수직 자유낙하)
+    CarriedCrawler->DetachFromCarrier();
+    CarriedCrawler = nullptr;
+}
+
+bool AFlyingPlatform::CanDropCrawler() const
+{
+    if (!CarriedCrawler || !TargetPlayer)
+    {
+        return false;
+    }
+
+    // 플레이어 머리 위 5m, 수평 3m 이내
+    FVector PlayerLocation = TargetPlayer->GetActorLocation();
+    FVector PlatformLocation = GetActorLocation();
+
+    // 수평 거리 체크
+    FVector HorizontalDiff = PlatformLocation - PlayerLocation;
+    HorizontalDiff.Z = 0;
+    float HorizontalDistance = HorizontalDiff.Size();
+
+    // 수직 거리 체크 (Platform이 Player 위에 있는지)
+    float VerticalDiff = PlatformLocation.Z - PlayerLocation.Z;
+
+    // 조건: 수평 3m 이내, 수직 5m 위
+    bool bInRange = (HorizontalDistance <= PlayerDropRadius) && (VerticalDiff >= 0.0f && VerticalDiff <= 500.0f);
+
+#if !UE_BUILD_SHIPPING
+    if (bInRange)
+    {
+        // 디버그 시각화: 떨어뜨릴 범위 (Red)
+        DrawDebugSphere(GetWorld(), PlatformLocation, PlayerDropRadius, 12, FColor::Red, false, 0.1f, 0, 3.0f);
+    }
+#endif
+
+    return bInRange;
 }

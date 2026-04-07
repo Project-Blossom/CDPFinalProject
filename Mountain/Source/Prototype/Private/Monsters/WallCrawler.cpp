@@ -1,5 +1,6 @@
 #include "Monsters/WallCrawler.h"
 #include "DownfallCharacter.h"
+#include "Monsters/FlyingPlatform.h"  // ← 추가!
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
@@ -7,6 +8,7 @@
 #include "AIController.h"
 #include "BrainComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "TimerManager.h"  // ← 추가 (FTimerHandle 사용)
 
 AWallCrawler::AWallCrawler()
 {
@@ -732,4 +734,134 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
             UE_LOG(LogMonster, Warning, TEXT("%s: Distance check in UpdateDetectionGauge - too far (%.1f)"), *GetName(), Distance);
         }
     }
+}
+
+// ========================================
+// Carrier System (FlyingPlatform)
+// ========================================
+
+void AWallCrawler::AttachToCarrier(AFlyingPlatform* Platform)
+{
+    if (!Platform)
+    {
+        UE_LOG(LogMonster, Warning, TEXT("%s: AttachToCarrier - Platform is null"), *GetName());
+        return;
+    }
+
+    bIsCarried = true;
+    CarrierPlatform = Platform;
+
+    // AI 중지
+    if (AAIController* AI = Cast<AAIController>(GetController()))
+    {
+        AI->GetBrainComponent()->StopLogic(TEXT("Carried by Platform"));
+        UE_LOG(LogMonster, Log, TEXT("%s: AI stopped - Carried by %s"), *GetName(), *Platform->GetName());
+    }
+
+    // Physics 끄기
+    if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
+    {
+        RootPrimitive->SetSimulatePhysics(false);
+        RootPrimitive->SetEnableGravity(false);
+    }
+
+    // Platform의 GrabPoint에 Attach
+    USceneComponent* GrabPoint = nullptr;
+    TArray<USceneComponent*> Components;
+    Platform->GetComponents<USceneComponent>(Components);
+    
+    for (USceneComponent* Comp : Components)
+    {
+        if (Comp && Comp->GetName().Contains(TEXT("GrabPoint")))
+        {
+            GrabPoint = Comp;
+            break;
+        }
+    }
+
+    if (GrabPoint)
+    {
+        AttachToComponent(GrabPoint, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+        UE_LOG(LogMonster, Log, TEXT("%s: Attached to GrabPoint of %s"), *GetName(), *Platform->GetName());
+    }
+    else
+    {
+        // Fallback: Platform Root에 Attach
+        AttachToActor(Platform, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+        UE_LOG(LogMonster, Warning, TEXT("%s: GrabPoint not found, attached to Platform root"), *GetName());
+    }
+
+    // 상태 초기화
+    bIsOnWall = false;
+    bAttachedToPlayer = false;
+    bIsStunned = false;
+    TargetPlayer = nullptr;
+    PotentialTarget = nullptr;
+    DetectionGauge = 0.0f;
+}
+
+void AWallCrawler::DetachFromCarrier()
+{
+    if (!bIsCarried)
+    {
+        return;
+    }
+
+    UE_LOG(LogMonster, Log, TEXT("%s: Detaching from carrier"), *GetName());
+
+    bIsCarried = false;
+    CarrierPlatform = nullptr;
+
+    // Detach from Platform
+    DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+
+    // Physics 켜기 (자유낙하)
+    if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
+    {
+        RootPrimitive->SetSimulatePhysics(true);
+        RootPrimitive->SetEnableGravity(true);
+    }
+
+    // 착지 감지 시작 (OnActorHit 이벤트 활용)
+    OnActorHit.AddDynamic(this, &AWallCrawler::OnCarrierLanded);
+}
+
+void AWallCrawler::OnCarrierLanded(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit)
+{
+    UE_LOG(LogMonster, Log, TEXT("%s: Landed!"), *GetName());
+
+    // OnActorHit 이벤트 제거
+    OnActorHit.RemoveDynamic(this, &AWallCrawler::OnCarrierLanded);
+
+    // Physics 끄기
+    if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
+    {
+        RootPrimitive->SetSimulatePhysics(false);
+        RootPrimitive->SetEnableGravity(false);
+        RootPrimitive->SetPhysicsLinearVelocity(FVector::ZeroVector);
+    }
+
+    // 1초 기절
+    bIsStunned = true;
+    StunTimer = 1.0f;
+
+    // 1초 후 AI 재시작 (Timer 사용)
+    FTimerHandle StunTimerHandle;
+    GetWorld()->GetTimerManager().SetTimer(
+        StunTimerHandle,
+        [this]()
+        {
+            bIsStunned = false;
+            StunTimer = 0.0f;
+
+            // AI 재시작
+            if (AAIController* AI = Cast<AAIController>(GetController()))
+            {
+                AI->GetBrainComponent()->StartLogic();
+                UE_LOG(LogMonster, Log, TEXT("%s: AI restarted after landing"), *GetName());
+            }
+        },
+        1.0f,
+        false
+    );
 }

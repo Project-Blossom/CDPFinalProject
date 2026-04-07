@@ -46,6 +46,36 @@ public:
     float GripDetectionRadius = 300.0f; // FlyingPlatform 전용 잡기 감지 반경 (cm)
     
     // ============================================
+    // Carrier System (WallCrawler Transport)
+    // ============================================
+    UPROPERTY(EditAnywhere, Category = "Carrier")
+    float WallCrawlerDetectionRadius = 5000.0f;  // 50m
+    
+    UPROPERTY(EditAnywhere, Category = "Carrier")
+    float PlayerDropRadius = 5000.0f;  // 50m
+    
+    UPROPERTY(EditAnywhere, Category = "Carrier")
+    float CrawlerSearchInterval = 5.0f;  // 5초
+    
+    UPROPERTY(BlueprintReadOnly, Category = "Carrier")
+    class AWallCrawler* CarriedCrawler = nullptr;
+    
+    UPROPERTY(BlueprintReadOnly, Category = "Carrier")
+    float LastSearchTime = 0.0f;
+    
+    UFUNCTION(BlueprintCallable, Category = "Carrier")
+    class AWallCrawler* FindNearbyWallCrawler();
+    
+    UFUNCTION(BlueprintCallable, Category = "Carrier")
+    void DropWallCrawler();
+    
+    UFUNCTION(BlueprintPure, Category = "Carrier")
+    bool HasCarriedCrawler() const { return CarriedCrawler != nullptr; }
+    
+    UFUNCTION(BlueprintPure, Category = "Carrier")
+    bool CanDropCrawler() const;
+    
+    // ============================================
     // Patrol State
     // ============================================
     UPROPERTY(BlueprintReadOnly, Category = "Flight")

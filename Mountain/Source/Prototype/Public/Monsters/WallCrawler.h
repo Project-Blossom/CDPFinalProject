@@ -181,6 +181,22 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Movement")
     FVector ProjectToWallSurface(FVector WorldDirection);
 
+    // Carrier System (FlyingPlatform)
+    UPROPERTY(BlueprintReadOnly, Category = "Carrier")
+    bool bIsCarried = false;
+
+    UPROPERTY()
+    class AFlyingPlatform* CarrierPlatform = nullptr;
+
+    UFUNCTION(BlueprintCallable, Category = "Carrier")
+    void AttachToCarrier(class AFlyingPlatform* Platform);
+
+    UFUNCTION(BlueprintCallable, Category = "Carrier")
+    void DetachFromCarrier();
+
+    UFUNCTION()
+    void OnCarrierLanded(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit);
+
     // Override
     virtual void Attack() override {}
     virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus) override;
