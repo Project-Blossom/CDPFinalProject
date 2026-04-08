@@ -26,13 +26,14 @@ public:
     FOnInventoryChanged OnInventoryChanged;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
-    int32 SlotCount = 25;
+    int32 SlotCount = 30;
 
-    // ---------- Áß¾Ó ¸Ç¼Õ ½½·Ô ----------
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "0"))
-    int32 ReservedCenterSlotIndex = 12;
+    int32 ReservedCenterSlotIndex = 14;
 
-    // ---------- Place settings ----------
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "0"))
+    int32 RightReservedHandSlotIndex = 15;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
     float PlaceRangeCm = 200.f;
 
@@ -76,16 +77,27 @@ public:
     UFUNCTION(BlueprintPure, Category = "Inventory")
     bool IsReservedCenterSlot(int32 Index) const { return Index == ReservedCenterSlotIndex; }
 
-    // ---- Save/Load ----
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    bool IsReservedHandSlot(int32 Index) const { return Index == ReservedCenterSlotIndex || Index == RightReservedHandSlotIndex; }
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    int32 GetSlotCount() const { return SlotCount; }
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    int32 GetLeftReservedHandSlotIndex() const { return ReservedCenterSlotIndex; }
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    int32 GetRightReservedHandSlotIndex() const { return RightReservedHandSlotIndex; }
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory")
+    void EnsureDualHandLayout();
+
     UFUNCTION(BlueprintCallable, Category = "Inventory|Save")
     bool SaveToSlot(const FString& SlotName, int32 UserIndex = 0);
 
     UFUNCTION(BlueprintCallable, Category = "Inventory|Save")
     bool LoadFromSlot(const FString& SlotName, int32 UserIndex = 0);
 
-    // =========================================================
-    // Preview API
-    // =========================================================
 public:
     UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
     void SetPreviewEnabled(bool bEnabled);
@@ -100,6 +112,12 @@ public:
     int32 GetPreviewSlotIndex() const { return PreviewSlotIndex; }
 
     UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
+    void SetPreviewHandIndex(int32 NewHandIndex);
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
+    int32 GetPreviewHandIndex() const { return PreviewHandIndex; }
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
     void SetPreviewActorClass(TSubclassOf<AActor> InClass);
 
     UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
@@ -109,7 +127,6 @@ public:
     bool GetLastPreviewState(bool& bOutValid, FText& OutReason) const;
 
 protected:
-    // ----- BP hooks -----
     UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
     void BP_OnConsume(AActor* User, UItemDefinition* Def, int32 Count);
 
@@ -126,7 +143,6 @@ private:
     UPROPERTY()
     TArray<FItemStack> Slots;
 
-    // ----------------- Preview internals -----------------
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true"))
     TSubclassOf<AActor> DefaultPreviewActorClass;
 
@@ -137,7 +153,10 @@ private:
     bool bPreviewEnabled = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
-    int32 PreviewSlotIndex = 0;
+    int32 PreviewSlotIndex = INDEX_NONE;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true", ClampMin = "-1"))
+    int32 PreviewHandIndex = INDEX_NONE;
 
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true"))
     bool bLastPreviewValid = false;
@@ -153,12 +172,10 @@ private:
 private:
     int32 FindEmptySlot() const;
     int32 FindPartialStack(FName ItemId, int32 MaxStack) const;
-
     bool BuildPlaceTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const;
-
     void SanitizeReservedCenterSlot();
+    void SanitizeReservedHandSlots();
 
-    // ---- preview helpers ----
     bool ShouldRunPreview() const;
     AActor* GetPreviewUserActor() const;
     void EnsurePreviewActor();

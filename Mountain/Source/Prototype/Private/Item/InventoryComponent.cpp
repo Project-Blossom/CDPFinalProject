@@ -19,19 +19,32 @@ UInventoryComponent::UInventoryComponent()
     PrimaryComponentTick.bStartWithTickEnabled = true;
 }
 
+void UInventoryComponent::EnsureDualHandLayout()
+{
+    SlotCount = FMath::Max(30, SlotCount);
+    Slots.SetNum(SlotCount);
+
+    ReservedCenterSlotIndex = 14;
+    RightReservedHandSlotIndex = 15;
+
+    if (!Slots.IsValidIndex(ReservedCenterSlotIndex))
+    {
+        ReservedCenterSlotIndex = FMath::Clamp(14, 0, FMath::Max(0, SlotCount - 1));
+    }
+
+    if (!Slots.IsValidIndex(RightReservedHandSlotIndex))
+    {
+        RightReservedHandSlotIndex = FMath::Clamp(15, 0, FMath::Max(0, SlotCount - 1));
+    }
+
+    SanitizeReservedHandSlots();
+}
+
 void UInventoryComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    SlotCount = FMath::Max(1, SlotCount);
-    Slots.SetNum(SlotCount);
-
-    if (!Slots.IsValidIndex(ReservedCenterSlotIndex))
-    {
-        ReservedCenterSlotIndex = Slots.Num() / 2;
-    }
-
-    SanitizeReservedCenterSlot();
+    EnsureDualHandLayout();
     OnInventoryChanged.Broadcast();
 
     if (bPreviewEnabled && ShouldRunPreview())
@@ -63,10 +76,6 @@ void UInventoryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
     UpdatePreview(DeltaTime);
 }
 
-// =========================================================
-// Preview API
-// =========================================================
-
 void UInventoryComponent::SetPreviewEnabled(bool bEnabled)
 {
     bPreviewEnabled = bEnabled;
@@ -90,6 +99,11 @@ void UInventoryComponent::SetPreviewSlotIndex(int32 NewIndex)
     PreviewSlotIndex = NewIndex;
 }
 
+void UInventoryComponent::SetPreviewHandIndex(int32 NewHandIndex)
+{
+    PreviewHandIndex = NewHandIndex;
+}
+
 void UInventoryComponent::SetPreviewActorClass(TSubclassOf<AActor> InClass)
 {
     DefaultPreviewActorClass = InClass;
@@ -108,10 +122,6 @@ bool UInventoryComponent::GetLastPreviewState(bool& bOutValid, FText& OutReason)
     OutReason = LastPreviewReason;
     return true;
 }
-
-// =========================================================
-// Preview internals
-// =========================================================
 
 bool UInventoryComponent::ShouldRunPreview() const
 {
@@ -137,12 +147,7 @@ void UInventoryComponent::EnsurePreviewActor()
     }
 
     UWorld* W = GetWorld();
-    if (!W)
-    {
-        return;
-    }
-
-    if (!DefaultPreviewActorClass)
+    if (!W || !DefaultPreviewActorClass)
     {
         return;
     }
@@ -152,7 +157,6 @@ void UInventoryComponent::EnsurePreviewActor()
     Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
     PreviewActor = W->SpawnActor<AActor>(DefaultPreviewActorClass, FTransform::Identity, Params);
-
     if (!PreviewActor)
     {
         return;
@@ -181,19 +185,14 @@ void UInventoryComponent::UpdatePreview(float)
 
     if (!PreviewActor)
     {
-        UE_LOG(LogTemp, Error, TEXT("[Preview] PreviewActor NULL"));
-
         bLastPreviewValid = false;
         LastPreviewReason = FText::FromString(TEXT("No preview actor class"));
         return;
     }
 
     AActor* User = GetPreviewUserActor();
-
     if (!User)
     {
-        UE_LOG(LogTemp, Error, TEXT("[Preview] No User Actor"));
-
         PreviewActor->SetActorHiddenInGame(true);
         bLastPreviewValid = false;
         LastPreviewReason = FText::FromString(TEXT("No user"));
@@ -202,7 +201,6 @@ void UInventoryComponent::UpdatePreview(float)
 
     FTransform Xf;
     FText Fail;
-
     const bool bOK = ComputePreviewTransform(PreviewSlotIndex, User, Xf, Fail);
 
     bLastPreviewValid = bOK;
@@ -227,9 +225,9 @@ bool UInventoryComponent::ComputePreviewTransform(int32 Index, AActor* User, FTr
         return false;
     }
 
-    if (IsReservedCenterSlot(Index))
+    if (IsReservedHandSlot(Index))
     {
-        OutFailReason = FText::FromString(TEXT("Reserved center slot"));
+        OutFailReason = FText::FromString(TEXT("Reserved hand slot"));
         return false;
     }
 
@@ -257,26 +255,32 @@ bool UInventoryComponent::ComputePreviewTransform(int32 Index, AActor* User, FTr
     return false;
 }
 
-// =========================================================
-// Inventory core
-// =========================================================
-
 void UInventoryComponent::SanitizeReservedCenterSlot()
 {
-    if (Slots.IsValidIndex(ReservedCenterSlotIndex))
-    {
-        if (Slots[ReservedCenterSlotIndex].IsValid())
+    SanitizeReservedHandSlots();
+}
+
+void UInventoryComponent::SanitizeReservedHandSlots()
+{
+    auto FixSlot = [&](int32 Index)
         {
-            Slots[ReservedCenterSlotIndex].Reset();
-        }
-    }
+            if (!Slots.IsValidIndex(Index)) return;
+            FItemStack& S = Slots[Index];
+            if (S.Count < 0 || (S.ItemId == NAME_None && S.Count != 0))
+            {
+                S.Reset();
+            }
+        };
+
+    FixSlot(ReservedCenterSlotIndex);
+    FixSlot(RightReservedHandSlotIndex);
 }
 
 int32 UInventoryComponent::FindEmptySlot() const
 {
     for (int32 i = 0; i < Slots.Num(); ++i)
     {
-        if (IsReservedCenterSlot(i))
+        if (IsReservedHandSlot(i))
         {
             continue;
         }
@@ -296,7 +300,7 @@ int32 UInventoryComponent::FindPartialStack(FName ItemId, int32 MaxStack) const
 
     for (int32 i = 0; i < Slots.Num(); ++i)
     {
-        if (IsReservedCenterSlot(i))
+        if (IsReservedHandSlot(i))
         {
             continue;
         }
@@ -319,13 +323,11 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
     const UItemDefinition* Def = IS ? IS->GetItemDefinitionById(ItemId) : nullptr;
 
     const int32 MaxStack = Def ? FMath::Max(1, Def->MaxStack) : 1;
-
     const bool bUniqueSlot = bForceInstance || (MaxStack == 1);
     const bool bShouldInstance = bForceInstance || (Def && Def->UseType == EItemUseType::Equip);
 
     int32 Remaining = Count;
 
-    // 1) 스택형이면 기존 스택 채우기
     if (!bUniqueSlot && MaxStack > 1)
     {
         while (Remaining > 0)
@@ -340,7 +342,6 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
         }
     }
 
-    // 2) 빈 슬롯에 새로 생성
     while (Remaining > 0)
     {
         const int32 Empty = FindEmptySlot();
@@ -349,7 +350,6 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
         FItemStack& S = Slots[Empty];
         S.Reset();
         S.ItemId = ItemId;
-
         S.Count = bUniqueSlot ? 1 : FMath::Min(MaxStack, Remaining);
         Remaining -= S.Count;
 
@@ -362,7 +362,7 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
         }
     }
 
-    SanitizeReservedCenterSlot();
+    SanitizeReservedHandSlots();
     OnInventoryChanged.Broadcast();
     return (Remaining == 0);
 }
@@ -381,7 +381,7 @@ bool UInventoryComponent::TryRemove(FName ItemId, int32 Count)
 
     for (int32 i = Slots.Num() - 1; i >= 0 && Remaining > 0; --i)
     {
-        if (IsReservedCenterSlot(i))
+        if (IsReservedHandSlot(i))
         {
             continue;
         }
@@ -396,7 +396,7 @@ bool UInventoryComponent::TryRemove(FName ItemId, int32 Count)
         if (S.Count <= 0) S.Reset();
     }
 
-    SanitizeReservedCenterSlot();
+    SanitizeReservedHandSlots();
     OnInventoryChanged.Broadcast();
     return (Remaining == 0);
 }
@@ -454,7 +454,6 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
     }
 
     const float Dist = FVector::Dist(Start, Hit.ImpactPoint);
-
     if (Dist > PlaceRangeCm)
     {
         OutFailReason = FText::FromString(TEXT("Target is too far away"));
@@ -463,9 +462,7 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
 
     const FVector Normal = Hit.ImpactNormal.GetSafeNormal();
     const FVector Forward = -Normal;
-
     const FRotator Rot = FRotationMatrix::MakeFromX(Forward).Rotator();
-
     const FVector Pos = Hit.ImpactPoint + Normal * (-PlaceEmbedCm);
 
     OutXform = FTransform(Rot, Pos);
@@ -475,7 +472,7 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
 bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 {
     if (!Slots.IsValidIndex(Index) || !User) return false;
-    if (IsReservedCenterSlot(Index)) return false;
+    if (IsReservedHandSlot(Index)) return false;
 
     FItemStack& S = Slots[Index];
     if (!S.IsValid()) return false;
@@ -520,7 +517,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
         S.Count -= 1;
         if (S.Count <= 0) S.Reset();
 
-        SanitizeReservedCenterSlot();
+        SanitizeReservedHandSlots();
         OnInventoryChanged.Broadcast();
         return true;
     }
@@ -544,6 +541,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 
         SetPreviewEnabled(false);
         PreviewSlotIndex = INDEX_NONE;
+        PreviewHandIndex = INDEX_NONE;
 
         S.Count -= 1;
         if (S.Count <= 0)
@@ -551,7 +549,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             S.Reset();
         }
 
-        SanitizeReservedCenterSlot();
+        SanitizeReservedHandSlots();
         OnInventoryChanged.Broadcast();
         return true;
     }
@@ -566,7 +564,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             S.Count = 1;
         }
 
-        SanitizeReservedCenterSlot();
+        SanitizeReservedHandSlots();
         BP_OnEquip(User, Def, S.Instance);
         return true;
     }
@@ -581,13 +579,12 @@ bool UInventoryComponent::TransferTo(UInventoryComponent* Target, int32 FromInde
     if (!Target) return false;
     if (!Slots.IsValidIndex(FromIndex)) return false;
     if (Count <= 0) return false;
-    if (IsReservedCenterSlot(FromIndex)) return false;
+    if (IsReservedHandSlot(FromIndex)) return false;
 
     FItemStack& From = Slots[FromIndex];
     if (!From.IsValid()) return false;
 
     const int32 MoveCount = FMath::Min(From.Count, Count);
-
     if (From.bHasInstance && MoveCount != 1) return false;
 
     const bool bAdded = Target->TryAdd(From.ItemId, MoveCount, From.bHasInstance);
@@ -596,7 +593,7 @@ bool UInventoryComponent::TransferTo(UInventoryComponent* Target, int32 FromInde
     From.Count -= MoveCount;
     if (From.Count <= 0) From.Reset();
 
-    SanitizeReservedCenterSlot();
+    SanitizeReservedHandSlots();
     OnInventoryChanged.Broadcast();
     return true;
 }
@@ -606,11 +603,9 @@ bool UInventoryComponent::SaveToSlot(const FString& SlotName, int32 UserIndex)
     UInventorySaveGame* SaveObj = Cast<UInventorySaveGame>(UGameplayStatics::CreateSaveGameObject(UInventorySaveGame::StaticClass()));
     if (!SaveObj) return false;
 
-    SanitizeReservedCenterSlot();
-
+    SanitizeReservedHandSlots();
     SaveObj->SlotCount = SlotCount;
     SaveObj->Slots = Slots;
-
     return UGameplayStatics::SaveGameToSlot(SaveObj, SlotName, UserIndex);
 }
 
@@ -621,28 +616,16 @@ bool UInventoryComponent::LoadFromSlot(const FString& SlotName, int32 UserIndex)
     UInventorySaveGame* SaveObj = Cast<UInventorySaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, UserIndex));
     if (!SaveObj) return false;
 
-    SlotCount = FMath::Max(1, SaveObj->SlotCount);
+    SlotCount = FMath::Max(30, SaveObj->SlotCount);
     Slots = SaveObj->Slots;
-    Slots.SetNum(SlotCount);
-
-    if (!Slots.IsValidIndex(ReservedCenterSlotIndex))
-    {
-        ReservedCenterSlotIndex = Slots.Num() / 2;
-    }
-
-    SanitizeReservedCenterSlot();
+    EnsureDualHandLayout();
     OnInventoryChanged.Broadcast();
     return true;
 }
 
 bool UInventoryComponent::HasValidItemAt(int32 Index) const
 {
-    if (!Slots.IsValidIndex(Index))
-    {
-        return false;
-    }
-
-    if (IsReservedCenterSlot(Index))
+    if (!Slots.IsValidIndex(Index) || IsReservedHandSlot(Index))
     {
         return false;
     }
@@ -652,12 +635,7 @@ bool UInventoryComponent::HasValidItemAt(int32 Index) const
 
 UItemDefinition* UInventoryComponent::GetItemDefinitionAt(int32 Index) const
 {
-    if (!Slots.IsValidIndex(Index))
-    {
-        return nullptr;
-    }
-
-    if (IsReservedCenterSlot(Index))
+    if (!Slots.IsValidIndex(Index) || IsReservedHandSlot(Index))
     {
         return nullptr;
     }
@@ -686,10 +664,5 @@ UItemDefinition* UInventoryComponent::GetItemDefinitionAt(int32 Index) const
 UTexture2D* UInventoryComponent::GetItemIconAt(int32 Index) const
 {
     UItemDefinition* Def = GetItemDefinitionAt(Index);
-    if (!Def)
-    {
-        return nullptr;
-    }
-
-    return Def->Icon;
+    return Def ? Def->Icon : nullptr;
 }

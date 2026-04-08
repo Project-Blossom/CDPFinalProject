@@ -72,6 +72,47 @@ enum class EItemUseState : uint8
     PlacementPreview  UMETA(DisplayName = "PlacementPreview")
 };
 
+UENUM(BlueprintType)
+enum class ETraversalInputStyle : uint8
+{
+    LegacyMouseHold UMETA(DisplayName = "LegacyMouseHold"),
+    ModernDualHand  UMETA(DisplayName = "ModernDualHand")
+};
+
+UENUM(BlueprintType)
+enum class EModernTraversalMode : uint8
+{
+    Walking    UMETA(DisplayName = "Walking"),
+    ClimbReady UMETA(DisplayName = "ClimbReady"),
+    Climbing   UMETA(DisplayName = "Climbing"),
+    Falling    UMETA(DisplayName = "Falling")
+};
+
+UENUM(BlueprintType)
+enum class EModernInventoryHand : uint8
+{
+    None  UMETA(DisplayName = "None"),
+    Left  UMETA(DisplayName = "Left"),
+    Right UMETA(DisplayName = "Right")
+};
+
+UENUM(BlueprintType)
+enum class EModernHandItemState : uint8
+{
+    Empty    UMETA(DisplayName = "Empty"),
+    Holding  UMETA(DisplayName = "Holding"),
+    Preview  UMETA(DisplayName = "Preview")
+};
+
+UENUM(BlueprintType)
+enum class EModernReleaseReason : uint8
+{
+    Manual        UMETA(DisplayName = "Manual"),
+    ActiveMove    UMETA(DisplayName = "ActiveMove"),
+    ItemUse       UMETA(DisplayName = "ItemUse"),
+    ForcedStamina UMETA(DisplayName = "ForcedStamina")
+};
+
 UCLASS()
 class PROTOTYPE_API ADownfallCharacter : public ACharacter
 {
@@ -83,6 +124,7 @@ public:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
     virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
     UFUNCTION(BlueprintCallable, Category = "Debug|Movement")
     void ToggleFlyMode();
@@ -312,7 +354,7 @@ public:
     EItemUseState ItemUseState = EItemUseState::None;
 
     UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
-    int32 InventoryCursorIndex = 12; // 5x5 중앙
+    int32 InventoryCursorIndex = 14; // 6x5 중앙
 
     UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
     int32 HeldSlotIndex = INDEX_NONE;
@@ -323,6 +365,69 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Cursor")
     float CursorRepeatInterval = 0.12f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal")
+    ETraversalInputStyle TraversalInputStyle = ETraversalInputStyle::LegacyMouseHold;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Traversal")
+    EModernTraversalMode ModernTraversalMode = EModernTraversalMode::Walking;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|Modern")
+    bool bModernInventoryOpen = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|Modern")
+    int32 LeftModernCursorIndex = 14;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|Modern")
+    int32 RightModernCursorIndex = 15;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|Modern")
+    int32 LeftModernHeldSlotIndex = INDEX_NONE;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|Modern")
+    int32 RightModernHeldSlotIndex = INDEX_NONE;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|Modern")
+    EModernHandItemState LeftModernItemState = EModernHandItemState::Empty;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|Modern")
+    EModernHandItemState RightModernItemState = EModernHandItemState::Empty;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|Modern")
+    EModernInventoryHand ModernPreviewHand = EModernInventoryHand::None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal|Modern")
+    float ModernHandMoveSpeed = 90.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal|Modern")
+    float ModernCameraFocusInterpSpeed = 8.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal|Modern")
+    float ModernDamageFocusHoldTime = 0.75f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal|Modern")
+    float ModernClimbingWalkEnterDotThreshold = 0.15f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal|Modern")
+    float ModernGripSearchLateralWeight = 0.65f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal|Modern")
+    float ModernGripSearchVerticalWeight = 0.75f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal|Modern")
+    float ModernHandSurfaceProbeOffset = 18.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal|Modern")
+    float ModernHandSurfaceProbeDepth = 90.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal|Modern")
+    float ModernHandReachLeeway = 15.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Traversal|Modern")
+    FGripPointInfo LeftModernHoverGrip;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Traversal|Modern")
+    FGripPointInfo RightModernHoverGrip;
+
     // Events
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
     void OnHandGripped(bool bIsLeftHand, const FGripPointInfo& GripInfo);
@@ -332,6 +437,12 @@ public:
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|UI")
     void BP_UpdateInventoryMode(bool bInventoryOpen, int32 CursorIndex, int32 InHeldSlotIndex, bool bPreviewing);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|UI")
+    void BP_UpdateModernInventoryMode(bool bEnabled, bool bInventoryOpen, int32 LeftCursor, int32 RightCursor, int32 LeftHeld, int32 RightHeld, bool bLeftPreview, bool bRightPreview);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Traversal")
+    void BP_OnTraversalInputStyleChanged(ETraversalInputStyle NewStyle);
 
     // Stamina
     void UpdateStamina(float DeltaTime);
@@ -573,8 +684,35 @@ protected:
     void OnToggleInventoryTriggered(const FInputActionValue& Value);
     void OnPauseTriggered(const FInputActionValue& Value);
 
+    void OnToggleTraversalInputStyle();
+    void OnModernInventoryTogglePressed();
+    void OnModernLeftGripPressed();
+    void OnModernRightGripPressed();
+    void OnModernLeftUsePressed();
+    void OnModernRightUsePressed();
+
+    void OnModernLeftUpPressed();
+    void OnModernLeftUpReleased();
+    void OnModernLeftDownPressed();
+    void OnModernLeftDownReleased();
+    void OnModernLeftLeftPressed();
+    void OnModernLeftLeftReleased();
+    void OnModernLeftRightPressed();
+    void OnModernLeftRightReleased();
+
+    void OnModernRightUpPressed();
+    void OnModernRightUpReleased();
+    void OnModernRightDownPressed();
+    void OnModernRightDownReleased();
+    void OnModernRightLeftPressed();
+    void OnModernRightLeftReleased();
+    void OnModernRightRightPressed();
+    void OnModernRightRightReleased();
+
     // Debug
     void OnDebugInsanity(const FInputActionValue& Value);
+    void OnDebugInsanityKeyPressed();
+    void OnInventoryToggleKeyPressed();
 
     // Grip Logic
     void TryGrip(bool bIsLeftHand);
@@ -615,6 +753,38 @@ protected:
     bool IsValidInventorySlotIndex(int32 Index) const;
     bool IsPlaceableSlot(int32 Index) const;
 
+    void UpdateModernDualHandMode(float DeltaTime);
+    void UpdateModernHandInput(float DeltaTime);
+    void UpdateModernCameraFocus(float DeltaTime);
+    void RefreshModernInventoryUIState();
+    void OpenModernInventory();
+    void CloseModernInventory();
+    bool TryMoveModernCursor(EModernInventoryHand Hand, const FVector2D& MovementVector);
+    void MoveModernCursor(EModernInventoryHand Hand, int32 DX, int32 DY);
+    bool TryModernPickOrUse(EModernInventoryHand Hand);
+    bool TryModernCancelOrConfirm(EModernInventoryHand Hand, bool bConfirm);
+    bool TryModernGrip(bool bIsLeftHand);
+    bool TryEnterModernClimbingMode();
+
+    bool HasModernClimbableInReach() const;
+    void RefreshModernTraversalMode();
+    void ExitModernClimbingModeIfPossible();
+    FVector GetModernSupportSurfaceNormal() const;
+    FVector2D GetModernHandInputVector(bool bIsLeftHand) const;
+    FVector GetModernAimDirection(bool bIsLeftHand) const;
+    bool IsModernSupportHand(bool bIsLeftHand) const;
+    bool CanModernHandAct(bool bIsLeftHand) const;
+    bool CanModernReleaseHand(bool bIsLeftHand, EModernReleaseReason Reason) const;
+    bool TryModernReleaseHand(bool bIsLeftHand, EModernReleaseReason Reason);
+    void ClearModernHoverGrip(bool bIsLeftHand);
+    bool EnsureModernHoverGrip(bool bIsLeftHand);
+    bool TraceModernSurfaceGrip(const FVector& StartWorld, const FVector& SurfaceNormalHint, FGripPointInfo& OutGrip) const;
+    bool TryMoveModernHoverGrip(bool bIsLeftHand, const FVector2D& Input2D, float DeltaTime);
+    void SyncModernInventoryLayout();
+    int32 GetDefaultModernCursorIndex(EModernInventoryHand Hand) const;
+    void SetInventoryWorldPaused(bool bPaused);
+    bool IsAnyInventoryOpen() const;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     TObjectPtr<UInventoryComponent> Inventory;
 
@@ -646,6 +816,28 @@ private:
     void UpdateHandMaterial(UMaterialInstanceDynamic* MaterialInstance, float Stamina);
     void UpdateHandShake(USkeletalMeshComponent* HandMesh, float Stamina, float DeltaTime, const FVector& RestPosition);
 
+
+private:
+    bool bModernLeftUpHeld = false;
+    bool bModernLeftDownHeld = false;
+    bool bModernLeftLeftHeld = false;
+    bool bModernLeftRightHeld = false;
+    bool bModernRightUpHeld = false;
+    bool bModernRightDownHeld = false;
+    bool bModernRightLeftHeld = false;
+    bool bModernRightRightHeld = false;
+
+    FVector2D LastModernLeftCursorInputDir = FVector2D::ZeroVector;
+    FVector2D LastModernRightCursorInputDir = FVector2D::ZeroVector;
+    bool bModernLeftCursorHeld = false;
+    bool bModernRightCursorHeld = false;
+    float NextModernLeftCursorRepeatTime = 0.0f;
+    float NextModernRightCursorRepeatTime = 0.0f;
+
+    FVector RecentDamageFocusDirection = FVector::ForwardVector;
+    float RecentDamageFocusEndTime = -1.0f;
+    bool bModernFallingFromClimbing = false;
+    bool bInventoryPauseActive = false;
 private:
     FVector2D LastCursorInputDir = FVector2D::ZeroVector;
     bool bCursorInputHeld = false;

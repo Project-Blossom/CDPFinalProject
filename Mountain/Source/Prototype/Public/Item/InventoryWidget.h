@@ -18,6 +18,15 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     UInventoryComponent* GetBoundInventory() const { return Inventory; }
 
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    int32 GetBoundSlotCount() const;
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    int32 GetLeftHandSlotIndex() const;
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    int32 GetRightHandSlotIndex() const;
+
 protected:
     virtual void NativeDestruct() override;
 

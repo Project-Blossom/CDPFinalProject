@@ -276,12 +276,20 @@ void ADownfallCharacter::BeginPlay()
     // Inventory
     if (Inventory && GripFinder)
     {
+        Inventory->EnsureDualHandLayout();
+        Inventory->ReservedCenterSlotIndex = 14;
+        Inventory->RightReservedHandSlotIndex = 15;
         Inventory->PlaceRangeCm = GripFinder->MaxReachDistance;
         Inventory->PlaceTraceDistanceCm = GripFinder->MaxReachDistance;
     }
 
+    LeftModernCursorIndex = GetDefaultModernCursorIndex(EModernInventoryHand::Left);
+    RightModernCursorIndex = GetDefaultModernCursorIndex(EModernInventoryHand::Right);
+
     RefreshInventoryUIState();
+    RefreshModernInventoryUIState();
     ApplyClimbingMappingContext();
+    BP_OnTraversalInputStyleChanged(TraversalInputStyle);
 
     // Altitude Widget
     if (AltitudeWidgetClass)
@@ -330,6 +338,11 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateVignetteEffect(DeltaTime);
     UpdateHandPositions(DeltaTime);
     UpdateHandStaminaVisuals(DeltaTime);
+
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        UpdateModernDualHandMode(DeltaTime);
+    }
 
     ApplyDirtMaskParameters(false);
     ApplyEdgeBlurParameters(false);
@@ -531,22 +544,11 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         {
             EIC->BindAction(JumpAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnJumpStarted);
             EIC->BindAction(JumpAction, ETriggerEvent::Completed, this, &ADownfallCharacter::OnJumpCompleted);
-
-            // Debug: Insanity Test
-            if (DebugInsanityAction)
-            {
-                EIC->BindAction(DebugInsanityAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnDebugInsanity);
-            }
         }
 
         if (IsValid(UseItemAction))
         {
             EIC->BindAction(UseItemAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnUseItemTriggered);
-        }
-
-        if (IsValid(ToggleInventoryAction))
-        {
-            EIC->BindAction(ToggleInventoryAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnToggleInventoryTriggered);
         }
 
         if (IsValid(PauseAction))
@@ -555,12 +557,53 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         }
     }
 
-    PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode);
-    PlayerInputComponent->BindKey(EKeys::NumPadThree, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode);
+    auto MarkPause = [&](FInputKeyBinding& Binding)
+        {
+            Binding.bConsumeInput = true;
+            Binding.bExecuteWhenPaused = true;
+        };
+
+    MarkPause(PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::NumPadThree, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode));
+
+    MarkPause(PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ADownfallCharacter::OnToggleTraversalInputStyle));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::NumPadFour, IE_Pressed, this, &ADownfallCharacter::OnToggleTraversalInputStyle));
+
+    MarkPause(PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &ADownfallCharacter::OnDebugInsanityKeyPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::NumPadFive, IE_Pressed, this, &ADownfallCharacter::OnDebugInsanityKeyPressed));
+
+    MarkPause(PlayerInputComponent->BindKey(EKeys::B, IE_Pressed, this, &ADownfallCharacter::OnInventoryToggleKeyPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::Q, IE_Pressed, this, &ADownfallCharacter::OnModernLeftGripPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::U, IE_Pressed, this, &ADownfallCharacter::OnModernRightGripPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::E, IE_Pressed, this, &ADownfallCharacter::OnModernLeftUsePressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::O, IE_Pressed, this, &ADownfallCharacter::OnModernRightUsePressed));
+
+    MarkPause(PlayerInputComponent->BindKey(EKeys::W, IE_Pressed, this, &ADownfallCharacter::OnModernLeftUpPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::W, IE_Released, this, &ADownfallCharacter::OnModernLeftUpReleased));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::S, IE_Pressed, this, &ADownfallCharacter::OnModernLeftDownPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::S, IE_Released, this, &ADownfallCharacter::OnModernLeftDownReleased));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::A, IE_Pressed, this, &ADownfallCharacter::OnModernLeftLeftPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::A, IE_Released, this, &ADownfallCharacter::OnModernLeftLeftReleased));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::D, IE_Pressed, this, &ADownfallCharacter::OnModernLeftRightPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::D, IE_Released, this, &ADownfallCharacter::OnModernLeftRightReleased));
+
+    MarkPause(PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &ADownfallCharacter::OnModernRightUpPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::I, IE_Released, this, &ADownfallCharacter::OnModernRightUpReleased));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::K, IE_Pressed, this, &ADownfallCharacter::OnModernRightDownPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::K, IE_Released, this, &ADownfallCharacter::OnModernRightDownReleased));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &ADownfallCharacter::OnModernRightLeftPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::J, IE_Released, this, &ADownfallCharacter::OnModernRightLeftReleased));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::L, IE_Pressed, this, &ADownfallCharacter::OnModernRightRightPressed));
+    MarkPause(PlayerInputComponent->BindKey(EKeys::L, IE_Released, this, &ADownfallCharacter::OnModernRightRightReleased));
 }
 
 void ADownfallCharacter::OnUseItemTriggered(const FInputActionValue& Value)
 {
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        return;
+    }
+
     if (!Inventory)
     {
         return;
@@ -610,6 +653,12 @@ void ADownfallCharacter::OnUseItemTriggered(const FInputActionValue& Value)
 
 void ADownfallCharacter::OnToggleInventoryTriggered(const FInputActionValue& Value)
 {
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        OnModernInventoryTogglePressed();
+        return;
+    }
+
     if (!Inventory)
     {
         return;
@@ -662,26 +711,60 @@ void ADownfallCharacter::ApplyClimbingMappingContext()
 // Input Handlers
 void ADownfallCharacter::OnGrabLeftStarted(const FInputActionValue& Value)
 {
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        if (ModernTraversalMode == EModernTraversalMode::Walking && HasModernClimbableInReach())
+        {
+            ModernTraversalMode = EModernTraversalMode::ClimbReady;
+            ClearModernHoverGrip(true);
+            ClearModernHoverGrip(false);
+            EnsureModernHoverGrip(true);
+            EnsureModernHoverGrip(false);
+        }
+        return;
+    }
+
     TryGrip(true);
 }
 
 void ADownfallCharacter::OnGrabLeftCompleted(const FInputActionValue& Value)
 {
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        return;
+    }
+
     ReleaseGrip(true);
 }
 
 void ADownfallCharacter::OnGrabRightStarted(const FInputActionValue& Value)
 {
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        return;
+    }
+
     TryGrip(false);
 }
 
 void ADownfallCharacter::OnGrabRightCompleted(const FInputActionValue& Value)
 {
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        return;
+    }
+
     ReleaseGrip(false);
 }
 
 void ADownfallCharacter::OnLook(const FInputActionValue& Value)
 {
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand &&
+        (ModernTraversalMode == EModernTraversalMode::Climbing || ModernTraversalMode == EModernTraversalMode::Falling))
+    {
+        return;
+    }
+
     FVector2D LookAxisVector = Value.Get<FVector2D>();
 
     if (Controller)
@@ -694,6 +777,14 @@ void ADownfallCharacter::OnLook(const FInputActionValue& Value)
 void ADownfallCharacter::OnMove(const FInputActionValue& Value)
 {
     FVector2D MovementVector = Value.Get<FVector2D>();
+
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        if (ModernTraversalMode == EModernTraversalMode::Climbing || ModernTraversalMode == EModernTraversalMode::Falling)
+        {
+            return;
+        }
+    }
 
     if (ItemUseState == EItemUseState::InventoryOpen)
     {
@@ -836,6 +927,12 @@ void ADownfallCharacter::OnJumpStarted(const FInputActionValue& Value)
         // Velocity 직접 설정
         GetCharacterMovement()->SetMovementMode(MOVE_Falling);
         GetCharacterMovement()->Velocity = JumpVelocity;
+
+        if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+        {
+            bModernFallingFromClimbing = true;
+            ModernTraversalMode = EModernTraversalMode::Falling;
+        }
 
         UE_LOG(LogDownFall, Log, TEXT("Jump velocity: %s"), *JumpVelocity.ToString());
     }
@@ -1297,6 +1394,11 @@ void ADownfallCharacter::BreakConstraint(UPhysicsConstraintComponent* Constraint
 // Stamina
 void ADownfallCharacter::UpdateStamina(float DeltaTime)
 {
+    if (IsAnyInventoryOpen())
+    {
+        return;
+    }
+
     // 왼손
     if (LeftHand.State == EHandState::Gripping)
     {
@@ -1306,7 +1408,7 @@ void ADownfallCharacter::UpdateStamina(float DeltaTime)
         if (LeftHand.Stamina <= 0.0f)
         {
             UE_LOG(LogDownFall, Warning, TEXT("Left hand stamina depleted - releasing"));
-            ReleaseGrip(true);
+            TryModernReleaseHand(true, EModernReleaseReason::ForcedStamina);
         }
     }
     else
@@ -1323,7 +1425,7 @@ void ADownfallCharacter::UpdateStamina(float DeltaTime)
         if (RightHand.Stamina <= 0.0f)
         {
             UE_LOG(LogDownFall, Warning, TEXT("Right hand stamina depleted - releasing"));
-            ReleaseGrip(false);
+            TryModernReleaseHand(false, EModernReleaseReason::ForcedStamina);
         }
     }
     else
@@ -1710,31 +1812,54 @@ void ADownfallCharacter::DrawDebugInfo()
 
     int32 LineIndex = 100;
 
-    // 등반 상태
     FString ClimbingStatus = bIsClimbing ? TEXT("Climbing") : TEXT("Not Climbing");
     GEngine->AddOnScreenDebugMessage(
         LineIndex++, 0.0f, FColor::Cyan,
         FString::Printf(TEXT("Status: %s"), *ClimbingStatus)
     );
 
+    const FString TraversalModeText = (TraversalInputStyle == ETraversalInputStyle::LegacyMouseHold)
+        ? TEXT("Original")
+        : TEXT("Dual Hand");
+
+    GEngine->AddOnScreenDebugMessage(
+        LineIndex++, 0.0f, FColor::Emerald,
+        FString::Printf(TEXT("Traversal Mode: %s"), *TraversalModeText)
+    );
+
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        FString ModernModeText;
+        switch (ModernTraversalMode)
+        {
+        case EModernTraversalMode::Walking: ModernModeText = TEXT("Walking"); break;
+        case EModernTraversalMode::ClimbReady: ModernModeText = TEXT("ClimbReady"); break;
+        case EModernTraversalMode::Climbing: ModernModeText = TEXT("Climbing"); break;
+        case EModernTraversalMode::Falling: ModernModeText = TEXT("Falling"); break;
+        default: ModernModeText = TEXT("Unknown"); break;
+        }
+
+        GEngine->AddOnScreenDebugMessage(
+            LineIndex++, 0.0f, FColor::Emerald,
+            FString::Printf(TEXT("Dual Hand State: %s"), *ModernModeText)
+        );
+    }
+
     // Left Hand 정보
     if (LeftHand.State == EHandState::Gripping)
     {
-        // 경사각
         float SlopeAngle = LeftHand.CurrentGrip.SurfaceAngleDegrees;
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Green,
             FString::Printf(TEXT("Left Slope: %.1f°"), SlopeAngle)
         );
 
-        // 스태미나 소모량
         float DrainRate = GetStaminaDrainRate(LeftHand);
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Green,
             FString::Printf(TEXT("Left Drain: %.2f/s"), DrainRate)
         );
 
-        // 현재 스태미나
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Green,
             FString::Printf(TEXT("Left Stamina: %.1f"), LeftHand.Stamina)
@@ -1748,24 +1873,20 @@ void ADownfallCharacter::DrawDebugInfo()
         );
     }
 
-    // Right Hand 정보
     if (RightHand.State == EHandState::Gripping)
     {
-        // 경사각
         float SlopeAngle = RightHand.CurrentGrip.SurfaceAngleDegrees;
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Blue,
             FString::Printf(TEXT("Right Slope: %.1f°"), SlopeAngle)
         );
 
-        // 스태미나 소모량
         float DrainRate = GetStaminaDrainRate(RightHand);
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Blue,
             FString::Printf(TEXT("Right Drain: %.2f/s"), DrainRate)
         );
 
-        // 현재 스태미나
         GEngine->AddOnScreenDebugMessage(
             LineIndex++, 0.0f, FColor::Blue,
             FString::Printf(TEXT("Right Stamina: %.1f"), RightHand.Stamina)
@@ -1779,7 +1900,6 @@ void ADownfallCharacter::DrawDebugInfo()
         );
     }
 
-    // Physics 상태
     bool bPhysicsOn = GetCapsuleComponent()->IsSimulatingPhysics();
     FString PhysicsStatus = bPhysicsOn ? TEXT("Physics ON") : TEXT("Physics OFF");
     GEngine->AddOnScreenDebugMessage(
@@ -1787,15 +1907,15 @@ void ADownfallCharacter::DrawDebugInfo()
         FString::Printf(TEXT("Physics: %s"), *PhysicsStatus)
     );
 
-    // Movement 모드
     FString MovementMode;
     switch (GetCharacterMovement()->MovementMode)
     {
     case MOVE_Walking: MovementMode = TEXT("Walking"); break;
     case MOVE_Falling: MovementMode = TEXT("Falling"); break;
-    case MOVE_Flying: MovementMode = TEXT("Flying"); break;
-    default: MovementMode = TEXT("Other"); break;
+    case MOVE_Flying:  MovementMode = TEXT("Flying");  break;
+    default:           MovementMode = TEXT("Other");   break;
     }
+
     GEngine->AddOnScreenDebugMessage(
         LineIndex++, 0.0f, FColor::Yellow,
         FString::Printf(TEXT("Movement: %s"), *MovementMode)
@@ -1806,7 +1926,6 @@ void ADownfallCharacter::DrawDebugInfo()
         FString::Printf(TEXT("Fly Mode: %s | Space Up / Ctrl Down"), bDebugFlyMode ? TEXT("ON") : TEXT("OFF"))
     );
 
-    // Insanity 표시
     FColor InsanityColor = bIsConfused ? FColor::Red : FColor::Magenta;
     GEngine->AddOnScreenDebugMessage(
         LineIndex++, 0.0f, InsanityColor,
@@ -2013,17 +2132,18 @@ void ADownfallCharacter::RefreshInventoryUIState()
     const bool bPreviewing = (ItemUseState == EItemUseState::PlacementPreview);
 
     BP_UpdateInventoryMode(bInventoryOpen, InventoryCursorIndex, HeldSlotIndex, bPreviewing);
+    RefreshModernInventoryUIState();
 }
 
 void ADownfallCharacter::MoveInventoryCursor(int32 DX, int32 DY)
 {
-    int32 X = InventoryCursorIndex % 5;
-    int32 Y = InventoryCursorIndex / 5;
+    int32 X = InventoryCursorIndex % 6;
+    int32 Y = InventoryCursorIndex / 6;
 
-    X = FMath::Clamp(X + DX, 0, 4);
+    X = FMath::Clamp(X + DX, 0, 5);
     Y = FMath::Clamp(Y + DY, 0, 4);
 
-    InventoryCursorIndex = Y * 5 + X;
+    InventoryCursorIndex = Y * 6 + X;
     RefreshInventoryUIState();
 }
 
@@ -2076,7 +2196,7 @@ bool ADownfallCharacter::TryMoveInventoryCursorFromInput(const FVector2D& Moveme
 void ADownfallCharacter::EnterInventoryFromCenter()
 {
     ItemUseState = EItemUseState::InventoryOpen;
-    InventoryCursorIndex = 12;
+    InventoryCursorIndex = 14;
     HeldSlotIndex = INDEX_NONE;
 
     if (Inventory)
@@ -2097,7 +2217,7 @@ void ADownfallCharacter::EnterInventoryFromHeldSlot()
     }
     else
     {
-        InventoryCursorIndex = 12;
+        InventoryCursorIndex = 14;
     }
 
     if (Inventory)
@@ -2110,7 +2230,7 @@ void ADownfallCharacter::EnterInventoryFromHeldSlot()
 
 void ADownfallCharacter::CloseInventoryToEmptyHand()
 {
-    InventoryCursorIndex = 12;
+    InventoryCursorIndex = 14;
 
     if (Inventory)
     {
@@ -2281,6 +2401,15 @@ FVector ADownfallCharacter::GetHandTargetPosition(bool bIsLeftHand) const
             FVector LocalGripPos = CameraTransform.InverseTransformPosition(GripWorldLocation);
 
             return LocalGripPos;
+        }
+    }
+
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        const FGripPointInfo& HoverGrip = bIsLeftHand ? LeftModernHoverGrip : RightModernHoverGrip;
+        if (HoverGrip.bIsValid && FirstPersonCamera)
+        {
+            return FirstPersonCamera->GetComponentTransform().InverseTransformPosition(HoverGrip.WorldLocation);
         }
     }
 
@@ -2595,4 +2724,1234 @@ void ADownfallCharacter::UpdateEdgeBlurEffect()
     EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurEnd"), BlurEnd);
     EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurStrength"), BlurStrength);
     EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurOffset"), BlurOffset);
+}
+
+float ADownfallCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+    const float Result = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+
+    FVector FocusDir = FVector::ZeroVector;
+    if (DamageCauser)
+    {
+        FocusDir = (DamageCauser->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+    }
+    else if (EventInstigator && EventInstigator->GetPawn())
+    {
+        FocusDir = (EventInstigator->GetPawn()->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+    }
+
+    if (!FocusDir.IsNearlyZero())
+    {
+        RecentDamageFocusDirection = FocusDir;
+        RecentDamageFocusEndTime = GetWorld() ? (GetWorld()->GetTimeSeconds() + ModernDamageFocusHoldTime) : ModernDamageFocusHoldTime;
+    }
+
+    return Result;
+}
+
+void ADownfallCharacter::OnToggleTraversalInputStyle()
+{
+    TraversalInputStyle = (TraversalInputStyle == ETraversalInputStyle::LegacyMouseHold)
+        ? ETraversalInputStyle::ModernDualHand
+        : ETraversalInputStyle::LegacyMouseHold;
+
+    if (TraversalInputStyle == ETraversalInputStyle::LegacyMouseHold)
+    {
+        bModernInventoryOpen = false;
+        ModernPreviewHand = EModernInventoryHand::None;
+        LeftModernItemState = EModernHandItemState::Empty;
+        RightModernItemState = EModernHandItemState::Empty;
+        if (Inventory)
+        {
+            Inventory->SetPreviewEnabled(false);
+        }
+        bModernFallingFromClimbing = false;
+        ModernTraversalMode = EModernTraversalMode::Walking;
+        ClearModernHoverGrip(true);
+        ClearModernHoverGrip(false);
+    }
+    else
+    {
+        if (LeftHand.State == EHandState::Gripping)
+        {
+            ReleaseGrip(true);
+        }
+        if (RightHand.State == EHandState::Gripping)
+        {
+            ReleaseGrip(false);
+        }
+
+        UpdateClimbingState();
+        SyncModernInventoryLayout();
+
+        bModernFallingFromClimbing = false;
+        ModernTraversalMode = EModernTraversalMode::Walking;
+        LeftModernCursorIndex = GetDefaultModernCursorIndex(EModernInventoryHand::Left);
+        RightModernCursorIndex = GetDefaultModernCursorIndex(EModernInventoryHand::Right);
+        ClearModernHoverGrip(true);
+        ClearModernHoverGrip(false);
+    }
+
+    if (GEngine)
+    {
+        const TCHAR* TraversalLabel = (TraversalInputStyle == ETraversalInputStyle::LegacyMouseHold)
+            ? TEXT("Traversal Mode: Original")
+            : TEXT("Traversal Mode: Dual Hand");
+
+        GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Cyan, TraversalLabel);
+    }
+
+    BP_OnTraversalInputStyleChanged(TraversalInputStyle);
+    RefreshInventoryUIState();
+    RefreshModernInventoryUIState();
+}
+
+
+bool ADownfallCharacter::IsAnyInventoryOpen() const
+{
+    return ItemUseState == EItemUseState::InventoryOpen || bModernInventoryOpen;
+}
+
+void ADownfallCharacter::SetInventoryWorldPaused(bool bPaused)
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    if (bInventoryPauseActive == bPaused)
+    {
+        return;
+    }
+
+    bInventoryPauseActive = bPaused;
+    UGameplayStatics::SetGamePaused(World, bPaused);
+}
+
+void ADownfallCharacter::OnModernInventoryTogglePressed()
+{
+    if (TraversalInputStyle != ETraversalInputStyle::ModernDualHand)
+    {
+        return;
+    }
+
+    if (bModernInventoryOpen)
+    {
+        CloseModernInventory();
+    }
+    else
+    {
+        OpenModernInventory();
+    }
+}
+
+void ADownfallCharacter::OpenModernInventory()
+{
+    SyncModernInventoryLayout();
+    bModernInventoryOpen = true;
+    LeftModernCursorIndex = (LeftModernHeldSlotIndex != INDEX_NONE) ? LeftModernHeldSlotIndex : GetDefaultModernCursorIndex(EModernInventoryHand::Left);
+    RightModernCursorIndex = (RightModernHeldSlotIndex != INDEX_NONE) ? RightModernHeldSlotIndex : GetDefaultModernCursorIndex(EModernInventoryHand::Right);
+    SetInventoryWorldPaused(true);
+    RefreshModernInventoryUIState();
+}
+
+void ADownfallCharacter::CloseModernInventory()
+{
+    bModernInventoryOpen = false;
+    if (Inventory)
+    {
+        Inventory->SetPreviewEnabled(false);
+    }
+
+    ModernPreviewHand = EModernInventoryHand::None;
+    if (LeftModernItemState == EModernHandItemState::Preview)
+    {
+        LeftModernItemState = (LeftModernHeldSlotIndex != INDEX_NONE) ? EModernHandItemState::Holding : EModernHandItemState::Empty;
+    }
+    if (RightModernItemState == EModernHandItemState::Preview)
+    {
+        RightModernItemState = (RightModernHeldSlotIndex != INDEX_NONE) ? EModernHandItemState::Holding : EModernHandItemState::Empty;
+    }
+
+    if (!IsAnyInventoryOpen())
+    {
+        SetInventoryWorldPaused(false);
+    }
+
+    RefreshModernInventoryUIState();
+}
+
+void ADownfallCharacter::RefreshModernInventoryUIState()
+{
+    BP_UpdateModernInventoryMode(
+        TraversalInputStyle == ETraversalInputStyle::ModernDualHand,
+        bModernInventoryOpen,
+        LeftModernCursorIndex,
+        RightModernCursorIndex,
+        LeftModernHeldSlotIndex,
+        RightModernHeldSlotIndex,
+        LeftModernItemState == EModernHandItemState::Preview,
+        RightModernItemState == EModernHandItemState::Preview);
+}
+
+void ADownfallCharacter::SyncModernInventoryLayout()
+{
+    if (!Inventory)
+    {
+        return;
+    }
+
+    Inventory->EnsureDualHandLayout();
+    Inventory->ReservedCenterSlotIndex = 14;
+    Inventory->RightReservedHandSlotIndex = 15;
+}
+
+int32 ADownfallCharacter::GetDefaultModernCursorIndex(EModernInventoryHand Hand) const
+{
+    return (Hand == EModernInventoryHand::Right) ? 15 : 14;
+}
+
+void ADownfallCharacter::MoveModernCursor(EModernInventoryHand Hand, int32 DX, int32 DY)
+{
+    int32& Cursor = (Hand == EModernInventoryHand::Right) ? RightModernCursorIndex : LeftModernCursorIndex;
+    int32 X = Cursor % 6;
+    int32 Y = Cursor / 6;
+    X = FMath::Clamp(X + DX, 0, 5);
+    Y = FMath::Clamp(Y + DY, 0, 4);
+    Cursor = FMath::Clamp(Y * 6 + X, 0, 29);
+    RefreshModernInventoryUIState();
+}
+
+bool ADownfallCharacter::TryMoveModernCursor(EModernInventoryHand Hand, const FVector2D& MovementVector)
+{
+    const float AbsX = FMath::Abs(MovementVector.X);
+    const float AbsY = FMath::Abs(MovementVector.Y);
+
+    FVector2D& LastDir = (Hand == EModernInventoryHand::Right) ? LastModernRightCursorInputDir : LastModernLeftCursorInputDir;
+    bool& bHeld = (Hand == EModernInventoryHand::Right) ? bModernRightCursorHeld : bModernLeftCursorHeld;
+    float& NextRepeatTime = (Hand == EModernInventoryHand::Right) ? NextModernRightCursorRepeatTime : NextModernLeftCursorRepeatTime;
+
+    FVector2D DesiredDir = FVector2D::ZeroVector;
+
+    if (AbsX < 0.5f && AbsY < 0.5f)
+    {
+        bHeld = false;
+        LastDir = FVector2D::ZeroVector;
+        return false;
+    }
+
+    if (AbsX >= AbsY)
+    {
+        DesiredDir.X = (MovementVector.X > 0.0f) ? 1.0f : -1.0f;
+    }
+    else
+    {
+        DesiredDir.Y = (MovementVector.Y > 0.0f) ? -1.0f : 1.0f;
+    }
+
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+
+    if (!bHeld || DesiredDir != LastDir)
+    {
+        bHeld = true;
+        LastDir = DesiredDir;
+        NextRepeatTime = Now + CursorInitialRepeatDelay;
+        MoveModernCursor(Hand, (int32)DesiredDir.X, (int32)DesiredDir.Y);
+        return true;
+    }
+
+    if (Now >= NextRepeatTime)
+    {
+        NextRepeatTime = Now + CursorRepeatInterval;
+        MoveModernCursor(Hand, (int32)DesiredDir.X, (int32)DesiredDir.Y);
+        return true;
+    }
+
+    return false;
+}
+
+bool ADownfallCharacter::TryModernPickOrUse(EModernInventoryHand Hand)
+{
+    if (!Inventory)
+    {
+        return false;
+    }
+
+    int32& HeldSlot = (Hand == EModernInventoryHand::Right) ? RightModernHeldSlotIndex : LeftModernHeldSlotIndex;
+    int32 Cursor = (Hand == EModernInventoryHand::Right) ? RightModernCursorIndex : LeftModernCursorIndex;
+    EModernHandItemState& ItemState = (Hand == EModernInventoryHand::Right) ? RightModernItemState : LeftModernItemState;
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+    if (HeldSlot == INDEX_NONE)
+    {
+        if (!Slots.IsValidIndex(Cursor) || !Slots[Cursor].IsValid())
+        {
+            return false;
+        }
+
+        HeldSlot = Cursor;
+        ItemState = EModernHandItemState::Holding;
+        RefreshModernInventoryUIState();
+        return true;
+    }
+
+    if (!Slots.IsValidIndex(HeldSlot) || !Slots[HeldSlot].IsValid())
+    {
+        HeldSlot = INDEX_NONE;
+        ItemState = EModernHandItemState::Empty;
+        RefreshModernInventoryUIState();
+        return false;
+    }
+
+    if (IsPlaceableSlot(HeldSlot))
+    {
+        Inventory->SetPreviewSlotIndex(HeldSlot);
+        Inventory->SetPreviewEnabled(true);
+        ModernPreviewHand = Hand;
+        ItemState = EModernHandItemState::Preview;
+        RefreshModernInventoryUIState();
+        return true;
+    }
+
+    const bool bUsed = Inventory->UseItem(HeldSlot, this);
+    const TArray<FItemStack>& AfterSlots = Inventory->GetSlots();
+
+    if (!bUsed)
+    {
+        return false;
+    }
+
+    if (!AfterSlots.IsValidIndex(HeldSlot) || !AfterSlots[HeldSlot].IsValid())
+    {
+        HeldSlot = INDEX_NONE;
+        ItemState = EModernHandItemState::Empty;
+    }
+    else
+    {
+        ItemState = EModernHandItemState::Holding;
+    }
+
+    RefreshModernInventoryUIState();
+    return true;
+}
+
+bool ADownfallCharacter::TryModernCancelOrConfirm(EModernInventoryHand Hand, bool bConfirm)
+{
+    if (!Inventory)
+    {
+        return false;
+    }
+
+    int32& HeldSlot = (Hand == EModernInventoryHand::Right) ? RightModernHeldSlotIndex : LeftModernHeldSlotIndex;
+    EModernHandItemState& ItemState = (Hand == EModernInventoryHand::Right) ? RightModernItemState : LeftModernItemState;
+
+    if (bConfirm)
+    {
+        if (ModernPreviewHand == Hand && ItemState == EModernHandItemState::Preview && HeldSlot != INDEX_NONE)
+        {
+            const bool bUsed = Inventory->UseItem(HeldSlot, this);
+            const TArray<FItemStack>& AfterSlots = Inventory->GetSlots();
+
+            Inventory->SetPreviewEnabled(false);
+            ModernPreviewHand = EModernInventoryHand::None;
+
+            if (!AfterSlots.IsValidIndex(HeldSlot) || !AfterSlots[HeldSlot].IsValid())
+            {
+                HeldSlot = INDEX_NONE;
+                ItemState = EModernHandItemState::Empty;
+            }
+            else
+            {
+                ItemState = EModernHandItemState::Holding;
+            }
+
+            RefreshModernInventoryUIState();
+            return bUsed;
+        }
+
+        return TryModernPickOrUse(Hand);
+    }
+
+    if (ModernPreviewHand == Hand && ItemState == EModernHandItemState::Preview)
+    {
+        Inventory->SetPreviewEnabled(false);
+        ModernPreviewHand = EModernInventoryHand::None;
+        ItemState = (HeldSlot != INDEX_NONE) ? EModernHandItemState::Holding : EModernHandItemState::Empty;
+        RefreshModernInventoryUIState();
+        return true;
+    }
+
+    return TryModernPickOrUse(Hand);
+}
+
+bool ADownfallCharacter::HasModernClimbableInReach() const
+{
+    if (!GripFinder || !FirstPersonCamera)
+    {
+        return false;
+    }
+
+    FGripPointInfo GripInfo;
+    return GripFinder->FindGripPoint(
+        FirstPersonCamera->GetComponentLocation(),
+        FirstPersonCamera->GetForwardVector(),
+        GripInfo) && GripInfo.bIsValid;
+}
+
+void ADownfallCharacter::RefreshModernTraversalMode()
+{
+    if (TraversalInputStyle != ETraversalInputStyle::ModernDualHand)
+    {
+        return;
+    }
+
+    if (bIsClimbing)
+    {
+        bModernFallingFromClimbing = true;
+        ModernTraversalMode = EModernTraversalMode::Climbing;
+        return;
+    }
+
+    const bool bIsAirborne = !GetCharacterMovement() || GetCharacterMovement()->IsFalling();
+    if (bIsAirborne)
+    {
+        if (bModernFallingFromClimbing)
+        {
+            ModernTraversalMode = EModernTraversalMode::Falling;
+        }
+        else
+        {
+            ModernTraversalMode = EModernTraversalMode::Walking;
+            ClearModernHoverGrip(true);
+            ClearModernHoverGrip(false);
+        }
+        return;
+    }
+
+    bModernFallingFromClimbing = false;
+
+    if (ModernTraversalMode == EModernTraversalMode::ClimbReady)
+    {
+        if (!HasModernClimbableInReach())
+        {
+            ModernTraversalMode = EModernTraversalMode::Walking;
+            ClearModernHoverGrip(true);
+            ClearModernHoverGrip(false);
+        }
+        return;
+    }
+
+    ModernTraversalMode = EModernTraversalMode::Walking;
+}
+
+bool ADownfallCharacter::TryEnterModernClimbingMode()
+{
+    if (ModernTraversalMode == EModernTraversalMode::Climbing)
+    {
+        return true;
+    }
+
+    if (ModernTraversalMode == EModernTraversalMode::Falling)
+    {
+        return false;
+    }
+
+    if (!HasModernClimbableInReach())
+    {
+        return false;
+    }
+
+    ModernTraversalMode = EModernTraversalMode::ClimbReady;
+    ClearModernHoverGrip(true);
+    ClearModernHoverGrip(false);
+    EnsureModernHoverGrip(true);
+    EnsureModernHoverGrip(false);
+    return true;
+}
+
+FVector2D ADownfallCharacter::GetModernHandInputVector(bool bIsLeftHand) const
+{
+    const bool bLeft = bIsLeftHand ? bModernLeftLeftHeld : bModernRightLeftHeld;
+    const bool bRight = bIsLeftHand ? bModernLeftRightHeld : bModernRightRightHeld;
+    const bool bUp = bIsLeftHand ? bModernLeftUpHeld : bModernRightUpHeld;
+    const bool bDown = bIsLeftHand ? bModernLeftDownHeld : bModernRightDownHeld;
+
+    if (bUp != bDown)
+    {
+        return FVector2D(0.0f, bUp ? 1.0f : -1.0f);
+    }
+
+    if (bRight != bLeft)
+    {
+        return FVector2D(bRight ? 1.0f : -1.0f, 0.0f);
+    }
+
+    return FVector2D::ZeroVector;
+}
+
+FVector ADownfallCharacter::GetModernSupportSurfaceNormal() const
+{
+    auto NormalizeOr = [](FVector V, const FVector& Fallback) -> FVector
+        {
+            if (!V.Normalize())
+            {
+                V = Fallback;
+                if (!V.Normalize())
+                {
+                    V = FVector::ForwardVector;
+                }
+            }
+            return V;
+        };
+
+    if (LeftHand.State == EHandState::Gripping && LeftHand.CurrentGrip.bIsValid)
+    {
+        return NormalizeOr(LeftHand.CurrentGrip.SurfaceNormal, FVector::ForwardVector * -1.0f);
+    }
+
+    if (RightHand.State == EHandState::Gripping && RightHand.CurrentGrip.bIsValid)
+    {
+        return NormalizeOr(RightHand.CurrentGrip.SurfaceNormal, FVector::ForwardVector * -1.0f);
+    }
+
+    if (LeftModernHoverGrip.bIsValid)
+    {
+        return NormalizeOr(LeftModernHoverGrip.SurfaceNormal, FVector::ForwardVector * -1.0f);
+    }
+
+    if (RightModernHoverGrip.bIsValid)
+    {
+        return NormalizeOr(RightModernHoverGrip.SurfaceNormal, FVector::ForwardVector * -1.0f);
+    }
+
+    return FirstPersonCamera ? NormalizeOr(FirstPersonCamera->GetForwardVector() * -1.0f, FVector::ForwardVector * -1.0f) : FVector::ForwardVector * -1.0f;
+}
+
+bool ADownfallCharacter::IsModernSupportHand(bool bIsLeftHand) const
+{
+    const bool bLeftGrip = (LeftHand.State == EHandState::Gripping);
+    const bool bRightGrip = (RightHand.State == EHandState::Gripping);
+
+    if (bIsLeftHand)
+    {
+        return bLeftGrip && !bRightGrip;
+    }
+
+    return bRightGrip && !bLeftGrip;
+}
+
+bool ADownfallCharacter::CanModernHandAct(bool bIsLeftHand) const
+{
+    const bool bLeftGrip = (LeftHand.State == EHandState::Gripping);
+    const bool bRightGrip = (RightHand.State == EHandState::Gripping);
+
+    if (!bLeftGrip && !bRightGrip)
+    {
+        return true;
+    }
+
+    if (bLeftGrip && bRightGrip)
+    {
+        return true;
+    }
+
+    return !IsModernSupportHand(bIsLeftHand);
+}
+
+bool ADownfallCharacter::CanModernReleaseHand(bool bIsLeftHand, EModernReleaseReason Reason) const
+{
+    if (Reason == EModernReleaseReason::ForcedStamina)
+    {
+        return true;
+    }
+
+    const bool bOtherHandGripping = bIsLeftHand
+        ? (RightHand.State == EHandState::Gripping)
+        : (LeftHand.State == EHandState::Gripping);
+
+    return bOtherHandGripping;
+}
+
+bool ADownfallCharacter::TryModernReleaseHand(bool bIsLeftHand, EModernReleaseReason Reason)
+{
+    FHandData& Hand = bIsLeftHand ? LeftHand : RightHand;
+    if (Hand.State != EHandState::Gripping)
+    {
+        return false;
+    }
+
+    if (!CanModernReleaseHand(bIsLeftHand, Reason))
+    {
+        return false;
+    }
+
+    const bool bWasModernClimbing = (ModernTraversalMode == EModernTraversalMode::Climbing);
+    ReleaseGrip(bIsLeftHand);
+    ClearModernHoverGrip(bIsLeftHand);
+
+    const bool bNowAirborne = !GetCharacterMovement() || GetCharacterMovement()->IsFalling();
+    if (!bIsClimbing && bNowAirborne && bWasModernClimbing)
+    {
+        bModernFallingFromClimbing = true;
+        ModernTraversalMode = EModernTraversalMode::Falling;
+    }
+
+    return true;
+}
+
+void ADownfallCharacter::ClearModernHoverGrip(bool bIsLeftHand)
+{
+    if (bIsLeftHand)
+    {
+        LeftModernHoverGrip = FGripPointInfo();
+    }
+    else
+    {
+        RightModernHoverGrip = FGripPointInfo();
+    }
+}
+
+bool ADownfallCharacter::TraceModernSurfaceGrip(const FVector& StartWorld, const FVector& SurfaceNormalHint, FGripPointInfo& OutGrip) const
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return false;
+    }
+
+    FVector SafeNormal = SurfaceNormalHint;
+    if (!SafeNormal.Normalize())
+    {
+        SafeNormal = FirstPersonCamera ? (FirstPersonCamera->GetForwardVector() * -1.0f) : (FVector::ForwardVector * -1.0f);
+        SafeNormal.Normalize();
+    }
+
+    const FVector TraceStart = StartWorld + SafeNormal * ModernHandSurfaceProbeOffset;
+    const FVector TraceEnd = StartWorld - SafeNormal * ModernHandSurfaceProbeDepth;
+
+    FHitResult Hit;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(ModernSurfaceGripTrace), false, this);
+    const bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, Params);
+    if (!bHit || !Hit.bBlockingHit)
+    {
+        return false;
+    }
+
+    FVector HitNormal = Hit.ImpactNormal;
+    if (!HitNormal.Normalize())
+    {
+        HitNormal = FVector::UpVector;
+    }
+
+    OutGrip = FGripPointInfo();
+    OutGrip.bIsValid = true;
+    OutGrip.WorldLocation = Hit.ImpactPoint;
+    OutGrip.SurfaceNormal = HitNormal;
+    OutGrip.AverageNormal = HitNormal;
+    OutGrip.SurfaceAngleDegrees = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(HitNormal.Z, -1.0f, 1.0f)));
+    OutGrip.GripQuality = 1.0f;
+    OutGrip.SourceActor = Hit.GetActor();
+    OutGrip.GripKind = Cast<AFlyingPlatform>(Hit.GetActor()) ? EGripKind::DynamicActor : EGripKind::Surface;
+    return true;
+}
+
+bool ADownfallCharacter::EnsureModernHoverGrip(bool bIsLeftHand)
+{
+    FGripPointInfo& HoverGrip = bIsLeftHand ? LeftModernHoverGrip : RightModernHoverGrip;
+    if (HoverGrip.bIsValid)
+    {
+        return true;
+    }
+
+    if (!FirstPersonCamera)
+    {
+        return false;
+    }
+
+    FGripPointInfo GripInfo;
+    if (GripFinder && GripFinder->FindGripPoint(FirstPersonCamera->GetComponentLocation(), GetModernAimDirection(bIsLeftHand), GripInfo) && GripInfo.bIsValid)
+    {
+        HoverGrip = GripInfo;
+        return true;
+    }
+
+    const FVector HandRestLocal = bIsLeftHand ? LeftHandRestPosition : RightHandRestPosition;
+    const FVector HandRestWorld = FirstPersonCamera->GetComponentTransform().TransformPosition(HandRestLocal);
+    if (TraceModernSurfaceGrip(HandRestWorld, GetModernSupportSurfaceNormal(), GripInfo))
+    {
+        HoverGrip = GripInfo;
+        return true;
+    }
+
+    return false;
+}
+
+bool ADownfallCharacter::TryMoveModernHoverGrip(bool bIsLeftHand, const FVector2D& Input2D, float DeltaTime)
+{
+    if (!FirstPersonCamera)
+    {
+        return false;
+    }
+
+    FGripPointInfo& HoverGrip = bIsLeftHand ? LeftModernHoverGrip : RightModernHoverGrip;
+    if (!EnsureModernHoverGrip(bIsLeftHand))
+    {
+        return false;
+    }
+
+    FVector SurfaceNormal = HoverGrip.SurfaceNormal;
+    if (!SurfaceNormal.Normalize())
+    {
+        SurfaceNormal = GetModernSupportSurfaceNormal();
+        SurfaceNormal.Normalize();
+    }
+
+    FVector SurfaceUp = FVector::UpVector - SurfaceNormal * FVector::DotProduct(FVector::UpVector, SurfaceNormal);
+    if (!SurfaceUp.Normalize())
+    {
+        SurfaceUp = FVector::CrossProduct(SurfaceNormal, FVector::RightVector).GetSafeNormal();
+    }
+
+    FVector SurfaceRight = FVector::CrossProduct(SurfaceNormal, SurfaceUp).GetSafeNormal();
+    const FVector DesiredMove = (SurfaceRight * Input2D.X + SurfaceUp * Input2D.Y) * ModernHandMoveSpeed * DeltaTime;
+    if (DesiredMove.IsNearlyZero())
+    {
+        return false;
+    }
+
+    const FVector CandidateWorld = HoverGrip.WorldLocation + DesiredMove;
+    const FVector CameraWorld = FirstPersonCamera->GetComponentLocation();
+    const float MaxReach = (GripFinder ? GripFinder->MaxReachDistance : 200.0f) + ModernHandReachLeeway;
+
+    FVector ToCandidate = CandidateWorld - CameraWorld;
+    if (ToCandidate.SizeSquared() > FMath::Square(MaxReach))
+    {
+        ToCandidate = ToCandidate.GetClampedToMaxSize(MaxReach);
+    }
+
+    FGripPointInfo NewGrip;
+    if (TraceModernSurfaceGrip(CameraWorld + ToCandidate, SurfaceNormal, NewGrip))
+    {
+        HoverGrip = NewGrip;
+        return true;
+    }
+
+    return false;
+}
+
+FVector ADownfallCharacter::GetModernAimDirection(bool bIsLeftHand) const
+{
+    if (!FirstPersonCamera)
+    {
+        return FVector::ForwardVector;
+    }
+
+    FVector Dir = FirstPersonCamera->GetForwardVector();
+    const FVector2D Input = FVector2D(GetModernHandInputVector(bIsLeftHand).X, GetModernHandInputVector(bIsLeftHand).Y);
+    if (!Input.IsNearlyZero())
+    {
+        Dir = (Dir
+            + FirstPersonCamera->GetRightVector() * (Input.X * ModernGripSearchLateralWeight)
+            + FirstPersonCamera->GetUpVector() * (Input.Y * ModernGripSearchVerticalWeight)).GetSafeNormal();
+    }
+
+    return Dir;
+}
+
+bool ADownfallCharacter::TryModernGrip(bool bIsLeftHand)
+{
+    FHandData& Hand = bIsLeftHand ? LeftHand : RightHand;
+    UPhysicsConstraintComponent* Constraint = bIsLeftHand ? LeftHandConstraint : RightHandConstraint;
+
+    if (!CanModernHandAct(bIsLeftHand))
+    {
+        return false;
+    }
+
+    if (Hand.State == EHandState::Gripping || Hand.Stamina <= 0.0f || !GripFinder || !FirstPersonCamera)
+    {
+        return false;
+    }
+
+    FGripPointInfo GripInfo;
+    bool bFound = false;
+
+    FGripPointInfo& HoverGrip = bIsLeftHand ? LeftModernHoverGrip : RightModernHoverGrip;
+    if (HoverGrip.bIsValid)
+    {
+        GripInfo = HoverGrip;
+        bFound = true;
+    }
+    else
+    {
+        bFound = GripFinder->FindGripPoint(
+            FirstPersonCamera->GetComponentLocation(),
+            GetModernAimDirection(bIsLeftHand),
+            GripInfo);
+    }
+
+    if (!bFound || !GripInfo.bIsValid)
+    {
+        return false;
+    }
+
+    const bool bWasBothHandsFree = AreBothHandsFree();
+
+    Hand.State = EHandState::Gripping;
+    Hand.CurrentGrip = GripInfo;
+    Hand.GrippedActor = nullptr;
+    Hand.GripStartTime = GetWorld()->GetTimeSeconds();
+
+    switch (GripInfo.GripKind)
+    {
+    case EGripKind::Anchor:
+        SetupConstraint(Constraint, GripInfo.WorldLocation);
+        EnterAnchorGrip(bIsLeftHand, GripInfo);
+        break;
+
+    case EGripKind::DynamicActor:
+        if (AFlyingPlatform* Platform = Cast<AFlyingPlatform>(GripInfo.SourceActor))
+        {
+            Hand.GrippedActor = Platform;
+            Platform->OnPlayerGrab(this);
+            SetupConstraintToActor(Constraint, Platform, GripInfo.WorldLocation);
+        }
+        else
+        {
+            SetupConstraint(Constraint, GripInfo.WorldLocation);
+        }
+        break;
+
+    case EGripKind::Surface:
+    default:
+        SetupConstraint(Constraint, GripInfo.WorldLocation);
+        break;
+    }
+
+    if (bWasBothHandsFree)
+    {
+        GetCapsuleComponent()->SetSimulatePhysics(true);
+        GetCharacterMovement()->SetMovementMode(MOVE_None);
+    }
+
+    ClearModernHoverGrip(bIsLeftHand);
+    UpdateClimbingState();
+    ModernTraversalMode = EModernTraversalMode::Climbing;
+    OnHandGripped(bIsLeftHand, GripInfo);
+    return true;
+}
+
+void ADownfallCharacter::ExitModernClimbingModeIfPossible()
+{
+    RefreshModernTraversalMode();
+}
+
+void ADownfallCharacter::UpdateModernHandInput(float DeltaTime)
+{
+    if (TraversalInputStyle != ETraversalInputStyle::ModernDualHand || !FirstPersonCamera)
+    {
+        return;
+    }
+
+    if (ModernTraversalMode != EModernTraversalMode::Climbing && ModernTraversalMode != EModernTraversalMode::Falling)
+    {
+        return;
+    }
+
+    auto UpdateOneHand = [&](bool bIsLeftHand)
+        {
+            const FVector2D Input2D = GetModernHandInputVector(bIsLeftHand);
+            if (Input2D.IsNearlyZero())
+            {
+                return;
+            }
+
+            FHandData& Hand = bIsLeftHand ? LeftHand : RightHand;
+            if (Hand.State == EHandState::Gripping)
+            {
+                if (!TryModernReleaseHand(bIsLeftHand, EModernReleaseReason::ActiveMove))
+                {
+                    return;
+                }
+            }
+
+            if (!CanModernHandAct(bIsLeftHand))
+            {
+                return;
+            }
+
+            EnsureModernHoverGrip(bIsLeftHand);
+            TryMoveModernHoverGrip(bIsLeftHand, Input2D, DeltaTime);
+        };
+
+    UpdateOneHand(true);
+    UpdateOneHand(false);
+}
+
+void ADownfallCharacter::UpdateModernCameraFocus(float DeltaTime)
+{
+    if (TraversalInputStyle != ETraversalInputStyle::ModernDualHand || !Controller || !FirstPersonCamera)
+    {
+        return;
+    }
+
+    if (ModernTraversalMode != EModernTraversalMode::Climbing && ModernTraversalMode != EModernTraversalMode::Falling)
+    {
+        return;
+    }
+
+    FVector FocusDirection = FVector::ZeroVector;
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+
+    if (Now <= RecentDamageFocusEndTime && !RecentDamageFocusDirection.IsNearlyZero())
+    {
+        FocusDirection = RecentDamageFocusDirection;
+    }
+    else
+    {
+        auto GetFocusPoint = [&](bool bIsLeftHand, FVector& OutPoint) -> bool
+            {
+                const FHandData& Hand = bIsLeftHand ? LeftHand : RightHand;
+                const FGripPointInfo& HoverGrip = bIsLeftHand ? LeftModernHoverGrip : RightModernHoverGrip;
+
+                if (Hand.State == EHandState::Gripping && Hand.CurrentGrip.bIsValid)
+                {
+                    OutPoint = Hand.CurrentGrip.WorldLocation;
+                    return true;
+                }
+
+                if (HoverGrip.bIsValid)
+                {
+                    OutPoint = HoverGrip.WorldLocation;
+                    return true;
+                }
+
+                return false;
+            };
+
+        FVector FocusPoint = FVector::ZeroVector;
+        const FVector2D LeftInput = GetModernHandInputVector(true);
+        const FVector2D RightInput = GetModernHandInputVector(false);
+
+        if (!LeftInput.IsNearlyZero() && GetFocusPoint(true, FocusPoint))
+        {
+            FocusDirection = (FocusPoint - FirstPersonCamera->GetComponentLocation()).GetSafeNormal();
+        }
+        else if (!RightInput.IsNearlyZero() && GetFocusPoint(false, FocusPoint))
+        {
+            FocusDirection = (FocusPoint - FirstPersonCamera->GetComponentLocation()).GetSafeNormal();
+        }
+    }
+
+    if (FocusDirection.IsNearlyZero())
+    {
+        return;
+    }
+
+    const FRotator CurrentRot = Controller->GetControlRotation();
+    const FRotator TargetRot = FocusDirection.Rotation();
+    const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, ModernCameraFocusInterpSpeed * 0.35f);
+    Controller->SetControlRotation(NewRot);
+}
+
+void ADownfallCharacter::UpdateModernDualHandMode(float DeltaTime)
+{
+    if (bModernInventoryOpen)
+    {
+        const FVector2D LeftInput(GetModernHandInputVector(true).X, GetModernHandInputVector(true).Y);
+        const FVector2D RightInput(GetModernHandInputVector(false).X, GetModernHandInputVector(false).Y);
+        TryMoveModernCursor(EModernInventoryHand::Left, LeftInput);
+        TryMoveModernCursor(EModernInventoryHand::Right, RightInput);
+        return;
+    }
+
+    UpdateModernHandInput(DeltaTime);
+    UpdateModernCameraFocus(DeltaTime);
+    ExitModernClimbingModeIfPossible();
+}
+
+void ADownfallCharacter::OnModernLeftGripPressed()
+{
+    if (TraversalInputStyle != ETraversalInputStyle::ModernDualHand)
+    {
+        if (ItemUseState == EItemUseState::PlacementPreview && Inventory)
+        {
+            Inventory->SetPreviewEnabled(false);
+            ItemUseState = EItemUseState::HoldingItem;
+            RefreshInventoryUIState();
+        }
+        return;
+    }
+
+    if (ModernTraversalMode == EModernTraversalMode::Walking || ModernTraversalMode == EModernTraversalMode::ClimbReady)
+    {
+        if (ItemUseState == EItemUseState::PlacementPreview && Inventory)
+        {
+            Inventory->SetPreviewEnabled(false);
+            ItemUseState = EItemUseState::HoldingItem;
+            RefreshInventoryUIState();
+            return;
+        }
+    }
+
+    if (bModernInventoryOpen)
+    {
+        TryModernCancelOrConfirm(EModernInventoryHand::Left, false);
+        return;
+    }
+
+    if (LeftHand.State == EHandState::Gripping)
+    {
+        TryModernReleaseHand(true, EModernReleaseReason::Manual);
+        return;
+    }
+
+    if (ModernTraversalMode == EModernTraversalMode::Walking)
+    {
+        return;
+    }
+
+    if (ModernTraversalMode == EModernTraversalMode::ClimbReady)
+    {
+        TryModernGrip(true);
+        return;
+    }
+
+    TryModernGrip(true);
+}
+
+void ADownfallCharacter::OnModernRightGripPressed()
+{
+    if (TraversalInputStyle != ETraversalInputStyle::ModernDualHand)
+    {
+        return;
+    }
+
+    if (bModernInventoryOpen)
+    {
+        TryModernCancelOrConfirm(EModernInventoryHand::Right, false);
+        return;
+    }
+
+    if (RightHand.State == EHandState::Gripping)
+    {
+        TryModernReleaseHand(false, EModernReleaseReason::Manual);
+        return;
+    }
+
+    if (ModernTraversalMode == EModernTraversalMode::Walking)
+    {
+        return;
+    }
+
+    if (ModernTraversalMode == EModernTraversalMode::ClimbReady)
+    {
+        TryModernGrip(false);
+        return;
+    }
+
+    TryModernGrip(false);
+}
+
+void ADownfallCharacter::OnModernLeftUsePressed()
+{
+    if (TraversalInputStyle != ETraversalInputStyle::ModernDualHand)
+    {
+        return;
+    }
+
+    SyncModernInventoryLayout();
+
+    if (LeftHand.State == EHandState::Gripping)
+    {
+        if (!TryModernReleaseHand(true, EModernReleaseReason::ItemUse))
+        {
+            return;
+        }
+    }
+
+    if (!bModernInventoryOpen)
+    {
+        OpenModernInventory();
+    }
+
+    TryModernCancelOrConfirm(EModernInventoryHand::Left, true);
+}
+
+void ADownfallCharacter::OnModernRightUsePressed()
+{
+    if (TraversalInputStyle != ETraversalInputStyle::ModernDualHand)
+    {
+        return;
+    }
+
+    SyncModernInventoryLayout();
+
+    if (RightHand.State == EHandState::Gripping)
+    {
+        if (!TryModernReleaseHand(false, EModernReleaseReason::ItemUse))
+        {
+            return;
+        }
+    }
+
+    if (!bModernInventoryOpen)
+    {
+        OpenModernInventory();
+    }
+
+    TryModernCancelOrConfirm(EModernInventoryHand::Right, true);
+}
+
+void ADownfallCharacter::OnModernLeftUpPressed()
+{
+    if (UGameplayStatics::IsGamePaused(GetWorld()))
+    {
+        if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand && bModernInventoryOpen)
+        {
+            MoveModernCursor(EModernInventoryHand::Left, 0, -1);
+            return;
+        }
+        if (TraversalInputStyle == ETraversalInputStyle::LegacyMouseHold && ItemUseState == EItemUseState::InventoryOpen)
+        {
+            MoveInventoryCursor(0, -1);
+            return;
+        }
+    }
+    bModernLeftUpHeld = true;
+}
+void ADownfallCharacter::OnModernLeftUpReleased() { bModernLeftUpHeld = false; }
+void ADownfallCharacter::OnModernLeftDownPressed()
+{
+    if (UGameplayStatics::IsGamePaused(GetWorld()))
+    {
+        if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand && bModernInventoryOpen)
+        {
+            MoveModernCursor(EModernInventoryHand::Left, 0, 1);
+            return;
+        }
+        if (TraversalInputStyle == ETraversalInputStyle::LegacyMouseHold && ItemUseState == EItemUseState::InventoryOpen)
+        {
+            MoveInventoryCursor(0, 1);
+            return;
+        }
+    }
+    bModernLeftDownHeld = true;
+}
+void ADownfallCharacter::OnModernLeftDownReleased() { bModernLeftDownHeld = false; }
+void ADownfallCharacter::OnModernLeftLeftPressed()
+{
+    if (UGameplayStatics::IsGamePaused(GetWorld()))
+    {
+        if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand && bModernInventoryOpen)
+        {
+            MoveModernCursor(EModernInventoryHand::Left, -1, 0);
+            return;
+        }
+        if (TraversalInputStyle == ETraversalInputStyle::LegacyMouseHold && ItemUseState == EItemUseState::InventoryOpen)
+        {
+            MoveInventoryCursor(-1, 0);
+            return;
+        }
+    }
+    bModernLeftLeftHeld = true;
+}
+void ADownfallCharacter::OnModernLeftLeftReleased() { bModernLeftLeftHeld = false; }
+void ADownfallCharacter::OnModernLeftRightPressed()
+{
+    if (UGameplayStatics::IsGamePaused(GetWorld()))
+    {
+        if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand && bModernInventoryOpen)
+        {
+            MoveModernCursor(EModernInventoryHand::Left, 1, 0);
+            return;
+        }
+        if (TraversalInputStyle == ETraversalInputStyle::LegacyMouseHold && ItemUseState == EItemUseState::InventoryOpen)
+        {
+            MoveInventoryCursor(1, 0);
+            return;
+        }
+    }
+    bModernLeftRightHeld = true;
+}
+void ADownfallCharacter::OnModernLeftRightReleased() { bModernLeftRightHeld = false; }
+void ADownfallCharacter::OnModernRightUpPressed()
+{
+    if (UGameplayStatics::IsGamePaused(GetWorld()) && TraversalInputStyle == ETraversalInputStyle::ModernDualHand && bModernInventoryOpen)
+    {
+        MoveModernCursor(EModernInventoryHand::Right, 0, -1);
+        return;
+    }
+    bModernRightUpHeld = true;
+}
+void ADownfallCharacter::OnModernRightUpReleased() { bModernRightUpHeld = false; }
+void ADownfallCharacter::OnModernRightDownPressed()
+{
+    if (UGameplayStatics::IsGamePaused(GetWorld()) && TraversalInputStyle == ETraversalInputStyle::ModernDualHand && bModernInventoryOpen)
+    {
+        MoveModernCursor(EModernInventoryHand::Right, 0, 1);
+        return;
+    }
+    bModernRightDownHeld = true;
+}
+void ADownfallCharacter::OnModernRightDownReleased() { bModernRightDownHeld = false; }
+void ADownfallCharacter::OnModernRightLeftPressed()
+{
+    if (UGameplayStatics::IsGamePaused(GetWorld()) && TraversalInputStyle == ETraversalInputStyle::ModernDualHand && bModernInventoryOpen)
+    {
+        MoveModernCursor(EModernInventoryHand::Right, -1, 0);
+        return;
+    }
+    bModernRightLeftHeld = true;
+}
+void ADownfallCharacter::OnModernRightLeftReleased() { bModernRightLeftHeld = false; }
+void ADownfallCharacter::OnModernRightRightPressed()
+{
+    if (UGameplayStatics::IsGamePaused(GetWorld()) && TraversalInputStyle == ETraversalInputStyle::ModernDualHand && bModernInventoryOpen)
+    {
+        MoveModernCursor(EModernInventoryHand::Right, 1, 0);
+        return;
+    }
+    bModernRightRightHeld = true;
+}
+void ADownfallCharacter::OnModernRightRightReleased() { bModernRightRightHeld = false; }
+
+void ADownfallCharacter::OnDebugInsanityKeyPressed()
+{
+    AddInsanity(10.0f);
+}
+
+void ADownfallCharacter::OnInventoryToggleKeyPressed()
+{
+    if (TraversalInputStyle == ETraversalInputStyle::ModernDualHand)
+    {
+        OnModernInventoryTogglePressed();
+        return;
+    }
+
+    if (!Inventory)
+    {
+        return;
+    }
+
+    switch (ItemUseState)
+    {
+    case EItemUseState::None:
+        EnterInventoryFromCenter();
+        break;
+    case EItemUseState::InventoryOpen:
+        CloseInventoryToEmptyHand();
+        break;
+    case EItemUseState::HoldingItem:
+        EnterInventoryFromHeldSlot();
+        break;
+    case EItemUseState::PlacementPreview:
+        Inventory->SetPreviewEnabled(false);
+        ItemUseState = EItemUseState::HoldingItem;
+        RefreshInventoryUIState();
+        break;
+    default:
+        break;
+    }
 }
