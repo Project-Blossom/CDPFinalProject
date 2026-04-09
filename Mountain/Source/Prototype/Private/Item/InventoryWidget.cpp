@@ -34,17 +34,3 @@ void UInventoryWidget::HandleInventoryChanged()
 {
     BP_OnInventoryChanged();
 }
-int32 UInventoryWidget::GetBoundSlotCount() const
-{
-    return Inventory ? Inventory->GetSlotCount() : 0;
-}
-
-int32 UInventoryWidget::GetLeftHandSlotIndex() const
-{
-    return Inventory ? Inventory->GetLeftReservedHandSlotIndex() : INDEX_NONE;
-}
-
-int32 UInventoryWidget::GetRightHandSlotIndex() const
-{
-    return Inventory ? Inventory->GetRightReservedHandSlotIndex() : INDEX_NONE;
-}
