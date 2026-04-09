@@ -758,6 +758,14 @@ void AWallCrawler::AttachToCarrier(AFlyingPlatform* Platform)
         UE_LOG(LogMonster, Log, TEXT("%s: AI stopped - Carried by %s"), *GetName(), *Platform->GetName());
     }
 
+    // CharacterMovement 중지
+    if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+    {
+        Movement->StopMovementImmediately();
+        Movement->DisableMovement();
+        Movement->SetComponentTickEnabled(false);
+    }
+
     // Physics 끄기
     if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
     {
@@ -815,6 +823,13 @@ void AWallCrawler::DetachFromCarrier()
     // Detach from Platform
     DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
+    // CharacterMovement 재활성화
+    if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+    {
+        Movement->SetMovementMode(MOVE_Falling);
+        Movement->SetComponentTickEnabled(true);
+    }
+
     // Physics 켜기 (자유낙하)
     if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
     {
@@ -839,6 +854,13 @@ void AWallCrawler::OnCarrierLanded(AActor* SelfActor, AActor* OtherActor, FVecto
         RootPrimitive->SetSimulatePhysics(false);
         RootPrimitive->SetEnableGravity(false);
         RootPrimitive->SetPhysicsLinearVelocity(FVector::ZeroVector);
+    }
+
+    // CharacterMovement 복구
+    if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+    {
+        Movement->SetMovementMode(MOVE_Flying);
+        Movement->GravityScale = 0.0f;
     }
 
     // 1초 기절

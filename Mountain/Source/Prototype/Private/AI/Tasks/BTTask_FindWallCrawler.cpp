@@ -36,7 +36,8 @@ EBTNodeResult::Type UBTTask_FindWallCrawler::ExecuteTask(UBehaviorTreeComponent&
     float CurrentTime = Platform->GetWorld()->GetTimeSeconds();
     if (CurrentTime - Platform->LastSearchTime < Platform->CrawlerSearchInterval)
     {
-        return EBTNodeResult::Failed;
+        // 아직 5초 안 지남 - 탐색 스킵하고 계속 진행
+        return EBTNodeResult::Succeeded;
     }
 
     Platform->LastSearchTime = CurrentTime;
@@ -71,10 +72,12 @@ EBTNodeResult::Type UBTTask_FindWallCrawler::ExecuteTask(UBehaviorTreeComponent&
 
         UE_LOG(LogTemp, Log, TEXT("%s: Found and attached WallCrawler: %s"), 
             *Platform->GetName(), *FoundCrawler->GetName());
-        
-        return EBTNodeResult::Succeeded;
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("%s: No WallCrawler found nearby"), *Platform->GetName());
     }
 
-    UE_LOG(LogTemp, Log, TEXT("%s: No WallCrawler found nearby"), *Platform->GetName());
-    return EBTNodeResult::Failed;
+    // 항상 Succeeded 반환 (찾지 못해도 순찰은 계속)
+    return EBTNodeResult::Succeeded;
 }

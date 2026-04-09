@@ -240,6 +240,7 @@ AWallCrawler* AFlyingPlatform::FindNearbyWallCrawler()
     return NearestCrawler;
 }
 
+
 void AFlyingPlatform::DropWallCrawler()
 {
     if (!CarriedCrawler)
@@ -274,14 +275,46 @@ bool AFlyingPlatform::CanDropCrawler() const
     // 수직 거리 체크 (Platform이 Player 위에 있는지)
     float VerticalDiff = PlatformLocation.Z - PlayerLocation.Z;
 
-    // 조건: 수평 3m 이내, 수직 5m 위
-    bool bInRange = (HorizontalDistance <= PlayerDropRadius) && (VerticalDiff >= 0.0f && VerticalDiff <= 500.0f);
+    // 조건: 수평 300cm(3m) 이내, 수직 0~500cm(5m) 위
+    bool bInRange = (HorizontalDistance <= 300.0f) && (VerticalDiff >= 0.0f && VerticalDiff <= 500.0f);
 
 #if !UE_BUILD_SHIPPING
+    // 항상 위치 관계 시각화
+    // 플레이어 위치 (Cyan)
+    DrawDebugSphere(GetWorld(), PlayerLocation, 100.0f, 12, FColor::Cyan, false, 0.1f, 0, 3.0f);
+    
+    // Platform 위치 (Yellow)
+    DrawDebugSphere(GetWorld(), PlatformLocation, 100.0f, 12, FColor::Yellow, false, 0.1f, 0, 3.0f);
+    
+    // Platform과 Player 연결선
+    DrawDebugLine(GetWorld(), PlatformLocation, PlayerLocation, FColor::White, false, 0.1f, 0, 2.0f);
+    
+    // 수평 거리 표시 (Green = OK, Red = Too Far)
+    FColor HorizontalColor = (HorizontalDistance <= 300.0f) ? FColor::Green : FColor::Red;
+    FVector HorizontalMidpoint = FVector(
+        (PlatformLocation.X + PlayerLocation.X) / 2.0f,
+        (PlatformLocation.Y + PlayerLocation.Y) / 2.0f,
+        PlayerLocation.Z
+    );
+    DrawDebugString(GetWorld(), HorizontalMidpoint, 
+        FString::Printf(TEXT("H: %.0fcm"), HorizontalDistance), 
+        nullptr, HorizontalColor, 0.1f, false, 1.5f);
+    
+    // 수직 거리 표시 (Green = OK, Red = Too Low/High)
+    FColor VerticalColor = (VerticalDiff >= 0.0f && VerticalDiff <= 500.0f) ? FColor::Green : FColor::Red;
+    FVector VerticalMidpoint = FVector(
+        PlatformLocation.X,
+        PlatformLocation.Y,
+        (PlatformLocation.Z + PlayerLocation.Z) / 2.0f
+    );
+    DrawDebugString(GetWorld(), VerticalMidpoint, 
+        FString::Printf(TEXT("V: %.0fcm"), VerticalDiff), 
+        nullptr, VerticalColor, 0.1f, false, 1.5f);
+    
     if (bInRange)
     {
-        // 디버그 시각화: 떨어뜨릴 범위 (Red)
-        DrawDebugSphere(GetWorld(), PlatformLocation, PlayerDropRadius, 12, FColor::Red, false, 0.1f, 0, 3.0f);
+        // Drop 가능 범위 (Big Red Sphere)
+        DrawDebugSphere(GetWorld(), PlatformLocation, 300.0f, 12, FColor::Red, false, 0.1f, 0, 5.0f);
     }
 #endif
 
