@@ -17,6 +17,7 @@ class UPhysicsConstraintComponent;
 class UCameraComponent;
 class UGripPointFinderComponent;
 class UInventoryWidget;
+class ABoltAnchorActor;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
 
@@ -87,6 +88,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Debug|Movement")
     void ToggleFlyMode();
 
+    UFUNCTION(BlueprintCallable, Category = "SafetyLine")
+    bool TryAttachSafetyLineFromLookTarget(float TraceDistanceCm = 600.0f);
+
+    UFUNCTION(BlueprintCallable, Category = "SafetyLine")
+    void DetachSafetyLine(bool bBreakBolt = false);
+
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
     TObjectPtr<UCameraComponent> FirstPersonCamera;
@@ -111,6 +118,9 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Climbing|Physics")
     TObjectPtr<UPhysicsConstraintComponent> RightHandConstraint;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SafetyLine")
+    TObjectPtr<UPhysicsConstraintComponent> SafetyLineConstraint;
 
     // Enhanced Input
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
@@ -322,6 +332,37 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Cursor")
     float CursorRepeatInterval = 0.12f;
+
+    // Safety Line
+    UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
+    bool bSafetyLineAttached = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
+    bool bSafetyLineConstraintEngaged = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
+    TObjectPtr<ABoltAnchorActor> ActiveSafetyBolt = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
+    FVector SafetyLineAnchorWorld = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine", meta = (ClampMin = "100.0"))
+    float SafetyLineCurrentLengthCm = 1000.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine", meta = (ClampMin = "100.0"))
+    float SafetyLineInitialLengthCm = 1000.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine", meta = (ClampMin = "50.0"))
+    float SafetyLineMinLengthCm = 100.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine", meta = (ClampMin = "0.0"))
+    float SafetyLineSlackCm = 30.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine", meta = (ClampMin = "0.0"))
+    float SafetyLineEngageToleranceCm = 20.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine", meta = (ClampMin = "0.0"))
+    float SafetyLineRetractDurabilityPerMeter = 3.0f;
 
     // Events
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
@@ -602,6 +643,15 @@ protected:
     void CheckForPlatformAbduction(); // 납치 체크
     void AbductByPlatform(bool bIsLeftHand, class AFlyingPlatform* Platform); // 납치 실행
     bool AreBothHandsFree() const;
+
+    // Safety Line
+    bool AttachSafetyLineToBolt(ABoltAnchorActor* BoltActor);
+    void UpdateSafetyLine(float DeltaTime);
+    void EngageSafetyLineConstraint();
+    void DisengageSafetyLineConstraint();
+    void RefreshSafetyLineConstraint();
+    FVector GetSafetyLineAnchorLocation() const;
+    bool IsSafetyLineTaut() const;
 
     // Inventory State Helpers
     void RefreshInventoryUIState();

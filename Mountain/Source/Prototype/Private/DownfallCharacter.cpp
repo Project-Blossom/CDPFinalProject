@@ -23,6 +23,7 @@
 #include "Item/InventoryComponent.h"
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
+#include "Item/BoltAnchorActor.h"
 #include "UI/AltitudeWidget.h"
 #include "UI/PauseMenuWidget.h"
 #include "Blueprint/UserWidget.h"
@@ -93,6 +94,10 @@ ADownfallCharacter::ADownfallCharacter()
     RightHandConstraint = CreateDefaultSubobject<UPhysicsConstraintComponent>(TEXT("RightHandConstraint"));
     RightHandConstraint->SetupAttachment(GetCapsuleComponent());
     RightHandConstraint->SetDisableCollision(true);
+
+    SafetyLineConstraint = CreateDefaultSubobject<UPhysicsConstraintComponent>(TEXT("SafetyLineConstraint"));
+    SafetyLineConstraint->SetupAttachment(GetCapsuleComponent());
+    SafetyLineConstraint->SetDisableCollision(true);
 
     // Movement
     GetCharacterMovement()->GravityScale = 1.0f;
@@ -323,6 +328,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateStamina(DeltaTime);
     UpdateInsanity(DeltaTime);
     UpdateClimbingState();
+    UpdateSafetyLine(DeltaTime);
     UpdateGlitchEffect();
     UpdateGlitchPatternSwitch(DeltaTime);
     UpdateAttachDesaturation(DeltaTime);
@@ -421,6 +427,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
                 SetActorRotation(UpRightRotation);
 
                 GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+                DisengageSafetyLineConstraint();
 
                 // [DISABLED FOR DEMO] UE_LOG(LogDownFall, Log, TEXT("Landed on walkable surface (%.1f°) - Physics disabled"), SlopeAngle);
             }
@@ -637,6 +644,273 @@ void ADownfallCharacter::OnToggleInventoryTriggered(const FInputActionValue& Val
 
     default:
         break;
+    }
+}
+
+
+bool ADownfallCharacter::TryAttachSafetyLineFromLookTarget(float TraceDistanceCm)
+{
+    FVector ViewLoc = GetActorLocation();
+    FRotator ViewRot = GetActorRotation();
+
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    {
+        PC->GetPlayerViewPoint(ViewLoc, ViewRot);
+    }
+    else if (FirstPersonCamera)
+    {
+        ViewLoc = FirstPersonCamera->GetComponentLocation();
+        ViewRot = FirstPersonCamera->GetComponentRotation();
+    }
+
+    const FVector Start = ViewLoc;
+    const FVector End = Start + ViewRot.Vector() * TraceDistanceCm;
+
+    FHitResult Hit;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(SafetyLineTrace), false, this);
+
+    const bool bHit = GetWorld()->LineTraceSingleByChannel(
+        Hit,
+        Start,
+        End,
+        ECC_Visibility,
+        Params
+    );
+
+    if (!bHit || !Hit.bBlockingHit)
+    {
+        return false;
+    }
+
+    ABoltAnchorActor* BoltActor = Cast<ABoltAnchorActor>(Hit.GetActor());
+    if (!BoltActor)
+    {
+        return false;
+    }
+
+    return AttachSafetyLineToBolt(BoltActor);
+}
+
+bool ADownfallCharacter::AttachSafetyLineToBolt(ABoltAnchorActor* BoltActor)
+{
+    if (!BoltActor || BoltActor->IsBroken())
+    {
+        return false;
+    }
+
+    if (bSafetyLineAttached)
+    {
+        DetachSafetyLine(false);
+    }
+
+    if (!BoltActor->CanAttachSafetyLine())
+    {
+        return false;
+    }
+
+    ActiveSafetyBolt = BoltActor;
+    SafetyLineAnchorWorld = BoltActor->GetRopeAttachWorldLocation();
+    SafetyLineCurrentLengthCm = SafetyLineInitialLengthCm;
+    bSafetyLineAttached = true;
+    bSafetyLineConstraintEngaged = false;
+
+    BoltActor->SetSafetyLineAttached(true, this);
+    return true;
+}
+
+void ADownfallCharacter::DetachSafetyLine(bool bBreakBolt)
+{
+    if (ActiveSafetyBolt)
+    {
+        ActiveSafetyBolt->SetSafetyLineAttached(false, nullptr);
+    }
+
+    if (SafetyLineConstraint)
+    {
+        SafetyLineConstraint->BreakConstraint();
+    }
+
+    bSafetyLineAttached = false;
+    bSafetyLineConstraintEngaged = false;
+    ActiveSafetyBolt = nullptr;
+    SafetyLineAnchorWorld = FVector::ZeroVector;
+    SafetyLineCurrentLengthCm = SafetyLineInitialLengthCm;
+
+    if (!bIsClimbing && AreBothHandsFree())
+    {
+        if (GetCharacterMovement()->MovementMode == MOVE_None)
+        {
+            GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+        }
+    }
+}
+
+FVector ADownfallCharacter::GetSafetyLineAnchorLocation() const
+{
+    if (ActiveSafetyBolt)
+    {
+        return ActiveSafetyBolt->GetRopeAttachWorldLocation();
+    }
+
+    return SafetyLineAnchorWorld;
+}
+
+bool ADownfallCharacter::IsSafetyLineTaut() const
+{
+    if (!bSafetyLineAttached)
+    {
+        return false;
+    }
+
+    const float CurrentDistance =
+        FVector::Distance(GetCapsuleComponent()->GetComponentLocation(), GetSafetyLineAnchorLocation());
+
+    return CurrentDistance >= (SafetyLineCurrentLengthCm - SafetyLineEngageToleranceCm);
+}
+
+void ADownfallCharacter::EngageSafetyLineConstraint()
+{
+    if (!bSafetyLineAttached || !SafetyLineConstraint)
+    {
+        return;
+    }
+
+    if (!GetCapsuleComponent()->IsSimulatingPhysics())
+    {
+        GetCapsuleComponent()->SetSimulatePhysics(true);
+    }
+
+    GetCharacterMovement()->SetMovementMode(MOVE_None);
+
+    RefreshSafetyLineConstraint();
+    bSafetyLineConstraintEngaged = true;
+}
+
+void ADownfallCharacter::DisengageSafetyLineConstraint()
+{
+    if (!bSafetyLineConstraintEngaged || !SafetyLineConstraint)
+    {
+        return;
+    }
+
+    SafetyLineConstraint->BreakConstraint();
+    bSafetyLineConstraintEngaged = false;
+}
+
+void ADownfallCharacter::RefreshSafetyLineConstraint()
+{
+    if (!bSafetyLineAttached || !SafetyLineConstraint)
+    {
+        return;
+    }
+
+    const FVector Anchor = GetSafetyLineAnchorLocation();
+    SafetyLineConstraint->SetWorldLocation(Anchor);
+
+    SafetyLineConstraint->SetConstrainedComponents(
+        GetCapsuleComponent(),
+        NAME_None,
+        nullptr,
+        NAME_None
+    );
+
+    SafetyLineConstraint->SetLinearPositionDrive(false, false, false);
+    SafetyLineConstraint->SetLinearVelocityDrive(false, false, false);
+
+    SafetyLineConstraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Limited, SafetyLineCurrentLengthCm);
+    SafetyLineConstraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Limited, SafetyLineCurrentLengthCm);
+    SafetyLineConstraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Limited, SafetyLineCurrentLengthCm);
+
+    SafetyLineConstraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Free, 0.0f);
+    SafetyLineConstraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Free, 0.0f);
+    SafetyLineConstraint->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Free, 0.0f);
+}
+
+void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
+{
+    if (!bSafetyLineAttached)
+    {
+        return;
+    }
+
+    if (!ActiveSafetyBolt || ActiveSafetyBolt->IsBroken())
+    {
+        DetachSafetyLine(true);
+        return;
+    }
+
+    SafetyLineAnchorWorld = GetSafetyLineAnchorLocation();
+
+    const FVector PlayerLoc = GetCapsuleComponent()->GetComponentLocation();
+    const float CurrentDistance = FVector::Distance(PlayerLoc, SafetyLineAnchorWorld);
+
+    if (bIsClimbing)
+    {
+        const float DesiredLength = FMath::Max(
+            SafetyLineMinLengthCm,
+            CurrentDistance + SafetyLineSlackCm
+        );
+
+        if (DesiredLength < SafetyLineCurrentLengthCm)
+        {
+            const float RetractedCm = SafetyLineCurrentLengthCm - DesiredLength;
+            SafetyLineCurrentLengthCm = DesiredLength;
+
+            const float RetractedMeters = RetractedCm / 100.0f;
+            const float DurabilityCost = RetractedMeters * SafetyLineRetractDurabilityPerMeter;
+
+            const bool bStillUsable = ActiveSafetyBolt->ConsumeDurability(DurabilityCost);
+            if (!bStillUsable)
+            {
+                DetachSafetyLine(true);
+                return;
+            }
+
+            if (bSafetyLineConstraintEngaged)
+            {
+                RefreshSafetyLineConstraint();
+            }
+        }
+
+        if (!IsSafetyLineTaut())
+        {
+            DisengageSafetyLineConstraint();
+        }
+    }
+
+    const bool bIsFalling = (GetCharacterMovement()->MovementMode == MOVE_Falling);
+
+    if (!bIsClimbing && bIsFalling)
+    {
+        if (CurrentDistance >= (SafetyLineCurrentLengthCm - SafetyLineEngageToleranceCm))
+        {
+            if (!bSafetyLineConstraintEngaged)
+            {
+                EngageSafetyLineConstraint();
+            }
+            else
+            {
+                RefreshSafetyLineConstraint();
+            }
+        }
+    }
+
+    if (bSafetyLineConstraintEngaged)
+    {
+        const FVector Dir = (PlayerLoc - SafetyLineAnchorWorld).GetSafeNormal();
+        FVector Vel = GetCapsuleComponent()->GetPhysicsLinearVelocity();
+
+        const float OutwardSpeed = FVector::DotProduct(Vel, Dir);
+        if (OutwardSpeed > 0.0f && CurrentDistance >= (SafetyLineCurrentLengthCm - 5.0f))
+        {
+            Vel -= Dir * (OutwardSpeed * 0.85f);
+            GetCapsuleComponent()->SetPhysicsLinearVelocity(Vel);
+        }
+    }
+
+    if (!bIsClimbing && GetCharacterMovement()->MovementMode == MOVE_Walking)
+    {
+        DisengageSafetyLineConstraint();
     }
 }
 

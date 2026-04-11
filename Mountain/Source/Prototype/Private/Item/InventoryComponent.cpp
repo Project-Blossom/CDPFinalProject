@@ -571,6 +571,34 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
         return true;
     }
 
+
+    case EItemUseType::AttachSafetyLine:
+    {
+        ADownfallCharacter* DownfallChar = Cast<ADownfallCharacter>(User);
+        if (!DownfallChar)
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("Only DownfallCharacter can use safety line")));
+            return false;
+        }
+
+        const bool bAttached = DownfallChar->TryAttachSafetyLineFromLookTarget();
+        if (!bAttached)
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("Look at an installed bolt to attach the safety line")));
+            return false;
+        }
+
+        S.Count -= 1;
+        if (S.Count <= 0)
+        {
+            S.Reset();
+        }
+
+        SanitizeReservedCenterSlot();
+        OnInventoryChanged.Broadcast();
+        return true;
+    }
+
     default:
         return false;
     }

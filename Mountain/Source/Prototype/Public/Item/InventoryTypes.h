@@ -17,6 +17,7 @@ enum class EItemUseType : uint8
     Consume     UMETA(DisplayName = "Consume"),
     Equip       UMETA(DisplayName = "Equip"),
     PlaceActor  UMETA(DisplayName = "PlaceActor"),
+    AttachSafetyLine  UMETA(DisplayName = "AttachSafetyLine"),
 };
 
 UENUM(BlueprintType)
