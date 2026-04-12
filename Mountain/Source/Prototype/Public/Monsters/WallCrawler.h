@@ -184,6 +184,9 @@ public:
     // Carrier System (FlyingPlatform)
     UPROPERTY(BlueprintReadOnly, Category = "Carrier")
     bool bIsCarried = false;
+    
+    UPROPERTY(BlueprintReadOnly, Category = "Carrier")
+    bool bIsFalling = false;
 
     UPROPERTY()
     class AFlyingPlatform* CarrierPlatform = nullptr;
@@ -194,8 +197,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Carrier")
     void DetachFromCarrier();
 
-    UFUNCTION()
-    void OnCarrierLanded(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit);
+    void HandleLanding();  // 착지 처리 (OnCarrierLanded 대체)
 
     // Override
     virtual void Attack() override {}

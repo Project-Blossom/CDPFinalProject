@@ -90,6 +90,20 @@ void AWallCrawler::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
     
+    // 낙하 중일 때 착지 감지
+    if (bIsFalling)
+    {
+        if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+        {
+            // Falling 모드가 아니면 착지한 것
+            if (Movement->MovementMode != MOVE_Falling)
+            {
+                // 착지!
+                HandleLanding();
+            }
+        }
+    }
+    
     // Behavior Tree가 실행 중이면 기존 로직 스킵
     AAIController* AIController = Cast<AAIController>(GetController());
     if (AIController && AIController->BrainComponent && AIController->BrainComponent->IsRunning())
@@ -766,12 +780,8 @@ void AWallCrawler::AttachToCarrier(AFlyingPlatform* Platform)
         Movement->SetComponentTickEnabled(false);
     }
 
-    // Physics 끄기
-    if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
-    {
-        RootPrimitive->SetSimulatePhysics(false);
-        RootPrimitive->SetEnableGravity(false);
-    }
+    // Collision 끄기 (Physics 대신!)
+    SetActorEnableCollision(false);
 
     // Platform의 GrabPoint에 Attach
     USceneComponent* GrabPoint = nullptr;
@@ -818,56 +828,65 @@ void AWallCrawler::DetachFromCarrier()
     UE_LOG(LogMonster, Log, TEXT("%s: Detaching from carrier"), *GetName());
 
     bIsCarried = false;
+    bIsFalling = true;  // 낙하 플래그 설정
     CarrierPlatform = nullptr;
 
     // Detach from Platform
     DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-    // CharacterMovement 재활성화
+    // Collision 활성화 (중요!)
+    SetActorEnableCollision(true);
+
+    // CharacterMovement 재활성화 및 Falling 모드로
     if (UCharacterMovementComponent* Movement = GetCharacterMovement())
     {
-        Movement->SetMovementMode(MOVE_Falling);
+        Movement->SetMovementMode(MOVE_Falling);  // 먼저 모드 설정
+        Movement->GravityScale = 1.0f;  // 중력 활성화
         Movement->SetComponentTickEnabled(true);
+        // Movement 재활성화는 SetMovementMode에서 자동으로 됨
     }
 
-    // Physics 켜기 (자유낙하)
-    if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
-    {
-        RootPrimitive->SetSimulatePhysics(true);
-        RootPrimitive->SetEnableGravity(true);
-    }
-
-    // 착지 감지 시작 (OnActorHit 이벤트 활용)
-    OnActorHit.AddDynamic(this, &AWallCrawler::OnCarrierLanded);
+    UE_LOG(LogMonster, Warning, TEXT("%s: Detached - Starting fall with Collision ENABLED"), *GetName());
 }
 
-void AWallCrawler::OnCarrierLanded(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit)
+void AWallCrawler::HandleLanding()
 {
-    UE_LOG(LogMonster, Log, TEXT("%s: Landed!"), *GetName());
+    UE_LOG(LogMonster, Log, TEXT("%s: Landed from carrier!"), *GetName());
 
-    // OnActorHit 이벤트 제거
-    OnActorHit.RemoveDynamic(this, &AWallCrawler::OnCarrierLanded);
-
-    // Physics 끄기
-    if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
-    {
-        RootPrimitive->SetSimulatePhysics(false);
-        RootPrimitive->SetEnableGravity(false);
-        RootPrimitive->SetPhysicsLinearVelocity(FVector::ZeroVector);
-    }
+    bIsFalling = false;
 
     // CharacterMovement 복구
     if (UCharacterMovementComponent* Movement = GetCharacterMovement())
     {
+        Movement->StopMovementImmediately();  // 낙하 속도 제거
         Movement->SetMovementMode(MOVE_Flying);
         Movement->GravityScale = 0.0f;
+    }
+
+    // 벽 감지
+    FVector WallNormal, HitLocation;
+    if (DetectWall(WallNormal, HitLocation))
+    {
+        // 벽에 붙은 상태로 설정
+        bIsOnWall = true;
+        CurrentWallNormal = WallNormal;
+        WallHitLocation = HitLocation;
+        
+        // 위치 조정
+        SetActorLocation(HitLocation + WallNormal * WallStickDistance);
+        SetActorRotation((-WallNormal).Rotation());
+    }
+    else
+    {
+        // 벽 못 찾음 - 현재 위치에서 Flying
+        bIsOnWall = false;
     }
 
     // 1초 기절
     bIsStunned = true;
     StunTimer = 1.0f;
 
-    // 1초 후 AI 재시작 (Timer 사용)
+    // 1초 후 AI 재시작
     FTimerHandle StunTimerHandle;
     GetWorld()->GetTimerManager().SetTimer(
         StunTimerHandle,

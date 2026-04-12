@@ -3,6 +3,8 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Monsters/FlyingPlatform.h"
 #include "Monsters/WallCrawler.h"
+#include "DownfallCharacter.h"
+#include "Kismet/GameplayStatics.h"
 
 UBTTask_DeliverWallCrawler::UBTTask_DeliverWallCrawler()
 {
@@ -27,11 +29,10 @@ EBTNodeResult::Type UBTTask_DeliverWallCrawler::ExecuteTask(UBehaviorTreeCompone
     // WallCrawler를 태우고 있지 않으면 실패
     if (!Platform->HasCarriedCrawler())
     {
-        UE_LOG(LogTemp, Warning, TEXT("%s: DeliverWallCrawler - No crawler to deliver"), *Platform->GetName());
         return EBTNodeResult::Failed;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("%s: DeliverWallCrawler - Waiting for drop position..."), *Platform->GetName());
+    UE_LOG(LogTemp, Log, TEXT("%s: Starting WallCrawler delivery"), *Platform->GetName());
     
     // InProgress 반환하여 TickTask에서 계속 체크
     return EBTNodeResult::InProgress;
@@ -56,12 +57,22 @@ void UBTTask_DeliverWallCrawler::TickTask(UBehaviorTreeComponent& OwnerComp, uin
     // WallCrawler를 잃어버렸으면 실패
     if (!Platform->HasCarriedCrawler())
     {
-        UE_LOG(LogTemp, Warning, TEXT("%s: Lost WallCrawler during delivery"), *Platform->GetName());
         FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
         return;
     }
 
-    // 플레이어 근처인지 매 프레임 확인
+    // 플레이어 위치 가져오기
+    ADownfallCharacter* Player = Cast<ADownfallCharacter>(UGameplayStatics::GetPlayerCharacter(Platform->GetWorld(), 0));
+    if (Player)
+    {
+        // 플레이어 위로 이동
+        FVector PlayerLocation = Player->GetActorLocation();
+        FVector TargetLocation = PlayerLocation + FVector(0, 0, 500.0f); // 플레이어 위 5m
+        
+        Platform->FlyToLocation(TargetLocation, Platform->FlightSpeed, false);
+    }
+
+    // 플레이어 근처인지 체크
     if (Platform->CanDropCrawler())
     {
         // WallCrawler 떨어뜨리기
@@ -75,7 +86,7 @@ void UBTTask_DeliverWallCrawler::TickTask(UBehaviorTreeComponent& OwnerComp, uin
             Blackboard->SetValueAsBool(bHasCrawlerKey.SelectedKeyName, false);
         }
 
-        UE_LOG(LogTemp, Log, TEXT("%s: Successfully delivered WallCrawler to player"), *Platform->GetName());
+        UE_LOG(LogTemp, Log, TEXT("%s: WallCrawler delivered successfully"), *Platform->GetName());
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
     }
 }
