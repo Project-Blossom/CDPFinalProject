@@ -3,6 +3,7 @@
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
 #include "Item/InventorySaveGame.h"
+#include "Item/BoltAnchorActor.h"
 
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
@@ -588,6 +589,135 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             return false;
         }
 
+        S.Count -= 1;
+        if (S.Count <= 0)
+        {
+            S.Reset();
+        }
+
+        SanitizeReservedCenterSlot();
+        OnInventoryChanged.Broadcast();
+        return true;
+    }
+
+    case EItemUseType::AttachAnchorToBolt:
+    {
+        FVector ViewLoc = User->GetActorLocation();
+        FRotator ViewRot = User->GetActorRotation();
+
+        if (const APawn* P = Cast<APawn>(User))
+        {
+            if (APlayerController* PC = Cast<APlayerController>(P->GetController()))
+            {
+                PC->GetPlayerViewPoint(ViewLoc, ViewRot);
+            }
+        }
+
+        const FVector Start = ViewLoc;
+        const FVector End = Start + ViewRot.Vector() * PlaceTraceDistanceCm;
+
+        FHitResult Hit;
+        FCollisionQueryParams Params(SCENE_QUERY_STAT(AttachAnchorTrace), false, User);
+
+        const bool bHit = GetWorld()->LineTraceSingleByChannel(
+            Hit,
+            Start,
+            End,
+            ECC_Visibility,
+            Params
+        );
+
+        if (!bHit || !Hit.bBlockingHit)
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("볼트를 조준해야 합니다.")));
+            return false;
+        }
+
+        AActor* BoltActor = Hit.GetActor();
+        if (!BoltActor || !IsValid(BoltActor))
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("설치된 볼트가 아닙니다.")));
+            return false;
+        }
+
+        // 볼트 판정: 블루프린트에서 Bolt 태그를 꼭 넣어라
+        if (!BoltActor->ActorHasTag(TEXT("Bolt")))
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("볼트에만 앵커를 설치할 수 있습니다.")));
+            return false;
+        }
+
+        // 이미 앵커가 붙어 있는지 검사
+        TArray<AActor*> AttachedActors;
+        BoltActor->GetAttachedActors(AttachedActors);
+
+        for (AActor* Attached : AttachedActors)
+        {
+            if (Cast<ABoltAnchorActor>(Attached))
+            {
+                BP_OnUseFailed(User, FText::FromString(TEXT("이미 앵커가 장착된 볼트입니다.")));
+                return false;
+            }
+        }
+
+        if (!Def->PlaceActorClass)
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("앵커 액터 클래스가 지정되지 않았습니다.")));
+            return false;
+        }
+
+        UWorld* W = GetWorld();
+        if (!W)
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("월드가 유효하지 않습니다.")));
+            return false;
+        }
+
+        // 히트 노멀 기준으로 앵커가 볼트 바깥을 향하게 정렬
+        const FVector SurfaceNormal = Hit.ImpactNormal.GetSafeNormal();
+        const FVector Forward = -SurfaceNormal;
+        const FRotator SpawnRot = FRotationMatrix::MakeFromX(Forward).Rotator();
+
+        // 너무 파묻히지 않게 살짝 띄우기
+        const FVector SpawnLoc = Hit.ImpactPoint + SurfaceNormal * 1.0f;
+        const FTransform SpawnTransform(SpawnRot, SpawnLoc);
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Owner = User;
+        SpawnParams.Instigator = Cast<APawn>(User);
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+        AActor* Spawned = W->SpawnActor<AActor>(Def->PlaceActorClass, SpawnTransform, SpawnParams);
+        ABoltAnchorActor* AnchorActor = Cast<ABoltAnchorActor>(Spawned);
+
+        if (!AnchorActor)
+        {
+            if (Spawned)
+            {
+                Spawned->Destroy();
+            }
+
+            BP_OnUseFailed(User, FText::FromString(TEXT("앵커 생성에 실패했습니다.")));
+            return false;
+        }
+
+        // 히트된 컴포넌트가 있으면 그 컴포넌트에 붙이고, 없으면 액터에 붙임
+        if (Hit.GetComponent())
+        {
+            AnchorActor->AttachToComponent(
+                Hit.GetComponent(),
+                FAttachmentTransformRules::KeepWorldTransform
+            );
+        }
+        else
+        {
+            AnchorActor->AttachToActor(
+                BoltActor,
+                FAttachmentTransformRules::KeepWorldTransform
+            );
+        }
+
+        // 설치 성공 시에만 아이템 1개 소모
         S.Count -= 1;
         if (S.Count <= 0)
         {

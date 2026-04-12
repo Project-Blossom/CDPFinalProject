@@ -13,11 +13,12 @@ enum class EItemType : uint8
 UENUM(BlueprintType)
 enum class EItemUseType : uint8
 {
-    None        UMETA(DisplayName = "None"),
-    Consume     UMETA(DisplayName = "Consume"),
-    Equip       UMETA(DisplayName = "Equip"),
-    PlaceActor  UMETA(DisplayName = "PlaceActor"),
-    AttachSafetyLine  UMETA(DisplayName = "AttachSafetyLine"),
+    None                UMETA(DisplayName = "None"),
+    Consume             UMETA(DisplayName = "Consume"),
+    Equip               UMETA(DisplayName = "Equip"),
+    PlaceActor          UMETA(DisplayName = "PlaceActor"),
+    AttachSafetyLine    UMETA(DisplayName = "AttachSafetyLine"),
+    AttachAnchorToBolt  UMETA(DisplayName = "AttachAnchorToBolt"),
 };
 
 UENUM(BlueprintType)

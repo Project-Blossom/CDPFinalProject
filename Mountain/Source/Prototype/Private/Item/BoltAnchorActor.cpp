@@ -10,11 +10,11 @@ ABoltAnchorActor::ABoltAnchorActor()
     Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     SetRootComponent(Root);
 
-    BoltMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoltMesh"));
-    BoltMesh->SetupAttachment(Root);
-    BoltMesh->SetSimulatePhysics(false);
-    BoltMesh->SetMobility(EComponentMobility::Static);
-    BoltMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    AnchorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AnchorMesh"));
+    AnchorMesh->SetupAttachment(Root);
+    AnchorMesh->SetSimulatePhysics(false);
+    AnchorMesh->SetMobility(EComponentMobility::Movable);
+    AnchorMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 
     HandSnapPoint = CreateDefaultSubobject<USceneComponent>(TEXT("HandSnapPoint"));
     HandSnapPoint->SetupAttachment(Root);
@@ -61,4 +61,14 @@ bool ABoltAnchorActor::ConsumeDurability(float Amount)
 
     CurrentDurability = FMath::Max(0.0f, CurrentDurability - Amount);
     return !IsBroken();
+}
+
+float ABoltAnchorActor::GetCurrentDurability() const
+{
+    return CurrentDurability;
+}
+
+bool ABoltAnchorActor::IsBroken() const
+{
+    return CurrentDurability <= 0.0f;
 }
