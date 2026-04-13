@@ -17,7 +17,6 @@ class UPhysicsConstraintComponent;
 class UCameraComponent;
 class UGripPointFinderComponent;
 class UInventoryWidget;
-class ABoltAnchorActor;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
 
@@ -341,7 +340,7 @@ public:
     bool bSafetyLineConstraintEngaged = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
-    TObjectPtr<ABoltAnchorActor> ActiveSafetyBolt = nullptr;
+    TObjectPtr<AActor> ActiveSafetyBolt = nullptr;
 
     UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
     FVector SafetyLineAnchorWorld = FVector::ZeroVector;
@@ -645,12 +644,15 @@ protected:
     bool AreBothHandsFree() const;
 
     // Safety Line
-    bool AttachSafetyLineToBolt(ABoltAnchorActor* BoltActor);
+    bool AttachSafetyLineToBolt(AActor* AnchorActor);
     void UpdateSafetyLine(float DeltaTime);
     void EngageSafetyLineConstraint();
     void DisengageSafetyLineConstraint();
     void RefreshSafetyLineConstraint();
     FVector GetSafetyLineAnchorLocation() const;
+    FVector ResolveSafetyLineAnchorLocation(const AActor* AnchorActor) const;
+    float GetSafetyLineAnchorDurability() const;
+    bool ConsumeSafetyLineAnchorDurability(float Amount);
     bool IsSafetyLineTaut() const;
 
     // Inventory State Helpers

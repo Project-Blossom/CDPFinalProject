@@ -155,6 +155,7 @@ private:
     int32 FindPartialStack(FName ItemId, int32 MaxStack) const;
 
     bool BuildPlaceTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const;
+    bool BuildAttachAnchorPreviewTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const;
 
     void SanitizeReservedCenterSlot();
 

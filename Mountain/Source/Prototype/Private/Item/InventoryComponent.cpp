@@ -3,7 +3,6 @@
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
 #include "Item/InventorySaveGame.h"
-#include "Item/BoltAnchorActor.h"
 
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
@@ -254,6 +253,11 @@ bool UInventoryComponent::ComputePreviewTransform(int32 Index, AActor* User, FTr
         return BuildPlaceTransform(User, Def, OutXform, OutFailReason);
     }
 
+    if (Def->UseType == EItemUseType::AttachAnchorToBolt)
+    {
+        return BuildAttachAnchorPreviewTransform(User, Def, OutXform, OutFailReason);
+    }
+
     OutFailReason = FText::FromString(TEXT("No preview for this item type"));
     return false;
 }
@@ -473,6 +477,100 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
     return true;
 }
 
+bool UInventoryComponent::BuildAttachAnchorPreviewTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const
+{
+    if (!User)
+    {
+        OutFailReason = FText::FromString(TEXT("Invalid user"));
+        return false;
+    }
+
+    if (!Def || Def->UseType != EItemUseType::AttachAnchorToBolt)
+    {
+        OutFailReason = FText::FromString(TEXT("Item cannot attach anchor"));
+        return false;
+    }
+
+    if (!Def->PlaceActorClass)
+    {
+        OutFailReason = FText::FromString(TEXT("No anchor actor assigned"));
+        return false;
+    }
+
+    FVector ViewLoc = User->GetActorLocation();
+    FRotator ViewRot = User->GetActorRotation();
+
+    if (const APawn* P = Cast<APawn>(User))
+    {
+        if (APlayerController* PC = Cast<APlayerController>(P->GetController()))
+        {
+            PC->GetPlayerViewPoint(ViewLoc, ViewRot);
+        }
+    }
+
+    const FVector Start = ViewLoc;
+    const FVector End = Start + ViewRot.Vector() * PlaceTraceDistanceCm;
+
+    FHitResult Hit;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(AttachAnchorPreviewTrace), false, User);
+
+    const bool bHit = GetWorld()->LineTraceSingleByChannel(
+        Hit,
+        Start,
+        End,
+        ECC_Visibility,
+        Params
+    );
+
+    if (!bHit || !Hit.bBlockingHit)
+    {
+        OutFailReason = FText::FromString(TEXT("볼트를 조준해야 합니다."));
+        return false;
+    }
+
+    const float Dist = FVector::Dist(Start, Hit.ImpactPoint);
+    if (Dist > PlaceRangeCm)
+    {
+        OutFailReason = FText::FromString(TEXT("Target is too far away"));
+        return false;
+    }
+
+    AActor* BoltActor = Hit.GetActor();
+    if (!BoltActor || !IsValid(BoltActor))
+    {
+        OutFailReason = FText::FromString(TEXT("설치된 볼트가 아닙니다."));
+        return false;
+    }
+
+    if (!BoltActor->ActorHasTag(TEXT("Bolt")))
+    {
+        OutFailReason = FText::FromString(TEXT("볼트에만 앵커를 설치할 수 있습니다."));
+        return false;
+    }
+
+    // 이미 앵커가 달린 볼트면 프리뷰 숨김
+    TArray<AActor*> AttachedActors;
+    BoltActor->GetAttachedActors(AttachedActors);
+
+    for (AActor* Attached : AttachedActors)
+    {
+        if (Attached && Attached->ActorHasTag(TEXT("Anchor")))
+        {
+            OutFailReason = FText::FromString(TEXT("이미 앵커가 장착된 볼트입니다."));
+            return false;
+        }
+    }
+
+    const FVector SurfaceNormal = Hit.ImpactNormal.GetSafeNormal();
+    const FVector Forward = -SurfaceNormal;
+    const FRotator Rot = FRotationMatrix::MakeFromX(Forward).Rotator();
+
+    const FVector Pos = Hit.ImpactPoint + SurfaceNormal * 1.0f;
+
+    OutXform = FTransform(Rot, Pos);
+    return true;
+}
+
 bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 {
     if (!Slots.IsValidIndex(Index) || !User) return false;
@@ -602,6 +700,15 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 
     case EItemUseType::AttachAnchorToBolt:
     {
+        FTransform SpawnTransform;
+        FText FailReason;
+
+        if (!BuildAttachAnchorPreviewTransform(User, Def, SpawnTransform, FailReason))
+        {
+            BP_OnUseFailed(User, FailReason);
+            return false;
+        }
+
         FVector ViewLoc = User->GetActorLocation();
         FRotator ViewRot = User->GetActorRotation();
 
@@ -640,26 +747,6 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             return false;
         }
 
-        // 볼트 판정: 블루프린트에서 Bolt 태그를 꼭 넣어라
-        if (!BoltActor->ActorHasTag(TEXT("Bolt")))
-        {
-            BP_OnUseFailed(User, FText::FromString(TEXT("볼트에만 앵커를 설치할 수 있습니다.")));
-            return false;
-        }
-
-        // 이미 앵커가 붙어 있는지 검사
-        TArray<AActor*> AttachedActors;
-        BoltActor->GetAttachedActors(AttachedActors);
-
-        for (AActor* Attached : AttachedActors)
-        {
-            if (Cast<ABoltAnchorActor>(Attached))
-            {
-                BP_OnUseFailed(User, FText::FromString(TEXT("이미 앵커가 장착된 볼트입니다.")));
-                return false;
-            }
-        }
-
         if (!Def->PlaceActorClass)
         {
             BP_OnUseFailed(User, FText::FromString(TEXT("앵커 액터 클래스가 지정되지 않았습니다.")));
@@ -673,51 +760,43 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             return false;
         }
 
-        // 히트 노멀 기준으로 앵커가 볼트 바깥을 향하게 정렬
-        const FVector SurfaceNormal = Hit.ImpactNormal.GetSafeNormal();
-        const FVector Forward = -SurfaceNormal;
-        const FRotator SpawnRot = FRotationMatrix::MakeFromX(Forward).Rotator();
-
-        // 너무 파묻히지 않게 살짝 띄우기
-        const FVector SpawnLoc = Hit.ImpactPoint + SurfaceNormal * 1.0f;
-        const FTransform SpawnTransform(SpawnRot, SpawnLoc);
-
         FActorSpawnParameters SpawnParams;
         SpawnParams.Owner = User;
         SpawnParams.Instigator = Cast<APawn>(User);
         SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
         AActor* Spawned = W->SpawnActor<AActor>(Def->PlaceActorClass, SpawnTransform, SpawnParams);
-        ABoltAnchorActor* AnchorActor = Cast<ABoltAnchorActor>(Spawned);
 
-        if (!AnchorActor)
+        if (!Spawned)
         {
-            if (Spawned)
-            {
-                Spawned->Destroy();
-            }
-
             BP_OnUseFailed(User, FText::FromString(TEXT("앵커 생성에 실패했습니다.")));
             return false;
         }
 
-        // 히트된 컴포넌트가 있으면 그 컴포넌트에 붙이고, 없으면 액터에 붙임
+        // 스폰된 앵커는 반드시 Anchor 태그를 갖고 있어야 함
+        if (!Spawned->ActorHasTag(TEXT("Anchor")))
+        {
+            Spawned->Tags.AddUnique(TEXT("Anchor"));
+        }
+
         if (Hit.GetComponent())
         {
-            AnchorActor->AttachToComponent(
+            Spawned->AttachToComponent(
                 Hit.GetComponent(),
                 FAttachmentTransformRules::KeepWorldTransform
             );
         }
         else
         {
-            AnchorActor->AttachToActor(
+            Spawned->AttachToActor(
                 BoltActor,
                 FAttachmentTransformRules::KeepWorldTransform
             );
         }
 
-        // 설치 성공 시에만 아이템 1개 소모
+        SetPreviewEnabled(false);
+        PreviewSlotIndex = INDEX_NONE;
+
         S.Count -= 1;
         if (S.Count <= 0)
         {

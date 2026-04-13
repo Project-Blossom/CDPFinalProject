@@ -23,7 +23,6 @@
 #include "Item/InventoryComponent.h"
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
-#include "Item/BoltAnchorActor.h"
 #include "UI/AltitudeWidget.h"
 #include "UI/PauseMenuWidget.h"
 #include "Blueprint/UserWidget.h"
@@ -32,6 +31,8 @@
 #include "Core/DownfallGameMode.h"
 #include "TimerManager.h"
 #include <limits>
+#include "Components/SceneComponent.h"
+#include "UObject/UnrealType.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -647,7 +648,6 @@ void ADownfallCharacter::OnToggleInventoryTriggered(const FInputActionValue& Val
     }
 }
 
-
 bool ADownfallCharacter::TryAttachSafetyLineFromLookTarget(float TraceDistanceCm)
 {
     FVector ViewLoc = GetActorLocation();
@@ -682,18 +682,29 @@ bool ADownfallCharacter::TryAttachSafetyLineFromLookTarget(float TraceDistanceCm
         return false;
     }
 
-    ABoltAnchorActor* BoltActor = Cast<ABoltAnchorActor>(Hit.GetActor());
-    if (!BoltActor)
+    AActor* AnchorActor = Hit.GetActor();
+    if (!AnchorActor || !IsValid(AnchorActor))
     {
         return false;
     }
 
-    return AttachSafetyLineToBolt(BoltActor);
+    if (!AnchorActor->ActorHasTag(TEXT("Anchor")))
+    {
+        return false;
+    }
+
+    return AttachSafetyLineToBolt(AnchorActor);
 }
 
-bool ADownfallCharacter::AttachSafetyLineToBolt(ABoltAnchorActor* BoltActor)
+bool ADownfallCharacter::AttachSafetyLineToBolt(AActor* AnchorActor)
 {
-    if (!BoltActor || BoltActor->IsBroken())
+    if (!AnchorActor || !IsValid(AnchorActor))
+    {
+        return false;
+    }
+
+    // 앵커 블루프린트에는 반드시 Anchor 태그를 넣어둘 것
+    if (!AnchorActor->ActorHasTag(TEXT("Anchor")))
     {
         return false;
     }
@@ -703,28 +714,23 @@ bool ADownfallCharacter::AttachSafetyLineToBolt(ABoltAnchorActor* BoltActor)
         DetachSafetyLine(false);
     }
 
-    if (!BoltActor->CanAttachSafetyLine())
+    const FVector AnchorLoc = ResolveSafetyLineAnchorLocation(AnchorActor);
+    if (AnchorLoc.IsNearlyZero())
     {
         return false;
     }
 
-    ActiveSafetyBolt = BoltActor;
-    SafetyLineAnchorWorld = BoltActor->GetRopeAttachWorldLocation();
+    ActiveSafetyBolt = AnchorActor;
+    SafetyLineAnchorWorld = AnchorLoc;
     SafetyLineCurrentLengthCm = SafetyLineInitialLengthCm;
     bSafetyLineAttached = true;
     bSafetyLineConstraintEngaged = false;
 
-    BoltActor->SetSafetyLineAttached(true, this);
     return true;
 }
 
 void ADownfallCharacter::DetachSafetyLine(bool bBreakBolt)
 {
-    if (ActiveSafetyBolt)
-    {
-        ActiveSafetyBolt->SetSafetyLineAttached(false, nullptr);
-    }
-
     if (SafetyLineConstraint)
     {
         SafetyLineConstraint->BreakConstraint();
@@ -747,12 +753,97 @@ void ADownfallCharacter::DetachSafetyLine(bool bBreakBolt)
 
 FVector ADownfallCharacter::GetSafetyLineAnchorLocation() const
 {
-    if (ActiveSafetyBolt)
+    if (ActiveSafetyBolt && IsValid(ActiveSafetyBolt))
     {
-        return ActiveSafetyBolt->GetRopeAttachWorldLocation();
+        return ResolveSafetyLineAnchorLocation(ActiveSafetyBolt);
     }
 
     return SafetyLineAnchorWorld;
+}
+
+FVector ADownfallCharacter::ResolveSafetyLineAnchorLocation(const AActor* AnchorActor) const
+{
+    if (!AnchorActor || !IsValid(AnchorActor))
+    {
+        return FVector::ZeroVector;
+    }
+
+    // 1순위: RopeAttachPoint 태그가 붙은 SceneComponent 찾기
+    TArray<USceneComponent*> Components;
+    AnchorActor->GetComponents<USceneComponent>(Components);
+
+    for (USceneComponent* SceneComp : Components)
+    {
+        if (!SceneComp)
+        {
+            continue;
+        }
+
+        if (SceneComp->ComponentHasTag(TEXT("RopeAttachPoint")))
+        {
+            return SceneComp->GetComponentLocation();
+        }
+    }
+
+    // 2순위: 이름이 RopeAttachPoint인 컴포넌트 찾기
+    for (USceneComponent* SceneComp : Components)
+    {
+        if (!SceneComp)
+        {
+            continue;
+        }
+
+        if (SceneComp->GetName().Contains(TEXT("RopeAttachPoint")))
+        {
+            return SceneComp->GetComponentLocation();
+        }
+    }
+
+    // 3순위: 액터 위치 fallback
+    return AnchorActor->GetActorLocation();
+}
+
+float ADownfallCharacter::GetSafetyLineAnchorDurability() const
+{
+    if (!ActiveSafetyBolt || !IsValid(ActiveSafetyBolt))
+    {
+        return 0.0f;
+    }
+
+    static const FName CurrentDurabilityName(TEXT("CurrentDurability"));
+
+    if (const FFloatProperty* FloatProp = FindFProperty<FFloatProperty>(ActiveSafetyBolt->GetClass(), CurrentDurabilityName))
+    {
+        return FloatProp->GetPropertyValue_InContainer(ActiveSafetyBolt);
+    }
+
+    return 100.0f; // 내구도 변수 없으면 기본적으로 안 부서지는 것으로 취급
+}
+
+bool ADownfallCharacter::ConsumeSafetyLineAnchorDurability(float Amount)
+{
+    if (!ActiveSafetyBolt || !IsValid(ActiveSafetyBolt))
+    {
+        return false;
+    }
+
+    if (Amount <= 0.0f)
+    {
+        return true;
+    }
+
+    static const FName CurrentDurabilityName(TEXT("CurrentDurability"));
+
+    if (FFloatProperty* FloatProp = FindFProperty<FFloatProperty>(ActiveSafetyBolt->GetClass(), CurrentDurabilityName))
+    {
+        float CurrentValue = FloatProp->GetPropertyValue_InContainer(ActiveSafetyBolt);
+        CurrentValue = FMath::Max(0.0f, CurrentValue - Amount);
+        FloatProp->SetPropertyValue_InContainer(ActiveSafetyBolt, CurrentValue);
+        return CurrentValue > 0.0f;
+    }
+
+    // 내구도 변수가 없으면 소모 안 되는 앵커로 취급
+    return true;
 }
 
 bool ADownfallCharacter::IsSafetyLineTaut() const
@@ -833,7 +924,14 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
         return;
     }
 
-    if (!ActiveSafetyBolt || ActiveSafetyBolt->IsBroken())
+    if (!ActiveSafetyBolt || !IsValid(ActiveSafetyBolt))
+    {
+        DetachSafetyLine(true);
+        return;
+    }
+
+    // 앵커 액터가 더 이상 Anchor 태그가 아니면 무효 처리
+    if (!ActiveSafetyBolt->ActorHasTag(TEXT("Anchor")))
     {
         DetachSafetyLine(true);
         return;
@@ -859,7 +957,7 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
             const float RetractedMeters = RetractedCm / 100.0f;
             const float DurabilityCost = RetractedMeters * SafetyLineRetractDurabilityPerMeter;
 
-            const bool bStillUsable = ActiveSafetyBolt->ConsumeDurability(DurabilityCost);
+            const bool bStillUsable = ConsumeSafetyLineAnchorDurability(DurabilityCost);
             if (!bStillUsable)
             {
                 DetachSafetyLine(true);
@@ -2457,6 +2555,22 @@ bool ADownfallCharacter::TryUseHeldItem()
 
     if (IsPlaceableSlot(HeldSlotIndex))
     {
+        UWorld* W = GetWorld();
+        UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
+        UItemSubsystem* IS = GI ? GI->GetSubsystem<UItemSubsystem>() : nullptr;
+
+        const UItemDefinition* Def = nullptr;
+        if (IS && Slots.IsValidIndex(HeldSlotIndex))
+        {
+            Def = IS->GetItemDefinitionById(Slots[HeldSlotIndex].ItemId);
+        }
+
+        if (!Def || !Def->PlaceActorClass)
+        {
+            return false;
+        }
+
+        Inventory->SetPreviewActorClass(Def->PlaceActorClass);
         Inventory->SetPreviewSlotIndex(HeldSlotIndex);
         Inventory->SetPreviewEnabled(true);
         ItemUseState = EItemUseState::PlacementPreview;
@@ -2518,7 +2632,11 @@ bool ADownfallCharacter::IsPlaceableSlot(int32 Index) const
         return false;
     }
 
-    return (Def->UseType == EItemUseType::PlaceActor && Def->PlaceActorClass != nullptr);
+    const bool bHasPreviewActorClass = (Def->PlaceActorClass != nullptr);
+
+    return bHasPreviewActorClass &&
+        (Def->UseType == EItemUseType::PlaceActor ||
+            Def->UseType == EItemUseType::AttachAnchorToBolt);
 }
 
 void ADownfallCharacter::UpdateHandPositions(float DeltaTime)
