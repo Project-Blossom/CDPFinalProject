@@ -93,6 +93,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SafetyLine")
     void DetachSafetyLine(bool bBreakBolt = false);
 
+    UFUNCTION(BlueprintCallable, Category = "SafetyLine")
+    bool AttachSafetyLineToBolt(AActor* AnchorActor);
+
+    UFUNCTION(BlueprintPure, Category = "SafetyLine")
+    FVector GetSafetyLineAnchorLocation() const;
+
+
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
     TObjectPtr<UCameraComponent> FirstPersonCamera;
@@ -644,12 +651,10 @@ protected:
     bool AreBothHandsFree() const;
 
     // Safety Line
-    bool AttachSafetyLineToBolt(AActor* AnchorActor);
     void UpdateSafetyLine(float DeltaTime);
     void EngageSafetyLineConstraint();
     void DisengageSafetyLineConstraint();
     void RefreshSafetyLineConstraint();
-    FVector GetSafetyLineAnchorLocation() const;
     FVector ResolveSafetyLineAnchorLocation(const AActor* AnchorActor) const;
     float GetSafetyLineAnchorDurability() const;
     bool ConsumeSafetyLineAnchorDurability(float Amount);

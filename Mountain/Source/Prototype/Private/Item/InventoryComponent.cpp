@@ -794,6 +794,11 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             );
         }
 
+        if (ADownfallCharacter* DownfallChar = Cast<ADownfallCharacter>(User))
+        {
+            DownfallChar->AttachSafetyLineToBolt(Spawned);
+        }
+
         SetPreviewEnabled(false);
         PreviewSlotIndex = INDEX_NONE;
 
