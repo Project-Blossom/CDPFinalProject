@@ -90,7 +90,13 @@ void AWallCrawler::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
     
-    // 낙하 중일 때 착지 감지
+    // Carried 상태에서는 Tick 로직 스킵 (FlyingPlatform이 제어)
+    if (bIsCarried)
+    {
+        return;
+    }
+    
+    // 낙하 중일 때는 착지 감지만 수행 (다른 로직 전부 스킵!)
     if (bIsFalling)
     {
         if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -102,6 +108,7 @@ void AWallCrawler::Tick(float DeltaTime)
                 HandleLanding();
             }
         }
+        return;  // 낙하 중에는 다른 로직 실행 안함!
     }
     
     // Behavior Tree가 실행 중이면 기존 로직 스킵
@@ -780,8 +787,11 @@ void AWallCrawler::AttachToCarrier(AFlyingPlatform* Platform)
         Movement->SetComponentTickEnabled(false);
     }
 
-    // Collision 끄기 (Physics 대신!)
-    SetActorEnableCollision(false);
+    // CapsuleComponent Collision 끄기 (명시적!)
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
 
     // Platform의 GrabPoint에 Attach
     USceneComponent* GrabPoint = nullptr;
@@ -834,8 +844,13 @@ void AWallCrawler::DetachFromCarrier()
     // Detach from Platform
     DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-    // Collision 활성화 (중요!)
-    SetActorEnableCollision(true);
+    // CapsuleComponent Collision 켜기 (명시적!)
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        Capsule->SetCollisionResponseToAllChannels(ECR_Block);
+        Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);  // Pawn은 Overlap
+    }
 
     // CharacterMovement 재활성화 및 Falling 모드로
     if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -843,7 +858,6 @@ void AWallCrawler::DetachFromCarrier()
         Movement->SetMovementMode(MOVE_Falling);  // 먼저 모드 설정
         Movement->GravityScale = 1.0f;  // 중력 활성화
         Movement->SetComponentTickEnabled(true);
-        // Movement 재활성화는 SetMovementMode에서 자동으로 됨
     }
 
     UE_LOG(LogMonster, Warning, TEXT("%s: Detached - Starting fall with Collision ENABLED"), *GetName());
