@@ -729,6 +729,49 @@ bool ADownfallCharacter::AttachSafetyLineToBolt(AActor* AnchorActor)
     return true;
 }
 
+bool ADownfallCharacter::BeginUsingAnchorSlot(int32 SlotIndex)
+{
+    if (!Inventory || !Inventory->HasValidItemAt(SlotIndex))
+    {
+        return false;
+    }
+
+    if (!Inventory->EnsureAnchorDurabilityInitialized(SlotIndex, 5))
+    {
+        return false;
+    }
+
+    if (Inventory->GetAnchorDurabilityAt(SlotIndex) <= 0)
+    {
+        return false;
+    }
+
+    ActiveUsingAnchorSlotIndex = SlotIndex;
+    RefreshInventoryUIState();
+    return true;
+}
+
+bool ADownfallCharacter::IsInventorySlotUsing(int32 Index) const
+{
+    return Index != INDEX_NONE && Index == ActiveUsingAnchorSlotIndex && bSafetyLineAttached;
+}
+
+int32 ADownfallCharacter::GetDisplayedInventoryCountAt(int32 Index) const
+{
+    if (!Inventory || !Inventory->HasValidItemAt(Index))
+    {
+        return 0;
+    }
+
+    if (IsInventorySlotUsing(Index))
+    {
+        return Inventory->GetAnchorDurabilityAt(Index);
+    }
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+    return Slots.IsValidIndex(Index) ? Slots[Index].Count : 0;
+}
+
 void ADownfallCharacter::DetachSafetyLine(bool bBreakBolt)
 {
     if (SafetyLineConstraint)
@@ -741,6 +784,8 @@ void ADownfallCharacter::DetachSafetyLine(bool bBreakBolt)
     ActiveSafetyBolt = nullptr;
     SafetyLineAnchorWorld = FVector::ZeroVector;
     SafetyLineCurrentLengthCm = SafetyLineInitialLengthCm;
+    ActiveUsingAnchorSlotIndex = INDEX_NONE;
+    RefreshInventoryUIState();
 
     if (!bIsClimbing && AreBothHandsFree())
     {
@@ -805,24 +850,17 @@ FVector ADownfallCharacter::ResolveSafetyLineAnchorLocation(const AActor* Anchor
 
 float ADownfallCharacter::GetSafetyLineAnchorDurability() const
 {
-    if (!ActiveSafetyBolt || !IsValid(ActiveSafetyBolt))
+    if (!Inventory || ActiveUsingAnchorSlotIndex == INDEX_NONE)
     {
         return 0.0f;
     }
 
-    static const FName CurrentDurabilityName(TEXT("CurrentDurability"));
-
-    if (const FFloatProperty* FloatProp = FindFProperty<FFloatProperty>(ActiveSafetyBolt->GetClass(), CurrentDurabilityName))
-    {
-        return FloatProp->GetPropertyValue_InContainer(ActiveSafetyBolt);
-    }
-
-    return 100.0f; // 내구도 변수 없으면 기본적으로 안 부서지는 것으로 취급
+    return (float)Inventory->GetAnchorDurabilityAt(ActiveUsingAnchorSlotIndex);
 }
 
 bool ADownfallCharacter::ConsumeSafetyLineAnchorDurability(float Amount)
 {
-    if (!ActiveSafetyBolt || !IsValid(ActiveSafetyBolt))
+    if (!Inventory || ActiveUsingAnchorSlotIndex == INDEX_NONE)
     {
         return false;
     }
@@ -832,18 +870,37 @@ bool ADownfallCharacter::ConsumeSafetyLineAnchorDurability(float Amount)
         return true;
     }
 
-    static const FName CurrentDurabilityName(TEXT("CurrentDurability"));
+    const int32 Remaining = Inventory->ConsumeAnchorUseAt(ActiveUsingAnchorSlotIndex, FMath::Max(1, FMath::RoundToInt(Amount)));
+    return Remaining > 0;
+}
 
-    if (FFloatProperty* FloatProp = FindFProperty<FFloatProperty>(ActiveSafetyBolt->GetClass(), CurrentDurabilityName))
+void ADownfallCharacter::FinishUsingAnchor(bool bConsumeOneUse)
+{
+    const int32 UsedSlot = ActiveUsingAnchorSlotIndex;
+    AActor* UsedAnchorActor = ActiveSafetyBolt.Get();
+
+    if (bConsumeOneUse && Inventory && UsedSlot != INDEX_NONE)
     {
-        float CurrentValue = FloatProp->GetPropertyValue_InContainer(ActiveSafetyBolt);
-        CurrentValue = FMath::Max(0.0f, CurrentValue - Amount);
-        FloatProp->SetPropertyValue_InContainer(ActiveSafetyBolt, CurrentValue);
-        return CurrentValue > 0.0f;
+        Inventory->ConsumeAnchorUseAt(UsedSlot, 1);
     }
 
-    // 내구도 변수가 없으면 소모 안 되는 앵커로 취급
-    return true;
+    if (UsedAnchorActor && IsValid(UsedAnchorActor))
+    {
+        UsedAnchorActor->Destroy();
+    }
+
+    DetachSafetyLine(false);
+
+    if (UsedSlot != INDEX_NONE && HeldSlotIndex == UsedSlot && (!Inventory || !Inventory->HasValidItemAt(UsedSlot)))
+    {
+        HeldSlotIndex = INDEX_NONE;
+        if (ItemUseState == EItemUseState::HoldingItem)
+        {
+            ItemUseState = EItemUseState::None;
+        }
+    }
+
+    RefreshInventoryUIState();
 }
 
 bool ADownfallCharacter::IsSafetyLineTaut() const
@@ -951,23 +1008,21 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
 
         if (DesiredLength < SafetyLineCurrentLengthCm)
         {
-            const float RetractedCm = SafetyLineCurrentLengthCm - DesiredLength;
             SafetyLineCurrentLengthCm = DesiredLength;
-
-            const float RetractedMeters = RetractedCm / 100.0f;
-            const float DurabilityCost = RetractedMeters * SafetyLineRetractDurabilityPerMeter;
-
-            const bool bStillUsable = ConsumeSafetyLineAnchorDurability(DurabilityCost);
-            if (!bStillUsable)
-            {
-                DetachSafetyLine(true);
-                return;
-            }
 
             if (bSafetyLineConstraintEngaged)
             {
                 RefreshSafetyLineConstraint();
             }
+        }
+
+        const bool bReachedRetrievalPoint =
+            (CurrentDistance <= (SafetyLineMinLengthCm + SafetyLineSlackCm + SafetyLineEngageToleranceCm));
+
+        if (bReachedRetrievalPoint)
+        {
+            FinishUsingAnchor(true);
+            return;
         }
 
         if (!IsSafetyLineTaut())

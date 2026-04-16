@@ -55,6 +55,15 @@ public:
     UFUNCTION(BlueprintPure, Category = "Inventory")
     UTexture2D* GetItemIconAt(int32 Index) const;
 
+    UFUNCTION(BlueprintPure, Category = "Inventory|Anchor")
+    int32 GetAnchorDurabilityAt(int32 Index) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Anchor")
+    bool EnsureAnchorDurabilityInitialized(int32 Index, int32 DefaultDurability = 5);
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Anchor")
+    int32 ConsumeAnchorUseAt(int32 Index, int32 Amount = 1);
+
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool TryAdd(FName ItemId, int32 Count, bool bForceInstance = false);
 

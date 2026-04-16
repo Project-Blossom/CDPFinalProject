@@ -326,7 +326,7 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
     const int32 MaxStack = Def ? FMath::Max(1, Def->MaxStack) : 1;
 
     const bool bUniqueSlot = bForceInstance || (MaxStack == 1);
-    const bool bShouldInstance = bForceInstance || (Def && Def->UseType == EItemUseType::Equip);
+    const bool bShouldInstance = bForceInstance || (Def && (Def->UseType == EItemUseType::Equip || Def->UseType == EItemUseType::AttachAnchorToBolt));
 
     int32 Remaining = Count;
 
@@ -362,7 +362,7 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
         {
             S.bHasInstance = true;
             S.Instance.InstanceId = FGuid::NewGuid();
-            S.Instance.UpgradeLevel = 0;
+            S.Instance.UpgradeLevel = (Def && Def->UseType == EItemUseType::AttachAnchorToBolt) ? 5 : 0;
             S.Count = 1;
         }
     }
@@ -765,6 +765,13 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
         SpawnParams.Instigator = Cast<APawn>(User);
         SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
+        EnsureAnchorDurabilityInitialized(Index, 5);
+        if (!S.bHasInstance || S.Instance.UpgradeLevel <= 0)
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("앵커 내구도가 없습니다.")));
+            return false;
+        }
+
         AActor* Spawned = W->SpawnActor<AActor>(Def->PlaceActorClass, SpawnTransform, SpawnParams);
 
         if (!Spawned)
@@ -796,17 +803,16 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 
         if (ADownfallCharacter* DownfallChar = Cast<ADownfallCharacter>(User))
         {
-            DownfallChar->AttachSafetyLineToBolt(Spawned);
+            if (!DownfallChar->AttachSafetyLineToBolt(Spawned) || !DownfallChar->BeginUsingAnchorSlot(Index))
+            {
+                Spawned->Destroy();
+                BP_OnUseFailed(User, FText::FromString(TEXT("앵커 로프 연결에 실패했습니다.")));
+                return false;
+            }
         }
 
         SetPreviewEnabled(false);
         PreviewSlotIndex = INDEX_NONE;
-
-        S.Count -= 1;
-        if (S.Count <= 0)
-        {
-            S.Reset();
-        }
 
         SanitizeReservedCenterSlot();
         OnInventoryChanged.Broadcast();

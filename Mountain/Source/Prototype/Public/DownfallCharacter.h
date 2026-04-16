@@ -94,11 +94,19 @@ public:
     void DetachSafetyLine(bool bBreakBolt = false);
 
     UFUNCTION(BlueprintCallable, Category = "SafetyLine")
-    bool AttachSafetyLineToBolt(AActor* AnchorActor);
+    bool BeginUsingAnchorSlot(int32 SlotIndex);
 
     UFUNCTION(BlueprintPure, Category = "SafetyLine")
-    FVector GetSafetyLineAnchorLocation() const;
+    bool IsAnchorInUse() const { return bSafetyLineAttached && ActiveUsingAnchorSlotIndex != INDEX_NONE; }
 
+    UFUNCTION(BlueprintPure, Category = "SafetyLine")
+    int32 GetActiveUsingAnchorSlotIndex() const { return ActiveUsingAnchorSlotIndex; }
+
+    UFUNCTION(BlueprintPure, Category = "Inventory|UI")
+    bool IsInventorySlotUsing(int32 Index) const;
+
+    UFUNCTION(BlueprintPure, Category = "Inventory|UI")
+    int32 GetDisplayedInventoryCountAt(int32 Index) const;
 
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -332,6 +340,9 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
     int32 HeldSlotIndex = INDEX_NONE;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
+    int32 ActiveUsingAnchorSlotIndex = INDEX_NONE;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Cursor")
     float CursorInitialRepeatDelay = 0.20f;
@@ -651,14 +662,17 @@ protected:
     bool AreBothHandsFree() const;
 
     // Safety Line
+    bool AttachSafetyLineToBolt(AActor* AnchorActor);
     void UpdateSafetyLine(float DeltaTime);
     void EngageSafetyLineConstraint();
     void DisengageSafetyLineConstraint();
     void RefreshSafetyLineConstraint();
+    FVector GetSafetyLineAnchorLocation() const;
     FVector ResolveSafetyLineAnchorLocation(const AActor* AnchorActor) const;
     float GetSafetyLineAnchorDurability() const;
     bool ConsumeSafetyLineAnchorDurability(float Amount);
     bool IsSafetyLineTaut() const;
+    void FinishUsingAnchor(bool bConsumeOneUse);
 
     // Inventory State Helpers
     void RefreshInventoryUIState();
