@@ -90,6 +90,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SafetyLine")
     bool TryAttachSafetyLineFromLookTarget(float TraceDistanceCm = 600.0f);
 
+    // InventoryComponent 등 외부 클래스에서 앵커 액터를 직접 지정해 연결할 때 사용
+    UFUNCTION(BlueprintCallable, Category = "SafetyLine")
+    bool AttachSafetyLineToBolt(AActor* AnchorActor);
+
     UFUNCTION(BlueprintCallable, Category = "SafetyLine")
     void DetachSafetyLine(bool bBreakBolt = false);
 
@@ -662,7 +666,6 @@ protected:
     bool AreBothHandsFree() const;
 
     // Safety Line
-    bool AttachSafetyLineToBolt(AActor* AnchorActor);
     void UpdateSafetyLine(float DeltaTime);
     void EngageSafetyLineConstraint();
     void DisengageSafetyLineConstraint();
