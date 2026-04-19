@@ -784,13 +784,23 @@ int32 ADownfallCharacter::GetDisplayedInventoryCountAt(int32 Index) const
         return 0;
     }
 
-    if (IsInventorySlotUsing(Index))
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+    if (!Slots.IsValidIndex(Index))
+    {
+        return 0;
+    }
+
+    UWorld* W = GetWorld();
+    UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
+    UItemSubsystem* IS = GI ? GI->GetSubsystem<UItemSubsystem>() : nullptr;
+    const UItemDefinition* Def = IS ? IS->GetItemDefinitionById(Slots[Index].ItemId) : nullptr;
+
+    if (Def && Def->UseType == EItemUseType::AttachAnchorToBolt)
     {
         return Inventory->GetAnchorDurabilityAt(Index);
     }
 
-    const TArray<FItemStack>& Slots = Inventory->GetSlots();
-    return Slots.IsValidIndex(Index) ? Slots[Index].Count : 0;
+    return Slots[Index].Count;
 }
 
 void ADownfallCharacter::DetachSafetyLine(bool bBreakBolt)
@@ -3111,7 +3121,7 @@ void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
         // Lerp 완료
         if (Alpha >= 1.0f)
         {
-            bRainWeightLerping    = false;
+            bRainWeightLerping = false;
             RainDropCurrentWeight = RainDropLerpTargetWeight;
             UE_LOG(LogDownFall, Log, TEXT("RainVFX Lerp complete (Weight: %.2f)"), RainDropCurrentWeight);
         }
@@ -3130,10 +3140,10 @@ void ADownfallCharacter::ActivateRainVFX()
     // PP 머티리얼 Lerp 시작 (0.0 → RainDropBlendWeight, RainDropLerpDuration 초 동안)
     if (RainDropMaterialInstance && PostProcessComp)
     {
-        RainDropLerpStartWeight  = RainDropCurrentWeight;  // 현재 값에서 시작 (보통 0)
+        RainDropLerpStartWeight = RainDropCurrentWeight;  // 현재 값에서 시작 (보통 0)
         RainDropLerpTargetWeight = RainDropBlendWeight;
-        RainDropLerpElapsed      = 0.0f;
-        bRainWeightLerping       = true;
+        RainDropLerpElapsed = 0.0f;
+        bRainWeightLerping = true;
     }
     else
     {
@@ -3181,8 +3191,8 @@ void ADownfallCharacter::DeactivateRainVFX()
     bRainActive = false;
 
     // PP 머티리얼 Weight=0 즉시 Off + Lerp 상태 초기화
-    bRainWeightLerping    = false;
-    RainDropLerpElapsed   = 0.0f;
+    bRainWeightLerping = false;
+    RainDropLerpElapsed = 0.0f;
     RainDropCurrentWeight = 0.0f;
 
     if (RainDropMaterialInstance && PostProcessComp)

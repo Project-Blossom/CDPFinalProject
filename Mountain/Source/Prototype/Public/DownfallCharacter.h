@@ -798,8 +798,8 @@ private:
     float CachedBlurOffset = -std::numeric_limits<float>::max();
 
     // Rain VFX Lerp 내부 상태
-    bool  bRainWeightLerping      = false;
-    float RainDropLerpElapsed     = 0.0f;
+    bool  bRainWeightLerping = false;
+    float RainDropLerpElapsed = 0.0f;
     float RainDropLerpStartWeight = 0.0f;
     float RainDropLerpTargetWeight = 0.0f;
 };
