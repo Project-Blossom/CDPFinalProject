@@ -17,6 +17,8 @@ class UPhysicsConstraintComponent;
 class UCameraComponent;
 class UGripPointFinderComponent;
 class UInventoryWidget;
+class UNiagaraComponent;
+class UNiagaraSystem;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
 
@@ -424,6 +426,13 @@ public:
 
     void UpdateAttachDesaturation(float DeltaTime);
 
+    // Rain Hallucination VFX — PP + Niagara 동시 On/Off
+    UFUNCTION(BlueprintCallable, Category = "VFX|RainVFX")
+    void ActivateRainVFX();
+
+    UFUNCTION(BlueprintCallable, Category = "VFX|RainVFX")
+    void DeactivateRainVFX();
+
     // New Glitch System (Material-based)
     UPROPERTY(EditAnywhere, Category = "VFX|Glitch")
     TObjectPtr<UMaterial> GlitchMaterial;
@@ -573,6 +582,52 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "VFX")
     bool bShowingDesaturation = false;
 
+    // ── Rain Hallucination VFX ──────────────────────────────────
+    // 트리거: ClimbingElapsedTime >= RainTriggerTime 시 즉시 On
+    // 해제 조건: 없음 (스테이지 내 유지)
+    // 기획서: Downfall Mountain 빗방울 환각 VFX
+
+    // Blueprint에서 M_PP_RainDrop 할당
+    UPROPERTY(EditAnywhere, Category = "VFX|RainVFX")
+    TObjectPtr<UMaterial> RainDropMaterial;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> RainDropMaterialInstance;
+
+    // Blueprint에서 Niagara 에셋 할당 (미할당 시 PP 효과만 활성화)
+    UPROPERTY(EditAnywhere, Category = "VFX|RainVFX")
+    TObjectPtr<UNiagaraSystem> RainNiagaraSystem;
+
+    UPROPERTY()
+    TObjectPtr<UNiagaraComponent> RainNiagaraComponent;
+
+    // 트리거 시간 (초). 에디터에서 조정 가능. 기본 300초(5분)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
+        meta = (ClampMin = "0.0"))
+    float RainTriggerTime = 300.0f;
+
+    // 누적 등반 시간 (bIsClimbing == true 인 동안 증가)
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|RainVFX")
+    float ClimbingElapsedTime = 0.0f;
+
+    // 현재 Rain VFX 활성 상태
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|RainVFX")
+    bool bRainActive = false;
+
+    // PP 머티리얼 블렌딩 가중치 (0.0~1.0, 에디터에서 세기 조절)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float RainDropBlendWeight = 0.1f;
+
+    // Activate 시 Weight가 목표값까지 Lerp되는 시간 (초)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
+        meta = (ClampMin = "0.1"))
+    float RainDropLerpDuration = 1.0f;
+
+    // 현재 실제 적용 중인 Weight (Lerp 진행값, 디버그용)
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|RainVFX")
+    float RainDropCurrentWeight = 0.0f;
+
     // Inventory
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     UInventoryComponent* GetInventory() const { return Inventory; }
@@ -703,6 +758,7 @@ private:
     void UpdateVignetteEffect(float DeltaTime);
     void UpdateDirtMaskEffect();
     void UpdateEdgeBlurEffect();
+    void UpdateRainVFX(float DeltaTime);  // ClimbingElapsedTime 누적 + 트리거 체크
     void ApplyDirtMaskParameters(bool bForce = false);
     void ApplyEdgeBlurParameters(bool bForce = false);
     void RefreshLowFrequencyUpdates();
@@ -740,4 +796,10 @@ private:
     float CachedBlurEnd = -std::numeric_limits<float>::max();
     float CachedBlurStrength = -std::numeric_limits<float>::max();
     float CachedBlurOffset = -std::numeric_limits<float>::max();
+
+    // Rain VFX Lerp 내부 상태
+    bool  bRainWeightLerping      = false;
+    float RainDropLerpElapsed     = 0.0f;
+    float RainDropLerpStartWeight = 0.0f;
+    float RainDropLerpTargetWeight = 0.0f;
 };

@@ -25,7 +25,8 @@ public class Prototype : ModuleRules
             "DeveloperSettings",
             "GameplayTasks",
             "NavigationSystem",
-            "MountainGen"
+            "MountainGen",
+            "Niagara"       // Rain Hallucination VFX - NiagaraComponent, UNiagaraFunctionLibrary
         });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

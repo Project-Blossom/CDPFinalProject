@@ -30,6 +30,8 @@
 #include "MountainGenSettings.h"
 #include "Core/DownfallGameMode.h"
 #include "TimerManager.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include <limits>
 #include "Components/SceneComponent.h"
 #include "UObject/UnrealType.h"
@@ -261,6 +263,24 @@ void ADownfallCharacter::BeginPlay()
         }
     }
 
+    // Rain Drop PP 머티리얼 초기화 (RainIntensity=0 으로 비활성 상태로 등록)
+    if (RainDropMaterial && PostProcessComp)
+    {
+        RainDropMaterialInstance = UMaterialInstanceDynamic::Create(RainDropMaterial, this);
+        if (RainDropMaterialInstance)
+        {
+            // RainIntensity는 항상 1.0 유지, Weight(0.0↔RainDropBlendWeight)로 On/Off 제어
+            RainDropMaterialInstance->SetScalarParameterValue(FName("RainIntensity"), 1.0f);
+            PostProcessComp->Settings.WeightedBlendables.Array.Add(
+                FWeightedBlendable(0.0f, RainDropMaterialInstance));  // 초기 Weight=0 (비활성)
+            UE_LOG(LogDownFall, Log, TEXT("RainDrop Material Instance created (Weight=0, inactive)"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("RainDropMaterial not assigned - set in Blueprint (VFX|RainVFX)"));
+    }
+
     if (LeftHandMesh)
     {
         LeftHandMaterialInstance = LeftHandMesh->CreateDynamicMaterialInstance(0);
@@ -335,6 +355,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateAttachDesaturation(DeltaTime);
     UpdateLensDistortionEffect();
     UpdateVignetteEffect(DeltaTime);
+    UpdateRainVFX(DeltaTime);
     UpdateHandPositions(DeltaTime);
     UpdateHandStaminaVisuals(DeltaTime);
 
@@ -3042,4 +3063,145 @@ void ADownfallCharacter::UpdateEdgeBlurEffect()
     EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurEnd"), BlurEnd);
     EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurStrength"), BlurStrength);
     EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurOffset"), BlurOffset);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Rain Hallucination VFX
+// ─────────────────────────────────────────────────────────────────
+
+void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
+{
+    // 1. 등반 중인 동안 경과 시간 누적
+    if (bIsClimbing)
+    {
+        ClimbingElapsedTime += DeltaTime;
+    }
+
+    // 2. 트리거 조건: 누적 시간 도달 + 아직 미활성
+    if (ClimbingElapsedTime >= RainTriggerTime && !bRainActive)
+    {
+        ActivateRainVFX();
+    }
+
+    // 3. Weight Lerp 처리 (Activate 후 목표값까지 점진적 증가)
+    if (bRainWeightLerping)
+    {
+        RainDropLerpElapsed += DeltaTime;
+
+        const float Alpha = FMath::Clamp(
+            RainDropLerpElapsed / FMath::Max(RainDropLerpDuration, KINDA_SMALL_NUMBER),
+            0.0f, 1.0f
+        );
+
+        RainDropCurrentWeight = FMath::Lerp(RainDropLerpStartWeight, RainDropLerpTargetWeight, Alpha);
+
+        // WeightedBlendables 배열 실시간 업데이트
+        if (RainDropMaterialInstance && PostProcessComp)
+        {
+            for (FWeightedBlendable& Blendable : PostProcessComp->Settings.WeightedBlendables.Array)
+            {
+                if (Blendable.Object == RainDropMaterialInstance)
+                {
+                    Blendable.Weight = RainDropCurrentWeight;
+                    break;
+                }
+            }
+        }
+
+        // Lerp 완료
+        if (Alpha >= 1.0f)
+        {
+            bRainWeightLerping    = false;
+            RainDropCurrentWeight = RainDropLerpTargetWeight;
+            UE_LOG(LogDownFall, Log, TEXT("RainVFX Lerp complete (Weight: %.2f)"), RainDropCurrentWeight);
+        }
+    }
+}
+
+void ADownfallCharacter::ActivateRainVFX()
+{
+    if (bRainActive)
+    {
+        return;
+    }
+
+    bRainActive = true;
+
+    // PP 머티리얼 Lerp 시작 (0.0 → RainDropBlendWeight, RainDropLerpDuration 초 동안)
+    if (RainDropMaterialInstance && PostProcessComp)
+    {
+        RainDropLerpStartWeight  = RainDropCurrentWeight;  // 현재 값에서 시작 (보통 0)
+        RainDropLerpTargetWeight = RainDropBlendWeight;
+        RainDropLerpElapsed      = 0.0f;
+        bRainWeightLerping       = true;
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("ActivateRainVFX: RainDropMaterialInstance is null"));
+    }
+
+    // Niagara 공중 빗방울 활성화 (에셋 미할당 시 PP만 활성화)
+    if (RainNiagaraSystem && IsValid(RainNiagaraSystem))
+    {
+        if (!RainNiagaraComponent || !IsValid(RainNiagaraComponent))
+        {
+            RainNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+                RainNiagaraSystem,
+                GetRootComponent(),
+                NAME_None,
+                FVector::ZeroVector,
+                FRotator::ZeroRotator,
+                EAttachLocation::SnapToTarget,
+                true
+            );
+        }
+        else
+        {
+            RainNiagaraComponent->Activate(true);
+        }
+
+        UE_LOG(LogDownFall, Log, TEXT("ActivateRainVFX: Niagara activated"));
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Log, TEXT("ActivateRainVFX: RainNiagaraSystem not assigned, PP only"));
+    }
+
+    UE_LOG(LogDownFall, Warning, TEXT("RainVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"),
+        ClimbingElapsedTime);
+}
+
+void ADownfallCharacter::DeactivateRainVFX()
+{
+    if (!bRainActive)
+    {
+        return;
+    }
+
+    bRainActive = false;
+
+    // PP 머티리얼 Weight=0 즉시 Off + Lerp 상태 초기화
+    bRainWeightLerping    = false;
+    RainDropLerpElapsed   = 0.0f;
+    RainDropCurrentWeight = 0.0f;
+
+    if (RainDropMaterialInstance && PostProcessComp)
+    {
+        for (FWeightedBlendable& Blendable : PostProcessComp->Settings.WeightedBlendables.Array)
+        {
+            if (Blendable.Object == RainDropMaterialInstance)
+            {
+                Blendable.Weight = 0.0f;
+                break;
+            }
+        }
+    }
+
+    // Niagara 비활성화
+    if (RainNiagaraComponent && IsValid(RainNiagaraComponent))
+    {
+        RainNiagaraComponent->Deactivate();
+    }
+
+    UE_LOG(LogDownFall, Warning, TEXT("RainVFX DEACTIVATED"));
 }
