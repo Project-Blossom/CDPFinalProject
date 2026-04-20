@@ -12,6 +12,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "DownfallCharacter.h"
 #include "Engine/Texture2D.h"
+#include "Components/SceneComponent.h"
 
 UInventoryComponent::UInventoryComponent()
 {
@@ -477,6 +478,56 @@ bool UInventoryComponent::BuildPlaceTransform(AActor* User, const UItemDefinitio
     return true;
 }
 
+USceneComponent* UInventoryComponent::FindBoltAnchorAttachPoint(AActor* BoltActor) const
+{
+    if (!BoltActor || !IsValid(BoltActor))
+    {
+        return nullptr;
+    }
+
+    TArray<USceneComponent*> Components;
+    BoltActor->GetComponents<USceneComponent>(Components);
+
+    for (USceneComponent* SceneComp : Components)
+    {
+        if (!SceneComp)
+        {
+            continue;
+        }
+
+        if (SceneComp->ComponentHasTag(TEXT("AnchorAttachPoint")))
+        {
+            return SceneComp;
+        }
+    }
+
+    for (USceneComponent* SceneComp : Components)
+    {
+        if (!SceneComp)
+        {
+            continue;
+        }
+
+        if (SceneComp->GetName().Contains(TEXT("AnchorAttachPoint")))
+        {
+            return SceneComp;
+        }
+    }
+
+    return nullptr;
+}
+
+bool UInventoryComponent::ResolveBoltAnchorAttachTransform(AActor* BoltActor, FTransform& OutTransform) const
+{
+    if (USceneComponent* AttachPoint = FindBoltAnchorAttachPoint(BoltActor))
+    {
+        OutTransform = AttachPoint->GetComponentTransform();
+        return true;
+    }
+
+    return false;
+}
+
 bool UInventoryComponent::BuildAttachAnchorPreviewTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const
 {
     if (!User)
@@ -561,13 +612,14 @@ bool UInventoryComponent::BuildAttachAnchorPreviewTransform(AActor* User, const 
         }
     }
 
-    const FVector SurfaceNormal = Hit.ImpactNormal.GetSafeNormal();
-    const FVector Forward = -SurfaceNormal;
-    const FRotator Rot = FRotationMatrix::MakeFromX(Forward).Rotator();
+    FTransform AttachTransform;
+    if (!ResolveBoltAnchorAttachTransform(BoltActor, AttachTransform))
+    {
+        OutFailReason = FText::FromString(TEXT("볼트에 AnchorAttachPoint가 없습니다."));
+        return false;
+    }
 
-    const FVector Pos = Hit.ImpactPoint + SurfaceNormal * 1.0f;
-
-    OutXform = FTransform(Rot, Pos);
+    OutXform = AttachTransform;
     return true;
 }
 
@@ -786,10 +838,10 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             Spawned->Tags.AddUnique(TEXT("Anchor"));
         }
 
-        if (Hit.GetComponent())
+        if (USceneComponent* AttachPoint = FindBoltAnchorAttachPoint(BoltActor))
         {
             Spawned->AttachToComponent(
-                Hit.GetComponent(),
+                AttachPoint,
                 FAttachmentTransformRules::KeepWorldTransform
             );
         }

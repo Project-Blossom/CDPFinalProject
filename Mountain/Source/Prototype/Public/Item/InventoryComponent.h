@@ -7,6 +7,7 @@
 
 class UItemDefinition;
 class UTexture2D;
+class USceneComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
 
@@ -165,6 +166,8 @@ private:
 
     bool BuildPlaceTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const;
     bool BuildAttachAnchorPreviewTransform(AActor* User, const UItemDefinition* Def, FTransform& OutXform, FText& OutFailReason) const;
+    USceneComponent* FindBoltAnchorAttachPoint(AActor* BoltActor) const;
+    bool ResolveBoltAnchorAttachTransform(AActor* BoltActor, FTransform& OutTransform) const;
 
     void SanitizeReservedCenterSlot();
 
