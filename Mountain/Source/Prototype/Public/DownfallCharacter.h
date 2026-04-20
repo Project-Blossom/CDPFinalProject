@@ -385,7 +385,7 @@ public:
     float SafetyLineEngageToleranceCm = 20.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine", meta = (ClampMin = "0.0"))
-    float SafetyLineRetractDurabilityPerMeter = 3.0f;
+    float SafetyLineAutoRetrieveDistanceCm = 1100.0f;
 
     // Events
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
@@ -727,8 +727,6 @@ protected:
     void RefreshSafetyLineConstraint();
     FVector GetSafetyLineAnchorLocation() const;
     FVector ResolveSafetyLineAnchorLocation(const AActor* AnchorActor) const;
-    float GetSafetyLineAnchorDurability() const;
-    bool ConsumeSafetyLineAnchorDurability(float Amount);
     bool IsSafetyLineTaut() const;
     void FinishUsingAnchor(bool bConsumeOneUse);
 

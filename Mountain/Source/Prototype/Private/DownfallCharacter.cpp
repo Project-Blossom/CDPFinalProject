@@ -879,32 +879,6 @@ FVector ADownfallCharacter::ResolveSafetyLineAnchorLocation(const AActor* Anchor
     return AnchorActor->GetActorLocation();
 }
 
-float ADownfallCharacter::GetSafetyLineAnchorDurability() const
-{
-    if (!Inventory || ActiveUsingAnchorSlotIndex == INDEX_NONE)
-    {
-        return 0.0f;
-    }
-
-    return (float)Inventory->GetAnchorDurabilityAt(ActiveUsingAnchorSlotIndex);
-}
-
-bool ADownfallCharacter::ConsumeSafetyLineAnchorDurability(float Amount)
-{
-    if (!Inventory || ActiveUsingAnchorSlotIndex == INDEX_NONE)
-    {
-        return false;
-    }
-
-    if (Amount <= 0.0f)
-    {
-        return true;
-    }
-
-    const int32 Remaining = Inventory->ConsumeAnchorUseAt(ActiveUsingAnchorSlotIndex, FMath::Max(1, FMath::RoundToInt(Amount)));
-    return Remaining > 0;
-}
-
 void ADownfallCharacter::FinishUsingAnchor(bool bConsumeOneUse)
 {
     const int32 UsedSlot = ActiveUsingAnchorSlotIndex;
@@ -1047,10 +1021,11 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
             }
         }
 
-        const bool bReachedRetrievalPoint =
-            (CurrentDistance <= (SafetyLineMinLengthCm + SafetyLineSlackCm + SafetyLineEngageToleranceCm));
+        const bool bExceededAutoRetrieveDistance =
+            (SafetyLineAutoRetrieveDistanceCm > 0.0f) &&
+            (CurrentDistance >= SafetyLineAutoRetrieveDistanceCm);
 
-        if (bReachedRetrievalPoint)
+        if (bExceededAutoRetrieveDistance)
         {
             FinishUsingAnchor(true);
             return;
