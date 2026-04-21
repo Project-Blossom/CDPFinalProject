@@ -992,7 +992,6 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
         return;
     }
 
-    // 앵커 액터가 더 이상 Anchor 태그가 아니면 무효 처리
     if (!ActiveSafetyBolt->ActorHasTag(TEXT("Anchor")))
     {
         DetachSafetyLine(true);
@@ -1037,9 +1036,12 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
         }
     }
 
-    const bool bIsFalling = (GetCharacterMovement()->MovementMode == MOVE_Falling);
+    const bool bShouldEvaluateRopeFall =
+        !bIsClimbing &&
+        (GetCapsuleComponent()->IsSimulatingPhysics() ||
+            GetCharacterMovement()->MovementMode == MOVE_Falling);
 
-    if (!bIsClimbing && bIsFalling)
+    if (bShouldEvaluateRopeFall)
     {
         if (CurrentDistance >= (SafetyLineCurrentLengthCm - SafetyLineEngageToleranceCm))
         {
@@ -1956,10 +1958,9 @@ void ADownfallCharacter::UpdateInsanityEffects()
 // State
 void ADownfallCharacter::UpdateClimbingState()
 {
-    bool bWasClimbing = bIsClimbing;
+    const bool bWasClimbing = bIsClimbing;
     bIsClimbing = (LeftHand.State == EHandState::Gripping || RightHand.State == EHandState::Gripping);
 
-    // 현재 grip 조합 요약
     if (bIsClimbing)
     {
         if (HasDynamicGrip())
@@ -1972,13 +1973,10 @@ void ADownfallCharacter::UpdateClimbingState()
         }
         else
         {
-            // Surface만 있거나, Surface + Anchor 혼합이면
-            // locomotion은 surface 계열로 본다
             GripMode = EGripMode::SurfaceGrip;
         }
     }
 
-    // 양손 모두 놓았을 때
     if (bWasClimbing && !bIsClimbing)
     {
         GripMode = EGripMode::None;
@@ -1989,22 +1987,26 @@ void ADownfallCharacter::UpdateClimbingState()
         CurrentAnchorPointWorld = FVector::ZeroVector;
         CurrentAnchorNormal = FVector::UpVector;
 
-        GetCapsuleComponent()->SetSimulatePhysics(false);
+        // 손을 놓는 순간의 속도를 최대한 보존
+        const FVector ReleaseVelocity =
+            GetCapsuleComponent()->IsSimulatingPhysics()
+            ? GetCapsuleComponent()->GetPhysicsLinearVelocity()
+            : GetVelocity();
 
         // Rotation 초기화
-        FRotator CurrentRotation = GetActorRotation();
-        FRotator UpRightRotation = FRotator(0.0f, CurrentRotation.Yaw, 0.0f);
+        const FRotator CurrentRotation = GetActorRotation();
+        const FRotator UpRightRotation(0.0f, CurrentRotation.Yaw, 0.0f);
         SetActorRotation(UpRightRotation);
 
-        // 바닥에 서있는지 체크
+        // 바닥 판정
         FHitResult Hit;
-        FVector Start = GetActorLocation();
-        FVector End = Start - FVector(0, 0, 100.0f);
+        const FVector Start = GetActorLocation();
+        const FVector End = Start - FVector(0, 0, 100.0f);
 
         FCollisionQueryParams QueryParams;
         QueryParams.AddIgnoredActor(this);
 
-        bool bHitGround = GetWorld()->SweepSingleByChannel(
+        const bool bHitGround = GetWorld()->SweepSingleByChannel(
             Hit,
             Start,
             End,
@@ -2014,31 +2016,61 @@ void ADownfallCharacter::UpdateClimbingState()
             QueryParams
         );
 
+        bool bOnWalkableGround = false;
         if (bHitGround)
         {
-            float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(Hit.ImpactNormal.Z));
-            float WalkableSlope = GetCharacterMovement()->GetWalkableFloorAngle();
+            const float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(Hit.ImpactNormal.Z));
+            const float WalkableSlope = GetCharacterMovement()->GetWalkableFloorAngle();
+            bOnWalkableGround = (SlopeAngle <= WalkableSlope);
+        }
 
-            if (SlopeAngle <= WalkableSlope)
+        if (bOnWalkableGround)
+        {
+            GetCapsuleComponent()->SetSimulatePhysics(false);
+            GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
+            GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+            GetCharacterMovement()->Velocity = FVector::ZeroVector;
+            GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+            DisengageSafetyLineConstraint();
+            return;
+        }
+
+        // 공중에서 손을 놓았고 로프가 연결돼 있으면,
+        // 일반 Falling으로 보내지 말고 즉시 물리 낙하 상태로 넘긴다.
+        if (bSafetyLineAttached)
+        {
+            if (!GetCapsuleComponent()->IsSimulatingPhysics())
             {
-                GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
-                GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
-                GetCharacterMovement()->Velocity = FVector::ZeroVector;
+                GetCapsuleComponent()->SetSimulatePhysics(true);
+            }
 
-                GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-                UE_LOG(LogDownFall, Log, TEXT("Released on ground - Walking mode"));
+            GetCapsuleComponent()->SetEnableGravity(true);
+            GetCapsuleComponent()->SetPhysicsLinearVelocity(ReleaseVelocity);
+            GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+
+            GetCharacterMovement()->StopMovementImmediately();
+            GetCharacterMovement()->SetMovementMode(MOVE_None);
+
+            const float CurrentDistance = FVector::Distance(
+                GetCapsuleComponent()->GetComponentLocation(),
+                GetSafetyLineAnchorLocation());
+
+            if (CurrentDistance >= (SafetyLineCurrentLengthCm - SafetyLineEngageToleranceCm))
+            {
+                EngageSafetyLineConstraint();
             }
             else
             {
-                GetCharacterMovement()->SetMovementMode(MOVE_Falling);
-                UE_LOG(LogDownFall, Log, TEXT("Released on steep slope - Falling"));
+                DisengageSafetyLineConstraint();
             }
+
+            return;
         }
-        else
-        {
-            GetCharacterMovement()->SetMovementMode(MOVE_Falling);
-            UE_LOG(LogDownFall, Log, TEXT("Released in air - Falling"));
-        }
+
+        // 로프가 없으면 기존처럼 캐릭터 Falling
+        GetCapsuleComponent()->SetSimulatePhysics(false);
+        GetCharacterMovement()->Velocity = ReleaseVelocity;
+        GetCharacterMovement()->SetMovementMode(MOVE_Falling);
     }
 }
 
