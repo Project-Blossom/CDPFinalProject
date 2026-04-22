@@ -724,7 +724,6 @@ bool ADownfallCharacter::AttachSafetyLineToBolt(AActor* AnchorActor)
         return false;
     }
 
-    // 앵커 블루프린트에는 반드시 Anchor 태그를 넣어둘 것
     if (!AnchorActor->ActorHasTag(TEXT("Anchor")))
     {
         return false;
@@ -746,6 +745,7 @@ bool ADownfallCharacter::AttachSafetyLineToBolt(AActor* AnchorActor)
     SafetyLineCurrentLengthCm = SafetyLineInitialLengthCm;
     bSafetyLineAttached = true;
     bSafetyLineConstraintEngaged = false;
+    bSafetyLineRetrieveArmed = false; // 설치 직후에는 회수 금지
 
     return true;
 }
@@ -812,6 +812,7 @@ void ADownfallCharacter::DetachSafetyLine(bool bBreakBolt)
 
     bSafetyLineAttached = false;
     bSafetyLineConstraintEngaged = false;
+    bSafetyLineRetrieveArmed = false;
     ActiveSafetyBolt = nullptr;
     SafetyLineAnchorWorld = FVector::ZeroVector;
     SafetyLineCurrentLengthCm = SafetyLineInitialLengthCm;
@@ -1003,24 +1004,24 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
     const FVector PlayerLoc = GetCapsuleComponent()->GetComponentLocation();
     const float CurrentDistance = FVector::Distance(PlayerLoc, SafetyLineAnchorWorld);
 
-    if (bIsClimbing)
+    const UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+    const bool bIsWalking = MoveComp && MoveComp->MovementMode == MOVE_Walking;
+    const bool bIsFalling = MoveComp && MoveComp->MovementMode == MOVE_Falling;
+    const bool bCanAutoRetrieveByDistance = (bIsClimbing || bIsWalking);
+
+    // walk / climbing 상태에서는 로프 반동 금지
+    if (bCanAutoRetrieveByDistance)
     {
-        const float DesiredLength = FMath::Max(
-            SafetyLineMinLengthCm,
-            CurrentDistance + SafetyLineSlackCm
-        );
+        DisengageSafetyLineConstraint();
 
-        if (DesiredLength < SafetyLineCurrentLengthCm)
+        // 한 번 11m 안쪽으로 다시 들어왔을 때만 회수 가능 상태 활성화
+        if (CurrentDistance < SafetyLineAutoRetrieveDistanceCm)
         {
-            SafetyLineCurrentLengthCm = DesiredLength;
-
-            if (bSafetyLineConstraintEngaged)
-            {
-                RefreshSafetyLineConstraint();
-            }
+            bSafetyLineRetrieveArmed = true;
         }
 
         const bool bExceededAutoRetrieveDistance =
+            bSafetyLineRetrieveArmed &&
             (SafetyLineAutoRetrieveDistanceCm > 0.0f) &&
             (CurrentDistance >= SafetyLineAutoRetrieveDistanceCm);
 
@@ -1029,19 +1030,10 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
             FinishUsingAnchor(true);
             return;
         }
-
-        if (!IsSafetyLineTaut())
-        {
-            DisengageSafetyLineConstraint();
-        }
     }
 
-    const bool bShouldEvaluateRopeFall =
-        !bIsClimbing &&
-        (GetCapsuleComponent()->IsSimulatingPhysics() ||
-            GetCharacterMovement()->MovementMode == MOVE_Falling);
-
-    if (bShouldEvaluateRopeFall)
+    // 로프 반동은 falling 상태에서만
+    if (bIsFalling)
     {
         if (CurrentDistance >= (SafetyLineCurrentLengthCm - SafetyLineEngageToleranceCm))
         {
@@ -1053,6 +1045,10 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
             {
                 RefreshSafetyLineConstraint();
             }
+        }
+        else
+        {
+            DisengageSafetyLineConstraint();
         }
     }
 
@@ -1069,7 +1065,7 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
         }
     }
 
-    if (!bIsClimbing && GetCharacterMovement()->MovementMode == MOVE_Walking)
+    if (!bIsClimbing && bIsWalking)
     {
         DisengageSafetyLineConstraint();
     }
@@ -2039,38 +2035,16 @@ void ADownfallCharacter::UpdateClimbingState()
         // 일반 Falling으로 보내지 말고 즉시 물리 낙하 상태로 넘긴다.
         if (bSafetyLineAttached)
         {
-            if (!GetCapsuleComponent()->IsSimulatingPhysics())
-            {
-                GetCapsuleComponent()->SetSimulatePhysics(true);
-            }
-
-            GetCapsuleComponent()->SetEnableGravity(true);
-            GetCapsuleComponent()->SetPhysicsLinearVelocity(ReleaseVelocity);
+            GetCapsuleComponent()->SetSimulatePhysics(false);
+            GetCapsuleComponent()->SetPhysicsLinearVelocity(FVector::ZeroVector);
             GetCapsuleComponent()->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
 
-            GetCharacterMovement()->StopMovementImmediately();
-            GetCharacterMovement()->SetMovementMode(MOVE_None);
+            GetCharacterMovement()->Velocity = ReleaseVelocity;
+            GetCharacterMovement()->SetMovementMode(MOVE_Falling);
 
-            const float CurrentDistance = FVector::Distance(
-                GetCapsuleComponent()->GetComponentLocation(),
-                GetSafetyLineAnchorLocation());
-
-            if (CurrentDistance >= (SafetyLineCurrentLengthCm - SafetyLineEngageToleranceCm))
-            {
-                EngageSafetyLineConstraint();
-            }
-            else
-            {
-                DisengageSafetyLineConstraint();
-            }
-
+            DisengageSafetyLineConstraint();
             return;
         }
-
-        // 로프가 없으면 기존처럼 캐릭터 Falling
-        GetCapsuleComponent()->SetSimulatePhysics(false);
-        GetCharacterMovement()->Velocity = ReleaseVelocity;
-        GetCharacterMovement()->SetMovementMode(MOVE_Falling);
     }
 }
 

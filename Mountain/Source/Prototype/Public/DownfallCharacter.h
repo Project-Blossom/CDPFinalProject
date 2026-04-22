@@ -369,6 +369,9 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
     FVector SafetyLineAnchorWorld = FVector::ZeroVector;
 
+    UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
+    bool bSafetyLineRetrieveArmed = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine", meta = (ClampMin = "100.0"))
     float SafetyLineCurrentLengthCm = 1000.0f;
 
