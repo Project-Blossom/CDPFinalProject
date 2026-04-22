@@ -196,7 +196,7 @@ public:
     float GripDamping = 800.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physics")
-    float ArmLength = 100.0f; // Constraint 제한 거리 (cm)
+    float ArmLength = 50.0f; // Constraint 제한 거리 (cm)
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float MaxStamina = 100.0f;

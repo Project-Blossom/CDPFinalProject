@@ -1208,6 +1208,68 @@ void ADownfallCharacter::OnMove(const FInputActionValue& Value)
 
         Capsule->SetPhysicsLinearVelocity(NewVelocity);
     }
+    // 로프 반동 중: 진자 운동을 유지한 채 접선 방향으로만 조작
+    else if (bSafetyLineAttached && bSafetyLineConstraintEngaged)
+    {
+        UCapsuleComponent* Capsule = GetCapsuleComponent();
+        if (!IsValid(Capsule)) return;
+
+        const FVector AnchorLocation = GetSafetyLineAnchorLocation();
+        const FVector PlayerLocation = Capsule->GetComponentLocation();
+
+        // 로프 방향(반경 방향)
+        FVector RopeDir = (PlayerLocation - AnchorLocation).GetSafeNormal();
+        if (RopeDir.IsNearlyZero())
+        {
+            return;
+        }
+
+        // 카메라 기준 입력 방향
+        const FVector CameraForward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+        const FVector CameraRight = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+        // 로프 방향에 수직인 평면으로 투영해서 "진자 접선 방향"만 남김
+        FVector TangentForward = CameraForward - RopeDir * FVector::DotProduct(CameraForward, RopeDir);
+        FVector TangentRight = CameraRight - RopeDir * FVector::DotProduct(CameraRight, RopeDir);
+
+        if (!TangentForward.Normalize())
+        {
+            TangentForward = FVector::ZeroVector;
+        }
+
+        if (!TangentRight.Normalize())
+        {
+            TangentRight = FVector::ZeroVector;
+        }
+
+        FVector InputTangent = FVector::ZeroVector;
+
+        // 전후 이동 (W/S) -> 진자 접선 전후 힘
+        if (MovementVector.Y != 0.0f)
+        {
+            InputTangent += TangentForward * MovementVector.Y;
+        }
+
+        // 좌우 이동 (A/D) -> 진자 접선 좌우 힘
+        if (MovementVector.X != 0.0f)
+        {
+            InputTangent += TangentRight * MovementVector.X;
+        }
+
+        if (!InputTangent.IsNearlyZero())
+        {
+            InputTangent.Normalize();
+
+            FVector CurrentVelocity = Capsule->GetPhysicsLinearVelocity();
+
+            // 이미 가지고 있는 반경 바깥 방향 성분은 유지하고,
+            // 접선 방향으로만 가속을 추가해서 진자 느낌 유지
+            const float RopeSwingAccel = 900.0f;
+            FVector NewVelocity = CurrentVelocity + InputTangent * RopeSwingAccel * GetWorld()->GetDeltaSeconds();
+
+            Capsule->SetPhysicsLinearVelocity(NewVelocity);
+        }
+    }
     // 지상: 일반 이동
     else
     {
