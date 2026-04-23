@@ -3169,6 +3169,30 @@ void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
             UE_LOG(LogDownFall, Log, TEXT("RainVFX Lerp complete (Weight: %.2f)"), RainDropCurrentWeight);
         }
     }
+
+    // 4. 활성 중일 때만 처리
+    if (!bRainActive || !RainNiagaraComponent || !IsValid(RainNiagaraComponent))
+    {
+        return;
+    }
+
+    // 5. Niagara 위치를 플레이어 XY + Z 오프셋으로 매 틱 업데이트 (월드 공간)
+    const FVector NewLocation = FVector(
+        GetActorLocation().X,
+        GetActorLocation().Y,
+        GetActorLocation().Z + 300.0f
+    );
+    RainNiagaraComponent->SetWorldLocation(NewLocation);
+
+    // 6. SpawnRate 점진 강화
+    // 활성화 후 RainIntensifyDuration 초에 걸쳐 Min → Max 로 Lerp
+    RainElapsedSinceActivation += DeltaTime;
+    const float IntensityAlpha = FMath::Clamp(
+        RainElapsedSinceActivation / FMath::Max(RainIntensifyDuration, KINDA_SMALL_NUMBER),
+        0.0f, 1.0f
+    );
+    const float CurrentSpawnRate = FMath::Lerp(RainSpawnRateMin, RainSpawnRateMax, IntensityAlpha);
+    RainNiagaraComponent->SetVariableFloat(FName("SpawnRate"), CurrentSpawnRate);
 }
 
 void ADownfallCharacter::ActivateRainVFX()
@@ -3193,35 +3217,47 @@ void ADownfallCharacter::ActivateRainVFX()
         UE_LOG(LogDownFall, Warning, TEXT("ActivateRainVFX: RainDropMaterialInstance is null"));
     }
 
-    // Niagara 공중 빗방울 활성화 (에셋 미할당 시 PP만 활성화)
+    // Niagara: SpawnAtLocation — 월드 공간에 스폰, 카메라/캡슐 부착 없음
+    // 매 Tick에서 SetWorldLocation으로 플레이어 XY를 따라감
     if (RainNiagaraSystem && IsValid(RainNiagaraSystem))
     {
         if (!RainNiagaraComponent || !IsValid(RainNiagaraComponent))
         {
-            RainNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+            const FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 300.f);
+            RainNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+                GetWorld(),
                 RainNiagaraSystem,
-                GetRootComponent(),
-                NAME_None,
-                FVector::ZeroVector,
+                SpawnLocation,
                 FRotator::ZeroRotator,
-                EAttachLocation::SnapToTarget,
-                true
+                FVector::OneVector,
+                true,   // bAutoDestroy
+                true,   // bAutoActivate
+                ENCPoolMethod::None
             );
+
+            if (RainNiagaraComponent && IsValid(RainNiagaraComponent))
+            {
+                RainNiagaraComponent->SetCullDistance(0.f);
+                RainNiagaraComponent->LDMaxDrawDistance = 0.f;
+                // SpawnRate 최솟값으로 시작
+                RainNiagaraComponent->SetVariableFloat(FName("SpawnRate"), RainSpawnRateMin);
+            }
         }
         else
         {
             RainNiagaraComponent->Activate(true);
+            RainNiagaraComponent->SetVariableFloat(FName("SpawnRate"), RainSpawnRateMin);
         }
 
-        UE_LOG(LogDownFall, Log, TEXT("ActivateRainVFX: Niagara activated"));
+        UE_LOG(LogDownFall, Log, TEXT("ActivateRainVFX: Niagara spawned at world location"));
     }
     else
     {
         UE_LOG(LogDownFall, Log, TEXT("ActivateRainVFX: RainNiagaraSystem not assigned, PP only"));
     }
 
-    UE_LOG(LogDownFall, Warning, TEXT("RainVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"),
-        ClimbingElapsedTime);
+    // 점진 강화 타이머 초기화
+    RainElapsedSinceActivation = 0.0f;
 }
 
 void ADownfallCharacter::DeactivateRainVFX()

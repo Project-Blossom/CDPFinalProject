@@ -74,6 +74,12 @@ public:
     
     UFUNCTION(BlueprintPure, Category = "Carrier")
     bool CanDropCrawler() const;
+
+#if !UE_BUILD_SHIPPING
+    // CanDropCrawler 디버그 시각화 최초 1회 플래그
+    // const 함수 내에서 수정 가능하도록 mutable 선언
+    mutable bool bHasDrawnDropDebug = false;
+#endif
     
     // ============================================
     // Patrol State

@@ -627,6 +627,26 @@ public:
         meta = (ClampMin = "0.1"))
     float RainDropLerpDuration = 1.0f;
 
+    // 활성화 후 SpawnRate 가 최대까지 증가하는 시간 (초)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
+        meta = (ClampMin = "1.0"))
+    float RainIntensifyDuration = 30.0f;
+
+    // SpawnRate 최솟값 (활성화 직후)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
+        meta = (ClampMin = "1.0"))
+    float RainSpawnRateMin = 10.0f;
+
+    // SpawnRate 최댓값 (RainIntensifyDuration 경과 후)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
+        meta = (ClampMin = "1.0"))
+    float RainSpawnRateMax = 200.0f;
+
+    // 스폰 박스 XY 반경 (cm). 플레이어 주변 스테이지 규모로 설정
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
+        meta = (ClampMin = "100.0"))
+    float RainBoxExtentXY = 3000.0f;
+
     // 현재 실제 적용 중인 Weight (Lerp 진행값, 디버그용)
     UPROPERTY(BlueprintReadOnly, Category = "VFX|RainVFX")
     float RainDropCurrentWeight = 0.0f;
@@ -803,4 +823,7 @@ private:
     float RainDropLerpElapsed = 0.0f;
     float RainDropLerpStartWeight = 0.0f;
     float RainDropLerpTargetWeight = 0.0f;
+
+    // Rain SpawnRate 점진 강화 내부 상태
+    float RainElapsedSinceActivation = 0.0f;
 };
