@@ -34,6 +34,10 @@
 #include "NiagaraFunctionLibrary.h"
 #include <limits>
 #include "Components/SceneComponent.h"
+#include "Components/SplineComponent.h"
+#include "Components/SplineMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
 #include "UObject/UnrealType.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
@@ -101,6 +105,11 @@ ADownfallCharacter::ADownfallCharacter()
     SafetyLineConstraint = CreateDefaultSubobject<UPhysicsConstraintComponent>(TEXT("SafetyLineConstraint"));
     SafetyLineConstraint->SetupAttachment(GetCapsuleComponent());
     SafetyLineConstraint->SetDisableCollision(true);
+
+    SafetyLineSpline = CreateDefaultSubobject<USplineComponent>(TEXT("SafetyLineSpline"));
+    SafetyLineSpline->SetupAttachment(GetCapsuleComponent());
+    SafetyLineSpline->SetMobility(EComponentMobility::Movable);
+    SafetyLineSpline->SetVisibility(false);
 
     // Movement
     GetCharacterMovement()->GravityScale = 1.0f;
@@ -747,6 +756,7 @@ bool ADownfallCharacter::AttachSafetyLineToBolt(AActor* AnchorActor)
     bSafetyLineConstraintEngaged = false;
     bSafetyLineRetrieveArmed = false; // 설치 직후에는 회수 금지
 
+    UpdateSafetyLineVisual();
     return true;
 }
 
@@ -818,6 +828,7 @@ void ADownfallCharacter::DetachSafetyLine(bool bBreakBolt)
     SafetyLineCurrentLengthCm = SafetyLineInitialLengthCm;
     ActiveUsingAnchorSlotIndex = INDEX_NONE;
     RefreshInventoryUIState();
+    ClearSafetyLineVisual();
 
     if (!bIsClimbing && AreBothHandsFree())
     {
@@ -1767,9 +1778,9 @@ void ADownfallCharacter::SetupConstraintToActor(UPhysicsConstraintComponent* Con
     Constraint->SetConstraintReferencePosition(EConstraintFrame::Frame2, LocalOffset);
 
     // Linear Limits
-    Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Limited, 100.0f);
-    Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Limited, 100.0f);
-    Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Limited, 100.0f);
+    Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
+    Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
+    Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
 
     // Angular Limits
     Constraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
@@ -2204,6 +2215,149 @@ void ADownfallCharacter::AbductByPlatform(bool bIsLeftHand, AFlyingPlatform* Pla
 }
 
 // Debug
+void ADownfallCharacter::EnsureSafetyLineVisualMeshPool(int32 RequiredSegments)
+{
+    if (!SafetyLineSpline)
+    {
+        return;
+    }
+
+    RequiredSegments = FMath::Clamp(RequiredSegments, 0, FMath::Max(1, SafetyLineVisualMaxSegments));
+
+    while (SafetyLineSplineMeshes.Num() < RequiredSegments)
+    {
+        USplineMeshComponent* NewMesh = NewObject<USplineMeshComponent>(this);
+        if (!NewMesh)
+        {
+            break;
+        }
+
+        NewMesh->SetupAttachment(SafetyLineSpline);
+        NewMesh->SetMobility(EComponentMobility::Movable);
+        NewMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        NewMesh->SetCastShadow(false);
+        NewMesh->SetForwardAxis(ESplineMeshAxis::Z, true);
+        NewMesh->RegisterComponent();
+        NewMesh->SetVisibility(false);
+
+        SafetyLineSplineMeshes.Add(NewMesh);
+    }
+
+    for (int32 Index = 0; Index < SafetyLineSplineMeshes.Num(); ++Index)
+    {
+        if (USplineMeshComponent* MeshComp = SafetyLineSplineMeshes[Index])
+        {
+            MeshComp->SetVisibility(Index < RequiredSegments);
+        }
+    }
+}
+
+void ADownfallCharacter::ClearSafetyLineVisual()
+{
+    if (SafetyLineSpline)
+    {
+        SafetyLineSpline->ClearSplinePoints(false);
+        SafetyLineSpline->UpdateSpline();
+        SafetyLineSpline->SetVisibility(false);
+    }
+
+    for (USplineMeshComponent* MeshComp : SafetyLineSplineMeshes)
+    {
+        if (MeshComp)
+        {
+            MeshComp->SetVisibility(false);
+        }
+    }
+}
+
+void ADownfallCharacter::UpdateSafetyLineVisual()
+{
+    if (!SafetyLineSpline)
+    {
+        return;
+    }
+
+    if (!bSafetyLineAttached || !SafetyLineVisualMesh)
+    {
+        ClearSafetyLineVisual();
+        return;
+    }
+
+    const FVector AnchorLocation = GetSafetyLineAnchorLocation();
+    const FVector PlayerLocation = GetCapsuleComponent()->GetComponentLocation();
+
+    if (AnchorLocation.IsNearlyZero() || PlayerLocation.IsNearlyZero())
+    {
+        ClearSafetyLineVisual();
+        return;
+    }
+
+    const float RopeDistanceCm = FVector::Distance(AnchorLocation, PlayerLocation);
+    const int32 SegmentCount = FMath::Clamp(
+        FMath::CeilToInt(RopeDistanceCm / FMath::Max(10.0f, SafetyLineVisualSegmentLengthCm)),
+        1,
+        FMath::Max(1, SafetyLineVisualMaxSegments));
+
+    EnsureSafetyLineVisualMeshPool(SegmentCount);
+
+    TArray<FVector> SplinePoints;
+    SplinePoints.Reserve(SegmentCount + 1);
+
+    for (int32 Index = 0; Index <= SegmentCount; ++Index)
+    {
+        const float Alpha = (SegmentCount > 0) ? ((float)Index / (float)SegmentCount) : 0.0f;
+        FVector Point = FMath::Lerp(AnchorLocation, PlayerLocation, Alpha);
+
+        if (SegmentCount > 1 && Index > 0 && Index < SegmentCount)
+        {
+            const float SagAlpha = FMath::Sin(Alpha * PI);
+            Point.Z -= SafetyLineVisualSagCm * SagAlpha;
+        }
+
+        SplinePoints.Add(Point);
+    }
+
+    SafetyLineSpline->SetSplinePoints(SplinePoints, ESplineCoordinateSpace::World, false);
+    for (int32 Index = 0; Index <= SegmentCount; ++Index)
+    {
+        SafetyLineSpline->SetSplinePointType(Index, ESplinePointType::Curve, false);
+    }
+    SafetyLineSpline->UpdateSpline();
+    SafetyLineSpline->SetVisibility(true);
+
+    for (int32 Index = 0; Index < SafetyLineSplineMeshes.Num(); ++Index)
+    {
+        USplineMeshComponent* MeshComp = SafetyLineSplineMeshes[Index];
+        if (!MeshComp)
+        {
+            continue;
+        }
+
+        if (Index >= SegmentCount)
+        {
+            MeshComp->SetVisibility(false);
+            continue;
+        }
+
+        MeshComp->SetStaticMesh(SafetyLineVisualMesh);
+        if (SafetyLineVisualMaterial)
+        {
+            MeshComp->SetMaterial(0, SafetyLineVisualMaterial);
+        }
+
+        const FVector StartPos = SafetyLineSpline->GetLocationAtSplinePoint(Index, ESplineCoordinateSpace::Local);
+        const FVector StartTangent = SafetyLineSpline->GetTangentAtSplinePoint(Index, ESplineCoordinateSpace::Local);
+        const FVector EndPos = SafetyLineSpline->GetLocationAtSplinePoint(Index + 1, ESplineCoordinateSpace::Local);
+        const FVector EndTangent = SafetyLineSpline->GetTangentAtSplinePoint(Index + 1, ESplineCoordinateSpace::Local);
+
+        MeshComp->SetStartAndEnd(StartPos, StartTangent, EndPos, EndTangent, true);
+        MeshComp->SetStartScale(FVector2D(SafetyLineVisualThickness, SafetyLineVisualThickness), true);
+        MeshComp->SetEndScale(FVector2D(SafetyLineVisualThickness, SafetyLineVisualThickness), true);
+        MeshComp->SetVisibility(true);
+    }
+}
+
+
 #if !UE_BUILD_SHIPPING
 void ADownfallCharacter::DrawDebugInfo()
 {
@@ -2813,6 +2967,7 @@ void ADownfallCharacter::RefreshLowFrequencyUpdates()
 {
     CheckForPlatformAbduction();
     UpdateAltitudeUI();
+    UpdateSafetyLineVisual();
 }
 
 void ADownfallCharacter::StartLowFrequencyUpdatesIfNeeded()
@@ -2827,15 +2982,27 @@ void ADownfallCharacter::StartLowFrequencyUpdatesIfNeeded()
         (LeftHand.State == EHandState::Gripping || RightHand.State == EHandState::Gripping);
 
     const bool bNeedsAltitudeUI = (AltitudeWidget != nullptr);
+    const bool bNeedsSafetyLineVisual = bSafetyLineAttached;
 
-    if (!bNeedsPlatformCheck && !bNeedsAltitudeUI)
+    if (!bNeedsPlatformCheck && !bNeedsAltitudeUI && !bNeedsSafetyLineVisual)
     {
         return;
     }
 
     const float SafePlatformInterval = FMath::Max(0.02f, PlatformAbductionCheckInterval);
     const float SafeAltitudeInterval = FMath::Max(0.02f, AltitudeUpdateInterval);
-    const float SafeInterval = FMath::Min(SafePlatformInterval, SafeAltitudeInterval);
+    const float SafeSafetyLineVisualInterval = FMath::Max(0.05f, SafetyLineVisualUpdateInterval);
+    float SafeInterval = SafePlatformInterval;
+
+    if (bNeedsAltitudeUI)
+    {
+        SafeInterval = FMath::Min(SafeInterval, SafeAltitudeInterval);
+    }
+
+    if (bNeedsSafetyLineVisual)
+    {
+        SafeInterval = FMath::Min(SafeInterval, SafeSafetyLineVisualInterval);
+    }
 
     if (!World->GetTimerManager().IsTimerActive(LowFrequencyUpdateTimerHandle))
     {
@@ -2861,8 +3028,9 @@ void ADownfallCharacter::StopLowFrequencyUpdatesIfPossible()
         (LeftHand.State == EHandState::Gripping || RightHand.State == EHandState::Gripping);
 
     const bool bNeedsAltitudeUI = (AltitudeWidget != nullptr);
+    const bool bNeedsSafetyLineVisual = bSafetyLineAttached;
 
-    if (!bNeedsPlatformCheck && !bNeedsAltitudeUI)
+    if (!bNeedsPlatformCheck && !bNeedsAltitudeUI && !bNeedsSafetyLineVisual)
     {
         World->GetTimerManager().ClearTimer(LowFrequencyUpdateTimerHandle);
     }

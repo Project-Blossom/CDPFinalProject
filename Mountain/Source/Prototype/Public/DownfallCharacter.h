@@ -19,6 +19,10 @@ class UGripPointFinderComponent;
 class UInventoryWidget;
 class UNiagaraComponent;
 class UNiagaraSystem;
+class USplineComponent;
+class USplineMeshComponent;
+class UStaticMesh;
+class UMaterialInterface;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
 
@@ -141,6 +145,9 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SafetyLine")
     TObjectPtr<UPhysicsConstraintComponent> SafetyLineConstraint;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SafetyLine|Visual")
+    TObjectPtr<USplineComponent> SafetyLineSpline;
 
     // Enhanced Input
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
@@ -389,6 +396,28 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine", meta = (ClampMin = "0.0"))
     float SafetyLineAutoRetrieveDistanceCm = 1100.0f;
+
+    // Safety Line Visual
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual")
+    TObjectPtr<UStaticMesh> SafetyLineVisualMesh = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual")
+    TObjectPtr<UMaterialInterface> SafetyLineVisualMaterial = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual", meta = (ClampMin = "0.05"))
+    float SafetyLineVisualUpdateInterval = 0.10f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual", meta = (ClampMin = "10.0"))
+    float SafetyLineVisualSegmentLengthCm = 200.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual", meta = (ClampMin = "1.0"))
+    float SafetyLineVisualThickness = 0.2f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual", meta = (ClampMin = "0.0"))
+    float SafetyLineVisualSagCm = 30.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual", meta = (ClampMin = "1", ClampMax = "16"))
+    int32 SafetyLineVisualMaxSegments = 6;
 
     // Events
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
@@ -785,6 +814,9 @@ private:
     void RefreshLowFrequencyUpdates();
     void StartLowFrequencyUpdatesIfNeeded();
     void StopLowFrequencyUpdatesIfPossible();
+    void UpdateSafetyLineVisual();
+    void ClearSafetyLineVisual();
+    void EnsureSafetyLineVisualMeshPool(int32 RequiredSegments);
     float CalculateNextSwitchInterval() const;
     void ApplyClimbingMappingContext();
     void UpdateAltitudeUI();
@@ -804,6 +836,9 @@ private:
 
     FTimerHandle LowFrequencyUpdateTimerHandle;
     TWeakObjectPtr<class AMountainGenWorldActor> CachedMountainActor;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<USplineMeshComponent>> SafetyLineSplineMeshes;
 
     float CachedDirtIntensity = -std::numeric_limits<float>::max();
     float CachedDirtBlurOffset = -std::numeric_limits<float>::max();
