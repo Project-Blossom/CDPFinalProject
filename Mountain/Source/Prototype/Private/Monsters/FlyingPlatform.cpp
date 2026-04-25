@@ -302,13 +302,13 @@ bool AFlyingPlatform::CanDropCrawler() const
         bHasDrawnDropDebug = true;
 
         // 플레이어 위치 (Cyan)
-        DrawDebugSphere(World, PlayerLocation, 100.0f, 12, FColor::Cyan, true, -1.0f, 0, 3.0f);
+        DrawDebugSphere(World, PlayerLocation, 100.0f, 12, FColor::Cyan, false, 1.0f, 0, 3.0f);
 
         // Platform 위치 (Yellow)
-        DrawDebugSphere(World, PlatformLocation, 100.0f, 12, FColor::Yellow, true, -1.0f, 0, 3.0f);
+        DrawDebugSphere(World, PlatformLocation, 100.0f, 12, FColor::Yellow, false, 1.0f, 0, 3.0f);
 
         // Platform과 Player 연결선
-        DrawDebugLine(World, PlatformLocation, PlayerLocation, FColor::White, true, -1.0f, 0, 2.0f);
+        DrawDebugLine(World, PlatformLocation, PlayerLocation, FColor::White, false, 1.0f, 0, 2.0f);
 
         // 수평 거리 표시
         FColor HorizontalColor = (HorizontalDistance <= 300.0f) ? FColor::Green : FColor::Red;
@@ -319,7 +319,7 @@ bool AFlyingPlatform::CanDropCrawler() const
         );
         DrawDebugString(World, HorizontalMidpoint,
             FString::Printf(TEXT("H: %.0fcm"), HorizontalDistance),
-            nullptr, HorizontalColor, 5.0f, false, 1.5f);
+            nullptr, HorizontalColor, 1.0f, false, 1.5f);
 
         // 수직 거리 표시
         FColor VerticalColor = (VerticalDiff >= 0.0f && VerticalDiff <= 500.0f) ? FColor::Green : FColor::Red;
@@ -330,11 +330,11 @@ bool AFlyingPlatform::CanDropCrawler() const
         );
         DrawDebugString(World, VerticalMidpoint,
             FString::Printf(TEXT("V: %.0fcm"), VerticalDiff),
-            nullptr, VerticalColor, 5.0f, false, 1.5f);
+            nullptr, VerticalColor, 1.0f, false, 1.5f);
 
         if (bInRange)
         {
-            DrawDebugSphere(World, PlatformLocation, 300.0f, 12, FColor::Red, true, -1.0f, 0, 5.0f);
+            DrawDebugSphere(World, PlatformLocation, 300.0f, 12, FColor::Red, false, 1.0f, 0, 5.0f);
         }
     }
 #endif
