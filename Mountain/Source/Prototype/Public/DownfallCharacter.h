@@ -676,6 +676,17 @@ public:
         meta = (ClampMin = "100.0"))
     float RainBoxExtentXY = 3000.0f;
 
+    // 비 내릴 때 화면 어두워지는 강도 (EV 단위, 음수 = 어두워짐)
+    // -1.0 = 절반 밝기, -2.0 = 1/4 밝기
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
+        meta = (ClampMin = "-5.0", ClampMax = "0.0"))
+    float RainDarkenBias = -1.5f;
+
+    // AutoExposureBias Lerp 지속 시간 (초) — RainDropLerpDuration과 독립
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
+        meta = (ClampMin = "0.1"))
+    float RainDarkenLerpDuration = 3.0f;
+
     // 현재 실제 적용 중인 Weight (Lerp 진행값, 디버그용)
     UPROPERTY(BlueprintReadOnly, Category = "VFX|RainVFX")
     float RainDropCurrentWeight = 0.0f;
@@ -861,4 +872,10 @@ private:
 
     // Rain SpawnRate 점진 강화 내부 상태
     float RainElapsedSinceActivation = 0.0f;
+
+    // AutoExposureBias Lerp 내부 상태
+    bool  bRainDarkenLerping       = false;
+    float RainDarkenLerpElapsed    = 0.0f;
+    float RainDarkenLerpStartBias  = 0.0f;
+    float RainDarkenLerpTargetBias = 0.0f;
 };
