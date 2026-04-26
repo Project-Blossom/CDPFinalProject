@@ -591,6 +591,11 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
         {
             EIC->BindAction(PauseAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnPauseTriggered);
         }
+
+        if (IsValid(UtilityUseAction))
+        {
+            EIC->BindAction(UtilityUseAction, ETriggerEvent::Started, this, &ADownfallCharacter::OnUtilityUseTriggered);
+        }
     }
 
     PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode);
@@ -676,6 +681,11 @@ void ADownfallCharacter::OnToggleInventoryTriggered(const FInputActionValue& Val
     default:
         break;
     }
+}
+
+void ADownfallCharacter::OnUtilityUseTriggered(const FInputActionValue& Value)
+{
+    TryUseEquippedUtility();
 }
 
 bool ADownfallCharacter::TryAttachSafetyLineFromLookTarget(float TraceDistanceCm)
@@ -785,6 +795,11 @@ bool ADownfallCharacter::BeginUsingAnchorSlot(int32 SlotIndex)
 bool ADownfallCharacter::IsInventorySlotUsing(int32 Index) const
 {
     return Index != INDEX_NONE && Index == ActiveUsingAnchorSlotIndex && bSafetyLineAttached;
+}
+
+bool ADownfallCharacter::IsInventorySlotUtilityEquipped(int32 Index) const
+{
+    return Index != INDEX_NONE && Index == EquippedUtilitySlotIndex;
 }
 
 int32 ADownfallCharacter::GetDisplayedInventoryCountAt(int32 Index) const
@@ -2667,6 +2682,15 @@ void ADownfallCharacter::RefreshInventoryUIState()
     const bool bInventoryOpen = (ItemUseState == EItemUseState::InventoryOpen);
     const bool bPreviewing = (ItemUseState == EItemUseState::PlacementPreview);
 
+    if (Inventory && EquippedUtilitySlotIndex != INDEX_NONE)
+    {
+        const TArray<FItemStack>& Slots = Inventory->GetSlots();
+        if (!Slots.IsValidIndex(EquippedUtilitySlotIndex) || !Slots[EquippedUtilitySlotIndex].IsValid())
+        {
+            EquippedUtilitySlotIndex = INDEX_NONE;
+        }
+    }
+
     BP_UpdateInventoryMode(bInventoryOpen, InventoryCursorIndex, HeldSlotIndex, bPreviewing);
 }
 
@@ -2813,6 +2837,36 @@ bool ADownfallCharacter::TryPickHeldItemFromCursor()
         return false;
     }
 
+    UWorld* W = GetWorld();
+    UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
+    UItemSubsystem* IS = GI ? GI->GetSubsystem<UItemSubsystem>() : nullptr;
+    const UItemDefinition* Def = IS ? IS->GetItemDefinitionById(Slots[InventoryCursorIndex].ItemId) : nullptr;
+
+    if (Def && Def->UseType == EItemUseType::UtilityEquip)
+    {
+        if (EquippedUtilitySlotIndex == InventoryCursorIndex)
+        {
+            EquippedUtilitySlotIndex = INDEX_NONE;
+        }
+        else
+        {
+            EquippedUtilitySlotIndex = InventoryCursorIndex;
+        }
+
+        if (IsValidInventorySlotIndex(HeldSlotIndex) && Slots.IsValidIndex(HeldSlotIndex) && Slots[HeldSlotIndex].IsValid())
+        {
+            ItemUseState = EItemUseState::HoldingItem;
+        }
+        else
+        {
+            HeldSlotIndex = INDEX_NONE;
+            ItemUseState = EItemUseState::None;
+        }
+
+        RefreshInventoryUIState();
+        return true;
+    }
+
     HeldSlotIndex = InventoryCursorIndex;
     ItemUseState = EItemUseState::HoldingItem;
     RefreshInventoryUIState();
@@ -2876,6 +2930,37 @@ bool ADownfallCharacter::TryUseHeldItem()
     else
     {
         ItemUseState = EItemUseState::HoldingItem;
+    }
+
+    RefreshInventoryUIState();
+    return true;
+}
+
+bool ADownfallCharacter::TryUseEquippedUtility()
+{
+    if (!Inventory || !IsValidInventorySlotIndex(EquippedUtilitySlotIndex))
+    {
+        return false;
+    }
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+    if (!Slots.IsValidIndex(EquippedUtilitySlotIndex) || !Slots[EquippedUtilitySlotIndex].IsValid())
+    {
+        EquippedUtilitySlotIndex = INDEX_NONE;
+        RefreshInventoryUIState();
+        return false;
+    }
+
+    const bool bUsed = Inventory->UseItem(EquippedUtilitySlotIndex, this);
+    if (!bUsed)
+    {
+        return false;
+    }
+
+    const TArray<FItemStack>& AfterSlots = Inventory->GetSlots();
+    if (!AfterSlots.IsValidIndex(EquippedUtilitySlotIndex) || !AfterSlots[EquippedUtilitySlotIndex].IsValid())
+    {
+        EquippedUtilitySlotIndex = INDEX_NONE;
     }
 
     RefreshInventoryUIState();
@@ -3357,10 +3442,10 @@ void ADownfallCharacter::ActivateRainVFX()
     // AutoExposureBias Lerp 시작 (현재값 → RainDarkenBias)
     if (PostProcessComp)
     {
-        RainDarkenLerpStartBias  = PostProcessComp->Settings.AutoExposureBias;
+        RainDarkenLerpStartBias = PostProcessComp->Settings.AutoExposureBias;
         RainDarkenLerpTargetBias = RainDarkenBias;
-        RainDarkenLerpElapsed    = 0.0f;
-        bRainDarkenLerping       = true;
+        RainDarkenLerpElapsed = 0.0f;
+        bRainDarkenLerping = true;
         PostProcessComp->Settings.bOverride_AutoExposureBias = true;
         UE_LOG(LogDownFall, Log, TEXT("RainDarken Lerp started (%.2f -> %.2f, %.1fs)"),
             RainDarkenLerpStartBias, RainDarkenLerpTargetBias, RainDarkenLerpDuration);
@@ -3406,7 +3491,7 @@ void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
         }
         if (Alpha >= 1.0f)
         {
-            bRainWeightLerping    = false;
+            bRainWeightLerping = false;
             RainDropCurrentWeight = RainDropLerpTargetWeight;
             UE_LOG(LogDownFall, Log, TEXT("RainVFX PP Lerp complete (Weight: %.2f)"), RainDropCurrentWeight);
         }
@@ -3490,7 +3575,7 @@ void ADownfallCharacter::DeactivateRainVFX()
     }
 
     // AutoExposureBias 원래대로 복구 + Lerp 초기화
-    bRainDarkenLerping    = false;
+    bRainDarkenLerping = false;
     RainDarkenLerpElapsed = 0.0f;
     if (PostProcessComp)
     {

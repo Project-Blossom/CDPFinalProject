@@ -327,11 +327,10 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
     const int32 MaxStack = Def ? FMath::Max(1, Def->MaxStack) : 1;
 
     const bool bUniqueSlot = bForceInstance || (MaxStack == 1);
-    const bool bShouldInstance = bForceInstance || (Def && (Def->UseType == EItemUseType::Equip || Def->UseType == EItemUseType::AttachAnchorToBolt));
+    const bool bShouldInstance = bForceInstance || (Def && (Def->UseType == EItemUseType::Equip || Def->UseType == EItemUseType::UtilityEquip || Def->UseType == EItemUseType::AttachAnchorToBolt));
 
     int32 Remaining = Count;
 
-    // 1) �������̸� ���� ���� ä���
     if (!bUniqueSlot && MaxStack > 1)
     {
         while (Remaining > 0)
@@ -346,7 +345,6 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
         }
     }
 
-    // 2) �� ���Կ� ���� ����
     while (Remaining > 0)
     {
         const int32 Empty = FindEmptySlot();
@@ -722,6 +720,38 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
         return true;
     }
 
+    case EItemUseType::UtilityEquip:
+    {
+        if (!S.bHasInstance)
+        {
+            S.bHasInstance = true;
+            S.Instance.InstanceId = FGuid::NewGuid();
+            S.Instance.UpgradeLevel = 0;
+            S.Count = 1;
+        }
+
+        ADownfallCharacter* DownfallChar = Cast<ADownfallCharacter>(User);
+        if (!DownfallChar)
+        {
+            BP_OnUseFailed(User, FText::FromString(TEXT("Only DownfallCharacter can use this utility item")));
+            return false;
+        }
+
+        switch (Def->UtilityEffectType)
+        {
+        case EUtilityEffectType::ReduceInsanity:
+            DownfallChar->AddInsanity(-Def->UtilityEffectValue);
+            break;
+
+        default:
+            BP_OnUseFailed(User, FText::FromString(TEXT("Unsupported utility effect")));
+            return false;
+        }
+
+        SanitizeReservedCenterSlot();
+        BP_OnEquip(User, Def, S.Instance);
+        return true;
+    }
 
     case EItemUseType::AttachSafetyLine:
     {

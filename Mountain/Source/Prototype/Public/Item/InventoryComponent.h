@@ -8,6 +8,7 @@
 class UItemDefinition;
 class UTexture2D;
 class USceneComponent;
+class AActor;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
 
@@ -29,7 +30,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
     int32 SlotCount = 25;
 
-    // ---------- Áß¾Ó ¸Ç¼Õ ½½·Ô ----------
+    // ---------- hand  ----------
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "0"))
     int32 ReservedCenterSlotIndex = 12;
 

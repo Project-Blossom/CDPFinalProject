@@ -180,6 +180,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     TObjectPtr<UInputAction> PauseAction;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr<UInputAction> UtilityUseAction;
+
     UPROPERTY(BlueprintReadOnly, Category = "Debug|Movement")
     bool bDebugFlyMode = false;
 
@@ -357,6 +360,9 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
     int32 ActiveUsingAnchorSlotIndex = INDEX_NONE;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
+    int32 EquippedUtilitySlotIndex = INDEX_NONE;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Cursor")
     float CursorInitialRepeatDelay = 0.20f;
 
@@ -428,6 +434,9 @@ public:
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|UI")
     void BP_UpdateInventoryMode(bool bInventoryOpen, int32 CursorIndex, int32 InHeldSlotIndex, bool bPreviewing);
+
+    UFUNCTION(BlueprintPure, Category = "Inventory|UI")
+    bool IsInventorySlotUtilityEquipped(int32 Index) const;
 
     // Stamina
     void UpdateStamina(float DeltaTime);
@@ -752,6 +761,7 @@ protected:
     void OnUseItemTriggered(const FInputActionValue& Value);
     void OnToggleInventoryTriggered(const FInputActionValue& Value);
     void OnPauseTriggered(const FInputActionValue& Value);
+    void OnUtilityUseTriggered(const FInputActionValue& Value);
 
     // Debug
     void OnDebugInsanity(const FInputActionValue& Value);
@@ -802,6 +812,7 @@ protected:
     void CloseInventoryToEmptyHand();
     bool TryPickHeldItemFromCursor();
     bool TryUseHeldItem();
+    bool TryUseEquippedUtility();
     bool IsValidInventorySlotIndex(int32 Index) const;
     bool IsPlaceableSlot(int32 Index) const;
 
@@ -874,8 +885,8 @@ private:
     float RainElapsedSinceActivation = 0.0f;
 
     // AutoExposureBias Lerp 내부 상태
-    bool  bRainDarkenLerping       = false;
-    float RainDarkenLerpElapsed    = 0.0f;
-    float RainDarkenLerpStartBias  = 0.0f;
+    bool  bRainDarkenLerping = false;
+    float RainDarkenLerpElapsed = 0.0f;
+    float RainDarkenLerpStartBias = 0.0f;
     float RainDarkenLerpTargetBias = 0.0f;
 };

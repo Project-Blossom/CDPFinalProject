@@ -5,9 +5,9 @@
 UENUM(BlueprintType)
 enum class EItemType : uint8
 {
-    Placeable   UMETA(DisplayName = "Placeable"),   // 설치
-    Consumable  UMETA(DisplayName = "Consumable"),  // 소모
-    Weapon      UMETA(DisplayName = "Weapon"),      // 무기
+    Placeable   UMETA(DisplayName = "Placeable"),
+    Consumable  UMETA(DisplayName = "Consumable"),
+    Weapon      UMETA(DisplayName = "Weapon"),
 };
 
 UENUM(BlueprintType)
@@ -16,6 +16,7 @@ enum class EItemUseType : uint8
     None                UMETA(DisplayName = "None"),
     Consume             UMETA(DisplayName = "Consume"),
     Equip               UMETA(DisplayName = "Equip"),
+    UtilityEquip        UMETA(DisplayName = "UtilityEquip"),
     PlaceActor          UMETA(DisplayName = "PlaceActor"),
     AttachSafetyLine    UMETA(DisplayName = "AttachSafetyLine"),
     AttachAnchorToBolt  UMETA(DisplayName = "AttachAnchorToBolt"),
@@ -26,6 +27,13 @@ enum class EConsumableEffectType : uint8
 {
     None            UMETA(DisplayName = "None"),
     RestoreStamina  UMETA(DisplayName = "RestoreStamina"),
+};
+
+UENUM(BlueprintType)
+enum class EUtilityEffectType : uint8
+{
+    None             UMETA(DisplayName = "None"),
+    ReduceInsanity   UMETA(DisplayName = "ReduceInsanity"),
 };
 
 USTRUCT(BlueprintType)
