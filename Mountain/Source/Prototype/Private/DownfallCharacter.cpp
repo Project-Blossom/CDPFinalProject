@@ -3290,79 +3290,6 @@ void ADownfallCharacter::UpdateEdgeBlurEffect()
 // Rain Hallucination VFX
 // ─────────────────────────────────────────────────────────────────
 
-void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
-{
-    // 1. 등반 중인 동안 경과 시간 누적
-    if (bIsClimbing)
-    {
-        ClimbingElapsedTime += DeltaTime;
-    }
-
-    // 2. 트리거 조건: 누적 시간 도달 + 아직 미활성
-    if (ClimbingElapsedTime >= RainTriggerTime && !bRainActive)
-    {
-        ActivateRainVFX();
-    }
-
-    // 3. Weight Lerp 처리 (Activate 후 목표값까지 점진적 증가)
-    if (bRainWeightLerping)
-    {
-        RainDropLerpElapsed += DeltaTime;
-
-        const float Alpha = FMath::Clamp(
-            RainDropLerpElapsed / FMath::Max(RainDropLerpDuration, KINDA_SMALL_NUMBER),
-            0.0f, 1.0f
-        );
-
-        RainDropCurrentWeight = FMath::Lerp(RainDropLerpStartWeight, RainDropLerpTargetWeight, Alpha);
-
-        // WeightedBlendables 배열 실시간 업데이트
-        if (RainDropMaterialInstance && PostProcessComp)
-        {
-            for (FWeightedBlendable& Blendable : PostProcessComp->Settings.WeightedBlendables.Array)
-            {
-                if (Blendable.Object == RainDropMaterialInstance)
-                {
-                    Blendable.Weight = RainDropCurrentWeight;
-                    break;
-                }
-            }
-        }
-
-        // Lerp 완료
-        if (Alpha >= 1.0f)
-        {
-            bRainWeightLerping = false;
-            RainDropCurrentWeight = RainDropLerpTargetWeight;
-            UE_LOG(LogDownFall, Log, TEXT("RainVFX Lerp complete (Weight: %.2f)"), RainDropCurrentWeight);
-        }
-    }
-
-    // 4. 활성 중일 때만 처리
-    if (!bRainActive || !RainNiagaraComponent || !IsValid(RainNiagaraComponent))
-    {
-        return;
-    }
-
-    // 5. Niagara 위치를 플레이어 XY + Z 오프셋으로 매 틱 업데이트 (월드 공간)
-    const FVector NewLocation = FVector(
-        GetActorLocation().X,
-        GetActorLocation().Y,
-        GetActorLocation().Z + 300.0f
-    );
-    RainNiagaraComponent->SetWorldLocation(NewLocation);
-
-    // 6. SpawnRate 점진 강화
-    // 활성화 후 RainIntensifyDuration 초에 걸쳐 Min → Max 로 Lerp
-    RainElapsedSinceActivation += DeltaTime;
-    const float IntensityAlpha = FMath::Clamp(
-        RainElapsedSinceActivation / FMath::Max(RainIntensifyDuration, KINDA_SMALL_NUMBER),
-        0.0f, 1.0f
-    );
-    const float CurrentSpawnRate = FMath::Lerp(RainSpawnRateMin, RainSpawnRateMax, IntensityAlpha);
-    RainNiagaraComponent->SetVariableFloat(FName("SpawnRate"), CurrentSpawnRate);
-}
-
 void ADownfallCharacter::ActivateRainVFX()
 {
     if (bRainActive)
@@ -3426,6 +3353,108 @@ void ADownfallCharacter::ActivateRainVFX()
 
     // 점진 강화 타이머 초기화
     RainElapsedSinceActivation = 0.0f;
+
+    // AutoExposureBias Lerp 시작 (현재값 → RainDarkenBias)
+    if (PostProcessComp)
+    {
+        RainDarkenLerpStartBias  = PostProcessComp->Settings.AutoExposureBias;
+        RainDarkenLerpTargetBias = RainDarkenBias;
+        RainDarkenLerpElapsed    = 0.0f;
+        bRainDarkenLerping       = true;
+        PostProcessComp->Settings.bOverride_AutoExposureBias = true;
+        UE_LOG(LogDownFall, Log, TEXT("RainDarken Lerp started (%.2f -> %.2f, %.1fs)"),
+            RainDarkenLerpStartBias, RainDarkenLerpTargetBias, RainDarkenLerpDuration);
+    }
+
+    UE_LOG(LogDownFall, Warning, TEXT("RainVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"),
+        ClimbingElapsedTime);
+}
+
+void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
+{
+    // 1. 등반 중인 동안 경과 시간 누적
+    if (bIsClimbing)
+    {
+        ClimbingElapsedTime += DeltaTime;
+    }
+
+    // 2. 트리거 조건: 누적 시간 도달 + 아직 미활성
+    if (ClimbingElapsedTime >= RainTriggerTime && !bRainActive)
+    {
+        ActivateRainVFX();
+    }
+
+    // 3. PP Weight Lerp 처리
+    if (bRainWeightLerping)
+    {
+        RainDropLerpElapsed += DeltaTime;
+        const float Alpha = FMath::Clamp(
+            RainDropLerpElapsed / FMath::Max(RainDropLerpDuration, KINDA_SMALL_NUMBER),
+            0.0f, 1.0f
+        );
+        RainDropCurrentWeight = FMath::Lerp(RainDropLerpStartWeight, RainDropLerpTargetWeight, Alpha);
+        if (RainDropMaterialInstance && PostProcessComp)
+        {
+            for (FWeightedBlendable& Blendable : PostProcessComp->Settings.WeightedBlendables.Array)
+            {
+                if (Blendable.Object == RainDropMaterialInstance)
+                {
+                    Blendable.Weight = RainDropCurrentWeight;
+                    break;
+                }
+            }
+        }
+        if (Alpha >= 1.0f)
+        {
+            bRainWeightLerping    = false;
+            RainDropCurrentWeight = RainDropLerpTargetWeight;
+            UE_LOG(LogDownFall, Log, TEXT("RainVFX PP Lerp complete (Weight: %.2f)"), RainDropCurrentWeight);
+        }
+    }
+
+    // 4. AutoExposureBias Lerp 처리 (0 → RainDarkenBias, RainDarkenLerpDuration 초 동안)
+    if (bRainDarkenLerping && PostProcessComp)
+    {
+        RainDarkenLerpElapsed += DeltaTime;
+        const float DarkenAlpha = FMath::Clamp(
+            RainDarkenLerpElapsed / FMath::Max(RainDarkenLerpDuration, KINDA_SMALL_NUMBER),
+            0.0f, 1.0f
+        );
+        PostProcessComp->Settings.AutoExposureBias = FMath::Lerp(
+            RainDarkenLerpStartBias,
+            RainDarkenLerpTargetBias,
+            DarkenAlpha
+        );
+        if (DarkenAlpha >= 1.0f)
+        {
+            bRainDarkenLerping = false;
+            UE_LOG(LogDownFall, Log, TEXT("RainDarken Lerp complete (Bias: %.2f)"),
+                PostProcessComp->Settings.AutoExposureBias);
+        }
+    }
+
+    // 5. 활성 중일 때만 위치/SpawnRate 처리
+    if (!bRainActive || !RainNiagaraComponent || !IsValid(RainNiagaraComponent))
+    {
+        return;
+    }
+
+    // Niagara 위치를 플레이어 XY + Z 오프셋으로 매 틱 업데이트
+    const FVector NewLocation = FVector(
+        GetActorLocation().X,
+        GetActorLocation().Y,
+        GetActorLocation().Z + 300.0f
+    );
+    RainNiagaraComponent->SetWorldLocation(NewLocation);
+
+    // SpawnRate 점진 강화 (Min → Max, RainIntensifyDuration 초 동안)
+    RainElapsedSinceActivation += DeltaTime;
+    const float IntensityAlpha = FMath::Clamp(
+        RainElapsedSinceActivation / FMath::Max(RainIntensifyDuration, KINDA_SMALL_NUMBER),
+        0.0f, 1.0f
+    );
+    const float CurrentSpawnRate = FMath::Lerp(RainSpawnRateMin, RainSpawnRateMax, IntensityAlpha);
+    RainNiagaraComponent->SetVariableFloat(FName("SpawnRate"), CurrentSpawnRate);
 }
 
 void ADownfallCharacter::DeactivateRainVFX()
@@ -3458,6 +3487,15 @@ void ADownfallCharacter::DeactivateRainVFX()
     if (RainNiagaraComponent && IsValid(RainNiagaraComponent))
     {
         RainNiagaraComponent->Deactivate();
+    }
+
+    // AutoExposureBias 원래대로 복구 + Lerp 초기화
+    bRainDarkenLerping    = false;
+    RainDarkenLerpElapsed = 0.0f;
+    if (PostProcessComp)
+    {
+        PostProcessComp->Settings.AutoExposureBias = 0.0f;
+        PostProcessComp->Settings.bOverride_AutoExposureBias = false;
     }
 
     UE_LOG(LogDownFall, Warning, TEXT("RainVFX DEACTIVATED"));
