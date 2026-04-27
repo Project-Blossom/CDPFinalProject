@@ -573,7 +573,7 @@ bool UInventoryComponent::BuildAttachAnchorPreviewTransform(AActor* User, const 
 
     if (!bHit || !Hit.bBlockingHit)
     {
-        OutFailReason = FText::FromString(TEXT("��Ʈ�� �����ؾ� �մϴ�."));
+        OutFailReason = FText::FromString(TEXT("You must look at a bolt."));
         return false;
     }
 
@@ -587,17 +587,17 @@ bool UInventoryComponent::BuildAttachAnchorPreviewTransform(AActor* User, const 
     AActor* BoltActor = Hit.GetActor();
     if (!BoltActor || !IsValid(BoltActor))
     {
-        OutFailReason = FText::FromString(TEXT("��ġ�� ��Ʈ�� �ƴմϴ�."));
+        OutFailReason = FText::FromString(TEXT("The target is not a valid bolt."));
         return false;
     }
 
     if (!BoltActor->ActorHasTag(TEXT("Bolt")))
     {
-        OutFailReason = FText::FromString(TEXT("��Ʈ���� ��Ŀ�� ��ġ�� �� �ֽ��ϴ�."));
+        OutFailReason = FText::FromString(TEXT("Anchors can only be attached to bolts."));
         return false;
     }
 
-    // �̹� ��Ŀ�� �޸� ��Ʈ�� ������ ����
+    // A bolt that already has an anchor attached cannot be used.
     TArray<AActor*> AttachedActors;
     BoltActor->GetAttachedActors(AttachedActors);
 
@@ -605,7 +605,7 @@ bool UInventoryComponent::BuildAttachAnchorPreviewTransform(AActor* User, const 
     {
         if (Attached && Attached->ActorHasTag(TEXT("Anchor")))
         {
-            OutFailReason = FText::FromString(TEXT("�̹� ��Ŀ�� ������ ��Ʈ�Դϴ�."));
+            OutFailReason = FText::FromString(TEXT("This bolt already has an anchor attached."));
             return false;
         }
     }
@@ -818,27 +818,27 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 
         if (!bHit || !Hit.bBlockingHit)
         {
-            BP_OnUseFailed(User, FText::FromString(TEXT("��Ʈ�� �����ؾ� �մϴ�.")));
+            BP_OnUseFailed(User, FText::FromString(TEXT("You must look at a bolt.")));
             return false;
         }
 
         AActor* BoltActor = Hit.GetActor();
         if (!BoltActor || !IsValid(BoltActor))
         {
-            BP_OnUseFailed(User, FText::FromString(TEXT("��ġ�� ��Ʈ�� �ƴմϴ�.")));
+            BP_OnUseFailed(User, FText::FromString(TEXT("The target is not a valid bolt.")));
             return false;
         }
 
         if (!Def->PlaceActorClass)
         {
-            BP_OnUseFailed(User, FText::FromString(TEXT("��Ŀ ���� Ŭ������ �������� �ʾҽ��ϴ�.")));
+            BP_OnUseFailed(User, FText::FromString(TEXT("Anchor placement class is not assigned.")));
             return false;
         }
 
         UWorld* W = GetWorld();
         if (!W)
         {
-            BP_OnUseFailed(User, FText::FromString(TEXT("���尡 ��ȿ���� �ʽ��ϴ�.")));
+            BP_OnUseFailed(User, FText::FromString(TEXT("World is not valid.")));
             return false;
         }
 
@@ -850,7 +850,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
         EnsureAnchorDurabilityInitialized(Index, 5);
         if (!S.bHasInstance || S.Instance.UpgradeLevel <= 0)
         {
-            BP_OnUseFailed(User, FText::FromString(TEXT("��Ŀ �������� �����ϴ�.")));
+            BP_OnUseFailed(User, FText::FromString(TEXT("Anchor durability is insufficient.")));
             return false;
         }
 
@@ -858,11 +858,11 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 
         if (!Spawned)
         {
-            BP_OnUseFailed(User, FText::FromString(TEXT("��Ŀ ������ �����߽��ϴ�.")));
+            BP_OnUseFailed(User, FText::FromString(TEXT("Failed to spawn anchor.")));
             return false;
         }
 
-        // ������ ��Ŀ�� �ݵ�� Anchor �±׸� ���� �־�� ��
+        // Spawned anchor must always have the Anchor tag.
         if (!Spawned->ActorHasTag(TEXT("Anchor")))
         {
             Spawned->Tags.AddUnique(TEXT("Anchor"));
@@ -888,7 +888,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             if (!DownfallChar->AttachSafetyLineToBolt(Spawned) || !DownfallChar->BeginUsingAnchorSlot(Index))
             {
                 Spawned->Destroy();
-                BP_OnUseFailed(User, FText::FromString(TEXT("��Ŀ ���� ���ῡ �����߽��ϴ�.")));
+                BP_OnUseFailed(User, FText::FromString(TEXT("Failed to connect the anchor.")));
                 return false;
             }
         }

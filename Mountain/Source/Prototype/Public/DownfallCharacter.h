@@ -813,6 +813,9 @@ protected:
     bool TryPickHeldItemFromCursor();
     bool TryUseHeldItem();
     bool TryUseEquippedUtility();
+    bool IsUtilityEquipSlot(int32 Index) const;
+    bool BeginEquippingUtilitySlot(int32 SlotIndex);
+    void ClearEquippedUtilitySlot();
     bool IsValidInventorySlotIndex(int32 Index) const;
     bool IsPlaceableSlot(int32 Index) const;
 

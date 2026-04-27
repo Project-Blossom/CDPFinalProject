@@ -802,6 +802,63 @@ bool ADownfallCharacter::IsInventorySlotUtilityEquipped(int32 Index) const
     return Index != INDEX_NONE && Index == EquippedUtilitySlotIndex;
 }
 
+bool ADownfallCharacter::IsUtilityEquipSlot(int32 Index) const
+{
+    if (!Inventory || !IsValidInventorySlotIndex(Index))
+    {
+        return false;
+    }
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+    if (!Slots.IsValidIndex(Index) || !Slots[Index].IsValid())
+    {
+        return false;
+    }
+
+    UWorld* W = GetWorld();
+    UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
+    UItemSubsystem* IS = GI ? GI->GetSubsystem<UItemSubsystem>() : nullptr;
+    const UItemDefinition* Def = IS ? IS->GetItemDefinitionById(Slots[Index].ItemId) : nullptr;
+
+    return Def && Def->UseType == EItemUseType::UtilityEquip;
+}
+
+bool ADownfallCharacter::BeginEquippingUtilitySlot(int32 SlotIndex)
+{
+    if (!Inventory || !IsValidInventorySlotIndex(SlotIndex))
+    {
+        return false;
+    }
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+    if (!Slots.IsValidIndex(SlotIndex) || !Slots[SlotIndex].IsValid())
+    {
+        return false;
+    }
+
+    if (!IsUtilityEquipSlot(SlotIndex))
+    {
+        return false;
+    }
+
+    // Toggle off when the same slot is selected again.
+    if (EquippedUtilitySlotIndex == SlotIndex)
+    {
+        ClearEquippedUtilitySlot();
+        return true;
+    }
+
+    EquippedUtilitySlotIndex = SlotIndex;
+    RefreshInventoryUIState();
+    return true;
+}
+
+void ADownfallCharacter::ClearEquippedUtilitySlot()
+{
+    EquippedUtilitySlotIndex = INDEX_NONE;
+    RefreshInventoryUIState();
+}
+
 int32 ADownfallCharacter::GetDisplayedInventoryCountAt(int32 Index) const
 {
     if (!Inventory || !Inventory->HasValidItemAt(Index))
