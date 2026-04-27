@@ -2882,6 +2882,16 @@ bool ADownfallCharacter::TryPickHeldItemFromCursor()
         return false;
     }
 
+    if (Inventory->IsReservedCenterSlot(InventoryCursorIndex))
+    {
+        HeldSlotIndex = INDEX_NONE;
+        ItemUseState = EItemUseState::None;
+
+        Inventory->SetPreviewEnabled(false);
+        RefreshInventoryUIState();
+        return true;
+    }
+
     const TArray<FItemStack>& Slots = Inventory->GetSlots();
 
     if (!Slots.IsValidIndex(InventoryCursorIndex))
@@ -2894,29 +2904,20 @@ bool ADownfallCharacter::TryPickHeldItemFromCursor()
         return false;
     }
 
-    UWorld* W = GetWorld();
-    UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
-    UItemSubsystem* IS = GI ? GI->GetSubsystem<UItemSubsystem>() : nullptr;
-    const UItemDefinition* Def = IS ? IS->GetItemDefinitionById(Slots[InventoryCursorIndex].ItemId) : nullptr;
-
-    if (Def && Def->UseType == EItemUseType::UtilityEquip)
+    if (IsUtilityEquipSlot(InventoryCursorIndex))
     {
-        if (EquippedUtilitySlotIndex == InventoryCursorIndex)
+        const bool bEquipped = BeginEquippingUtilitySlot(InventoryCursorIndex);
+        if (!bEquipped)
         {
-            EquippedUtilitySlotIndex = INDEX_NONE;
-        }
-        else
-        {
-            EquippedUtilitySlotIndex = InventoryCursorIndex;
+            return false;
         }
 
-        if (IsValidInventorySlotIndex(HeldSlotIndex) && Slots.IsValidIndex(HeldSlotIndex) && Slots[HeldSlotIndex].IsValid())
+        if (IsValidInventorySlotIndex(HeldSlotIndex))
         {
             ItemUseState = EItemUseState::HoldingItem;
         }
         else
         {
-            HeldSlotIndex = INDEX_NONE;
             ItemUseState = EItemUseState::None;
         }
 
