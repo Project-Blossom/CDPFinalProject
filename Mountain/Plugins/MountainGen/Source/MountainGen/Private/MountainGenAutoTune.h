@@ -1,4 +1,5 @@
 #pragma once
+
 #include "CoreMinimal.h"
 #include "MountainGenSettings.h"
 
@@ -16,7 +17,11 @@ struct FMGClampRange
 {
     float Min = 0.f;
     float Max = 0.f;
-    FORCEINLINE float Clamp(float v) const { return FMath::Clamp(v, Min, Max); }
+
+    FORCEINLINE float Clamp(float v) const
+    {
+        return FMath::Clamp(v, Min, Max);
+    }
 };
 
 struct FMGPresetBounds
@@ -31,9 +36,6 @@ struct FMGPresetBounds
     FMGClampRange OverhangBias;
     FMGClampRange OverhangDepthCm;
     FMGClampRange OverhangFadeCm;
-
-    FMGClampRange GravityStrength;
-    FMGClampRange GravityScale;
 };
 
 struct FMGDifficultyPreset
@@ -51,9 +53,6 @@ struct FMGDifficultyPreset
     float OverhangBias = 0.55f;
     float OverhangDepthCm = 2500.f;
     float OverhangFadeCm = 15000.f;
-
-    float GravityStrength = 1.0f;
-    float GravityScale = 2.0f;
 };
 
 FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D);

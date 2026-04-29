@@ -290,8 +290,6 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
         P.OverhangBias = 0.72f;
         P.OverhangDepthCm = 2200.f;
 
-        P.GravityStrength = 1.20f;
-        P.GravityScale = 2.3f;
 
         B.BaseField3DStrengthCm = { 3000.f, 9000.f };
         B.BaseField3DScaleCm = { 18000.f, 30000.f };
@@ -303,8 +301,6 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
         B.OverhangDepthCm = { 800.f, 3200.f };
         B.OverhangFadeCm = { 18000.f, 32000.f };
 
-        B.GravityStrength = { 1.05f, 1.45f };
-        B.GravityScale = { 2.0f, 3.0f };
         break;
 
     case EMountainGenDifficulty::Normal:
@@ -321,8 +317,6 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
         P.OverhangBias = 0.60f;
         P.OverhangDepthCm = 2500.f;
 
-        P.GravityStrength = 1.10f;
-        P.GravityScale = 2.2f;
 
         B.BaseField3DStrengthCm = { 5000.f, 12000.f };
         B.BaseField3DScaleCm = { 14000.f, 24000.f };
@@ -334,8 +328,6 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
         B.OverhangDepthCm = { 1200.f, 4500.f };
         B.OverhangFadeCm = { 12000.f, 26000.f };
 
-        B.GravityStrength = { 0.95f, 1.30f };
-        B.GravityScale = { 1.6f, 2.8f };
         break;
 
     case EMountainGenDifficulty::Hard:
@@ -353,8 +345,6 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
         P.OverhangBias = 0.55f;
         P.OverhangDepthCm = 3500.f;
 
-        P.GravityStrength = 1.00f;
-        P.GravityScale = 2.0f;
 
         B.BaseField3DStrengthCm = { 9000.f, 16000.f };
         B.BaseField3DScaleCm = { 11000.f, 20000.f };
@@ -366,8 +356,6 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
         B.OverhangDepthCm = { 2000.f, 6500.f };
         B.OverhangFadeCm = { 9000.f, 20000.f };
 
-        B.GravityStrength = { 0.85f, 1.10f };
-        B.GravityScale = { 1.3f, 2.4f };
         break;
     }
 
@@ -389,8 +377,6 @@ void MGClampToDifficultyBounds(FMountainGenSettings& S)
     S.OverhangDepthCm = B.OverhangDepthCm.Clamp(S.OverhangDepthCm);
     S.OverhangFadeCm = B.OverhangFadeCm.Clamp(S.OverhangFadeCm);
 
-    S.GravityStrength = B.GravityStrength.Clamp(S.GravityStrength);
-    S.GravityScale = B.GravityScale.Clamp(S.GravityScale);
 }
 
 void MGApplyDifficultyPreset(FMountainGenSettings& S)
@@ -409,8 +395,6 @@ void MGApplyDifficultyPreset(FMountainGenSettings& S)
     S.OverhangDepthCm = P.OverhangDepthCm;
     S.OverhangFadeCm = P.OverhangFadeCm;
 
-    S.GravityStrength = P.GravityStrength;
-    S.GravityScale = P.GravityScale;
 
     MGClampToDifficultyBounds(S);
 }
