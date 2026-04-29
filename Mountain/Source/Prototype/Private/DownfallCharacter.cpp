@@ -29,6 +29,7 @@
 #include "MountainGenWorldActor.h"
 #include "MountainGenSettings.h"
 #include "Core/DownfallGameMode.h"
+#include "Core/DownfallGameInstance.h"
 #include "TimerManager.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
@@ -290,6 +291,23 @@ void ADownfallCharacter::BeginPlay()
         UE_LOG(LogDownFall, Warning, TEXT("RainDropMaterial not assigned - set in Blueprint (VFX|RainVFX)"));
     }
 
+    // Frost PP 머티리얼 초기화 (Weight=0, FrostIntensity=1 고정 — Weight로 On/Off 제어)
+    if (FrostMaterial && PostProcessComp)
+    {
+        FrostMaterialInstance = UMaterialInstanceDynamic::Create(FrostMaterial, this);
+        if (FrostMaterialInstance)
+        {
+            FrostMaterialInstance->SetScalarParameterValue(FName("FrostIntensity"), 1.0f);
+            PostProcessComp->Settings.WeightedBlendables.Array.Add(
+                FWeightedBlendable(0.0f, FrostMaterialInstance));
+            UE_LOG(LogDownFall, Log, TEXT("Frost Material Instance created (Weight=0, inactive)"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("FrostMaterial not assigned - set in Blueprint (VFX|BlizzardVFX)"));
+    }
+
     if (LeftHandMesh)
     {
         LeftHandMaterialInstance = LeftHandMesh->CreateDynamicMaterialInstance(0);
@@ -365,6 +383,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateLensDistortionEffect();
     UpdateVignetteEffect(DeltaTime);
     UpdateRainVFX(DeltaTime);
+    UpdateBlizzardVFX(DeltaTime);
     UpdateHandPositions(DeltaTime);
     UpdateHandStaminaVisuals(DeltaTime);
 
@@ -3521,10 +3540,15 @@ void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
         ClimbingElapsedTime += DeltaTime;
     }
 
-    // 2. 트리거 조건: 누적 시간 도달 + 아직 미활성
-    if (ClimbingElapsedTime >= RainTriggerTime && !bRainActive)
+    // 2. 스테이지 인덱스 기반 분기 — Stage 1만 Rain VFX 트리거
+    //    Stage 0(미설정)은 트리거 허용, Stage 2 이상은 Blizzard 담당
     {
-        ActivateRainVFX();
+        const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GetGameInstance());
+        const int32 StageIndex = DGI ? DGI->GetCurrentStageIndex() : 0;
+        if (StageIndex <= 1 && ClimbingElapsedTime >= RainTriggerTime && !bRainActive)
+        {
+            ActivateRainVFX();
+        }
     }
 
     // 3. PP Weight Lerp 처리
@@ -3642,4 +3666,227 @@ void ADownfallCharacter::DeactivateRainVFX()
     }
 
     UE_LOG(LogDownFall, Warning, TEXT("RainVFX DEACTIVATED"));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Blizzard Hallucination VFX
+// ─────────────────────────────────────────────────────────────────
+
+void ADownfallCharacter::ActivateBlizzardVFX()
+{
+    if (bBlizzardActive)
+    {
+        return;
+    }
+
+    bBlizzardActive = true;
+
+    // PP 서리 머티리얼 Weight Lerp 시작 (0 → BlizzardBlendWeight)
+    if (FrostMaterialInstance && PostProcessComp)
+    {
+        BlizzardLerpStartWeight  = BlizzardCurrentWeight;
+        BlizzardLerpElapsed      = 0.0f;
+        bBlizzardWeightLerping   = true;
+        UE_LOG(LogDownFall, Log, TEXT("ActivateBlizzardVFX: Frost PP Lerp started (→ %.2f, %.1fs)"),
+            BlizzardBlendWeight, BlizzardLerpDuration);
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("ActivateBlizzardVFX: FrostMaterialInstance is null"));
+    }
+
+    // AutoExposureBias Lerp 시작 (현재값 → BlizzardDarkenBias)
+    if (PostProcessComp)
+    {
+        BlizzardDarkenLerpStartBias  = PostProcessComp->Settings.AutoExposureBias;
+        BlizzardDarkenLerpTargetBias = BlizzardDarkenBias;
+        BlizzardDarkenLerpElapsed    = 0.0f;
+        bBlizzardDarkenLerping       = true;
+        PostProcessComp->Settings.bOverride_AutoExposureBias = true;
+    }
+
+    // Niagara 폭설 파티클 스폰 (SpawnAtLocation, 월드 공간)
+    if (BlizzardNiagaraSystem && IsValid(BlizzardNiagaraSystem))
+    {
+        if (!BlizzardNiagaraComponent || !IsValid(BlizzardNiagaraComponent))
+        {
+            const FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 300.f);
+            BlizzardNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+                GetWorld(),
+                BlizzardNiagaraSystem,
+                SpawnLocation,
+                FRotator::ZeroRotator,
+                FVector::OneVector,
+                true,
+                true,
+                ENCPoolMethod::None
+            );
+
+            if (BlizzardNiagaraComponent && IsValid(BlizzardNiagaraComponent))
+            {
+                BlizzardNiagaraComponent->SetCullDistance(0.f);
+                BlizzardNiagaraComponent->LDMaxDrawDistance = 0.f;
+                BlizzardNiagaraComponent->SetVariableFloat(FName("SpawnRate"), BlizzardSpawnRateMin);
+            }
+        }
+        else
+        {
+            BlizzardNiagaraComponent->Activate(true);
+            BlizzardNiagaraComponent->SetVariableFloat(FName("SpawnRate"), BlizzardSpawnRateMin);
+        }
+
+        UE_LOG(LogDownFall, Log, TEXT("ActivateBlizzardVFX: Niagara spawned at world location"));
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Log, TEXT("ActivateBlizzardVFX: BlizzardNiagaraSystem not assigned, PP only"));
+    }
+
+    // 점진 강화 타이머 초기화
+    BlizzardElapsedSinceActivation = 0.0f;
+
+    UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"),
+        ClimbingElapsedTime);
+}
+
+void ADownfallCharacter::DeactivateBlizzardVFX()
+{
+    if (!bBlizzardActive)
+    {
+        return;
+    }
+
+    bBlizzardActive = false;
+
+    // PP Weight=0 즉시 Off + Lerp 초기화
+    bBlizzardWeightLerping = false;
+    BlizzardLerpElapsed    = 0.0f;
+    BlizzardCurrentWeight  = 0.0f;
+
+    if (FrostMaterialInstance && PostProcessComp)
+    {
+        for (FWeightedBlendable& Blendable : PostProcessComp->Settings.WeightedBlendables.Array)
+        {
+            if (Blendable.Object == FrostMaterialInstance)
+            {
+                Blendable.Weight = 0.0f;
+                break;
+            }
+        }
+    }
+
+    // Niagara 비활성화
+    if (BlizzardNiagaraComponent && IsValid(BlizzardNiagaraComponent))
+    {
+        BlizzardNiagaraComponent->Deactivate();
+    }
+
+    // AutoExposureBias 복구 + Lerp 초기화
+    bBlizzardDarkenLerping    = false;
+    BlizzardDarkenLerpElapsed = 0.0f;
+    if (PostProcessComp)
+    {
+        PostProcessComp->Settings.AutoExposureBias = 0.0f;
+        PostProcessComp->Settings.bOverride_AutoExposureBias = false;
+    }
+
+    UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX DEACTIVATED"));
+}
+
+void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)
+{
+    // 1. 스테이지 인덱스 기반 분기
+    //    Stage 1 → Rain VFX (UpdateRainVFX에서 처리)
+    //    Stage 2 이상 → Blizzard VFX
+    //    Stage 0 (미설정) → 아무것도 하지 않음
+    const UGameInstance* GI = GetGameInstance();
+    const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GI);
+    if (!DGI)
+    {
+        return;
+    }
+
+    const int32 StageIndex = DGI->GetCurrentStageIndex();
+    if (StageIndex < 2)
+    {
+        return; // Stage 1은 Rain, Stage 2 이상만 Blizzard
+    }
+
+    // 2. 트리거 조건: 누적 등반 시간 도달 + 아직 미활성
+    if (ClimbingElapsedTime >= BlizzardTriggerTime && !bBlizzardActive)
+    {
+        ActivateBlizzardVFX();
+    }
+
+    // 3. PP Weight Lerp 처리 (0 → BlizzardBlendWeight)
+    if (bBlizzardWeightLerping && FrostMaterialInstance && PostProcessComp)
+    {
+        BlizzardLerpElapsed += DeltaTime;
+        const float Alpha = FMath::Clamp(
+            BlizzardLerpElapsed / FMath::Max(BlizzardLerpDuration, KINDA_SMALL_NUMBER),
+            0.0f, 1.0f
+        );
+        BlizzardCurrentWeight = FMath::Lerp(BlizzardLerpStartWeight, BlizzardBlendWeight, Alpha);
+
+        for (FWeightedBlendable& Blendable : PostProcessComp->Settings.WeightedBlendables.Array)
+        {
+            if (Blendable.Object == FrostMaterialInstance)
+            {
+                Blendable.Weight = BlizzardCurrentWeight;
+                break;
+            }
+        }
+
+        if (Alpha >= 1.0f)
+        {
+            bBlizzardWeightLerping = false;
+            BlizzardCurrentWeight  = BlizzardBlendWeight;
+            UE_LOG(LogDownFall, Log, TEXT("BlizzardVFX PP Lerp complete (Weight: %.2f)"), BlizzardCurrentWeight);
+        }
+    }
+
+    // 4. AutoExposureBias Lerp 처리
+    if (bBlizzardDarkenLerping && PostProcessComp)
+    {
+        BlizzardDarkenLerpElapsed += DeltaTime;
+        const float DarkenAlpha = FMath::Clamp(
+            BlizzardDarkenLerpElapsed / FMath::Max(BlizzardDarkenLerpDuration, KINDA_SMALL_NUMBER),
+            0.0f, 1.0f
+        );
+        PostProcessComp->Settings.AutoExposureBias = FMath::Lerp(
+            BlizzardDarkenLerpStartBias,
+            BlizzardDarkenLerpTargetBias,
+            DarkenAlpha
+        );
+
+        if (DarkenAlpha >= 1.0f)
+        {
+            bBlizzardDarkenLerping = false;
+            UE_LOG(LogDownFall, Log, TEXT("BlizzardDarken Lerp complete (Bias: %.2f)"),
+                PostProcessComp->Settings.AutoExposureBias);
+        }
+    }
+
+    // 5. 활성 중일 때만 위치/SpawnRate 처리
+    if (!bBlizzardActive || !BlizzardNiagaraComponent || !IsValid(BlizzardNiagaraComponent))
+    {
+        return;
+    }
+
+    // Niagara 위치 추적 (플레이어 XY + Z 오프셋)
+    const FVector NewLocation = FVector(
+        GetActorLocation().X,
+        GetActorLocation().Y,
+        GetActorLocation().Z + 300.0f
+    );
+    BlizzardNiagaraComponent->SetWorldLocation(NewLocation);
+
+    // SpawnRate 점진 강화 (Min → Max, BlizzardIntensifyDuration 초 동안)
+    BlizzardElapsedSinceActivation += DeltaTime;
+    const float IntensityAlpha = FMath::Clamp(
+        BlizzardElapsedSinceActivation / FMath::Max(BlizzardIntensifyDuration, KINDA_SMALL_NUMBER),
+        0.0f, 1.0f
+    );
+    const float CurrentSpawnRate = FMath::Lerp(BlizzardSpawnRateMin, BlizzardSpawnRateMax, IntensityAlpha);
+    BlizzardNiagaraComponent->SetVariableFloat(FName("SpawnRate"), CurrentSpawnRate);
 }

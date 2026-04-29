@@ -474,6 +474,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VFX|RainVFX")
     void DeactivateRainVFX();
 
+    UFUNCTION(BlueprintCallable, Category = "VFX|BlizzardVFX")
+    void ActivateBlizzardVFX();
+
+    UFUNCTION(BlueprintCallable, Category = "VFX|BlizzardVFX")
+    void DeactivateBlizzardVFX();
+
     // New Glitch System (Material-based)
     UPROPERTY(EditAnywhere, Category = "VFX|Glitch")
     TObjectPtr<UMaterial> GlitchMaterial;
@@ -655,6 +661,69 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "VFX|RainVFX")
     bool bRainActive = false;
 
+    // ── Blizzard Hallucination VFX ──────────────────────────────
+    // Stage 2 이상에서 활성화. Rain과 동시 발생 없음.
+    // 기획서: Downfall Mountain 폭설 환각 VFX
+
+    UPROPERTY(EditAnywhere, Category = "VFX|BlizzardVFX")
+    TObjectPtr<UMaterial> FrostMaterial;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> FrostMaterialInstance;
+
+    UPROPERTY(EditAnywhere, Category = "VFX|BlizzardVFX")
+    TObjectPtr<UNiagaraSystem> BlizzardNiagaraSystem;
+
+    UPROPERTY()
+    TObjectPtr<UNiagaraComponent> BlizzardNiagaraComponent;
+
+    // 트리거 시간 (초). 기본 300초 = 5분
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX",
+        meta = (ClampMin = "0.0"))
+    float BlizzardTriggerTime = 300.0f;
+
+    // PP 서리 블렌딩 가중치 (0.0~1.0)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float BlizzardBlendWeight = 0.15f;
+
+    // FrostIntensity 즉시 전환 (Lerp 없음 — 기획서 명시)
+    // PP 가중치 Lerp 지속 시간 (초)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX",
+        meta = (ClampMin = "0.1"))
+    float BlizzardLerpDuration = 1.5f;
+
+    // AutoExposureBias 어두워지는 강도
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX",
+        meta = (ClampMin = "-5.0", ClampMax = "0.0"))
+    float BlizzardDarkenBias = -1.0f;
+
+    // AutoExposureBias Lerp 지속 시간 (초)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX",
+        meta = (ClampMin = "0.1"))
+    float BlizzardDarkenLerpDuration = 4.0f;
+
+    // SpawnRate 최솟값 (활성화 직후)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX",
+        meta = (ClampMin = "1.0"))
+    float BlizzardSpawnRateMin = 50.0f;
+
+    // SpawnRate 최댓값
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX",
+        meta = (ClampMin = "1.0"))
+    float BlizzardSpawnRateMax = 400.0f;
+
+    // SpawnRate 점진 강화 시간 (초)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX",
+        meta = (ClampMin = "1.0"))
+    float BlizzardIntensifyDuration = 20.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|BlizzardVFX")
+    bool bBlizzardActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|BlizzardVFX")
+    float BlizzardCurrentWeight = 0.0f;
+
     // PP 머티리얼 블렌딩 가중치 (0.0~1.0, 에디터에서 세기 조절)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
         meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -834,6 +903,7 @@ private:
     void UpdateDirtMaskEffect();
     void UpdateEdgeBlurEffect();
     void UpdateRainVFX(float DeltaTime);  // ClimbingElapsedTime 누적 + 트리거 체크
+    void UpdateBlizzardVFX(float DeltaTime);
     void ApplyDirtMaskParameters(bool bForce = false);
     void ApplyEdgeBlurParameters(bool bForce = false);
     void RefreshLowFrequencyUpdates();
@@ -892,4 +962,14 @@ private:
     float RainDarkenLerpElapsed = 0.0f;
     float RainDarkenLerpStartBias = 0.0f;
     float RainDarkenLerpTargetBias = 0.0f;
+    
+    // Blizzard VFX 내부 상태
+    bool  bBlizzardWeightLerping       = false;
+    float BlizzardLerpElapsed          = 0.0f;
+    float BlizzardLerpStartWeight      = 0.0f;
+    float BlizzardElapsedSinceActivation = 0.0f;
+    bool  bBlizzardDarkenLerping       = false;
+    float BlizzardDarkenLerpElapsed    = 0.0f;
+    float BlizzardDarkenLerpStartBias  = 0.0f;
+    float BlizzardDarkenLerpTargetBias = 0.0f;
 };

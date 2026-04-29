@@ -78,6 +78,17 @@ public:
     UFUNCTION(BlueprintPure, Category = "Save")
     bool IsNewGameMode() const { return bIsNewGameMode; }
 
+    // ========== Stage Index ==========
+
+    // 현재 스테이지 인덱스 설정 (1 = Stage_1, 2 = Stage_2, ...)
+    // 레벨 로드 시 GameMode 또는 Blueprint에서 호출
+    UFUNCTION(BlueprintCallable, Category = "Stage")
+    void SetCurrentStageIndex(int32 Index) { CurrentStageIndex = Index; }
+
+    // 현재 스테이지 인덱스 반환
+    UFUNCTION(BlueprintPure, Category = "Stage")
+    int32 GetCurrentStageIndex() const { return CurrentStageIndex; }
+
 protected:
     // 스테이지 기록 배열
     UPROPERTY(BlueprintReadOnly, Category = "Stage")
@@ -89,6 +100,11 @@ protected:
 
     // NewGame 모드 플래그
     bool bIsNewGameMode = false;
+
+    // 현재 스테이지 인덱스 (1-based, 0 = 미설정)
+    // VFX 분기, 난이도 조정 등에 활용
+    UPROPERTY(BlueprintReadOnly, Category = "Stage")
+    int32 CurrentStageIndex = 0;
 
     // 세이브 슬롯 이름 생성
     FString GetSlotName(int32 SlotIndex) const;
