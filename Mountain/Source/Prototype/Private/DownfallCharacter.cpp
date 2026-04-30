@@ -361,6 +361,16 @@ void ADownfallCharacter::BeginPlay()
     UE_LOG(LogDownFall, Log, TEXT("Initial ground height: %.2f"), InitialGroundHeight);
 
     StartLowFrequencyUpdatesIfNeeded();
+    
+    // PostProcessComp에서 Motion Blur Override
+    // PostProcessVolume보다 우선순위가 높아 플레이어 시점의 Motion Blur를 차단
+    // 현재는 임시로 주석처리 차후 PostProcess 관리에 사용될 여지있음.
+    /*if (PostProcessComp)
+    {
+        PostProcessComp->Settings.bOverride_MotionBlurAmount = true;
+        PostProcessComp->Settings.MotionBlurAmount = 0.0f;
+        UE_LOG(LogDownFall, Log, TEXT("Motion Blur disabled via PostProcessComp override"));
+    }*/
 }
 
 void ADownfallCharacter::Tick(float DeltaTime)
