@@ -402,23 +402,58 @@ uint32 AMountainGenWorldActor::ComputeSettingsHash_Editor() const
 {
     uint32 H = 0;
 
+    // 재현성
     H = HashCombine(H, ::GetTypeHash(Settings.Seed));
+
+    // 난이도 / AutoTune
     H = HashCombine(H, ::GetTypeHash((uint8)Settings.Difficulty));
     H = HashCombine(H, ::GetTypeHash(Settings.bAutoTune));
+    H = HashCombine(H, ::GetTypeHash(Settings.FeedbackIters));
     H = HashCombine(H, ::GetTypeHash(Settings.SeedSearchTries));
     H = HashCombine(H, ::GetTypeHash(Settings.bRetrySeedUntilSatisfied));
     H = HashCombine(H, ::GetTypeHash(Settings.MaxSeedAttempts));
+    H = HashCombine(H, ::GetTypeHash(Settings.Targets.OverhangMin));
+    H = HashCombine(H, ::GetTypeHash(Settings.Targets.OverhangMax));
+    H = HashCombine(H, ::GetTypeHash(Settings.Targets.SteepMin));
+    H = HashCombine(H, ::GetTypeHash(Settings.Targets.SteepMax));
 
+    // Voxel / Mesh
     H = HashCombine(H, ::GetTypeHash(Settings.VoxelSizeCm));
     H = HashCombine(H, ::GetTypeHash(Settings.IsoLevel));
+    H = HashCombine(H, ::GetTypeHash(Settings.bCreateCollision));
 
-    H = HashCombine(H, ::GetTypeHash(Settings.CliffThicknessCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.CliffDepthCm));
+    // 기본 위치 / 절벽 크기
+    H = HashCombine(H, ::GetTypeHash(Settings.BaseHeightCm));
     H = HashCombine(H, ::GetTypeHash(Settings.CliffHalfWidthCm));
     H = HashCombine(H, ::GetTypeHash(Settings.CliffHeightCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.BaseHeightCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.CliffThicknessCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.CliffDepthCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.FrontBandDepthCm));
 
-    H = HashCombine(H, ::GetTypeHash(Settings.bCreateCollision));
+    // 밀도장 / 디테일
+    H = HashCombine(H, ::GetTypeHash(Settings.BaseField3DStrengthCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.BaseField3DScaleCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.BaseField3DOctaves));
+    H = HashCombine(H, ::GetTypeHash(Settings.DetailScaleCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.DetailOctaves));
+
+    // 오버행 / 언더컷
+    H = HashCombine(H, ::GetTypeHash(Settings.VolumeStrength));
+    H = HashCombine(H, ::GetTypeHash(Settings.OverhangScaleCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.OverhangBias));
+    H = HashCombine(H, ::GetTypeHash(Settings.OverhangDepthCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.OverhangFadeCm));
+
+    // Metrics
+    H = HashCombine(H, ::GetTypeHash(Settings.MetricsStepCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.MetricsSamplesPerTry));
+    H = HashCombine(H, ::GetTypeHash(Settings.SteepDotOverride));
+
+    // 메시 후처리
+    H = HashCombine(H, ::GetTypeHash(bEnablePostWeld));
+    H = HashCombine(H, ::GetTypeHash(PostWeldEpsilonScale));
+    H = HashCombine(H, ::GetTypeHash(bEnableIslandCull));
+    H = HashCombine(H, ::GetTypeHash(MinTrisToKeepAfterCull));
 
     return H;
 }
