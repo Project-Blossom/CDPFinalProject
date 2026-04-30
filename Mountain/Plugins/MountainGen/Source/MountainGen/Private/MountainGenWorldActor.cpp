@@ -291,6 +291,184 @@ static void MG_CullMeshIslands(FChunkMeshData& Out, int32 MinTrisToKeep, bool bK
     Out = MoveTemp(New);
 }
 
+
+// ============================================================
+// Remove bad triangles
+// ============================================================
+
+static void MG_RemoveBadTriangles(FChunkMeshData& M, float MinAreaCm2, float MinEdgeCm)
+{
+    const int32 V = M.Vertices.Num();
+    const int32 I = M.Triangles.Num();
+
+    if (V <= 0 || I < 3)
+    {
+        return;
+    }
+
+    MinAreaCm2 = FMath::Max(0.001f, MinAreaCm2);
+    MinEdgeCm = FMath::Max(0.001f, MinEdgeCm);
+
+    const float MinEdge2 = MinEdgeCm * MinEdgeCm;
+
+    TArray<int32> NewTris;
+    NewTris.Reserve(I);
+
+    const int32 NumTris = I / 3;
+
+    for (int32 t = 0; t < NumTris; ++t)
+    {
+        const int32 IA = M.Triangles[t * 3 + 0];
+        const int32 IB = M.Triangles[t * 3 + 1];
+        const int32 IC = M.Triangles[t * 3 + 2];
+
+        if (!M.Vertices.IsValidIndex(IA) ||
+            !M.Vertices.IsValidIndex(IB) ||
+            !M.Vertices.IsValidIndex(IC))
+        {
+            continue;
+        }
+
+        if (IA == IB || IB == IC || IC == IA)
+        {
+            continue;
+        }
+
+        const FVector A = M.Vertices[IA];
+        const FVector B = M.Vertices[IB];
+        const FVector C = M.Vertices[IC];
+
+        const FVector AB = B - A;
+        const FVector BC = C - B;
+        const FVector CA = A - C;
+
+        const float AB2 = AB.SizeSquared();
+        const float BC2 = BC.SizeSquared();
+        const float CA2 = CA.SizeSquared();
+
+        // 너무 짧은 변이 있는 삼각형은 노멀/섀도우 계산에서 튈 수 있다.
+        if (AB2 < MinEdge2 || BC2 < MinEdge2 || CA2 < MinEdge2)
+        {
+            continue;
+        }
+
+        // 면적이 거의 0인 퇴화 삼각형 제거.
+        // Cross.Size()는 실제 삼각형 면적의 2배다.
+        const FVector Cross = FVector::CrossProduct(AB, C - A);
+        const float Area2 = Cross.Size();
+
+        if (Area2 < MinAreaCm2 * 2.0f)
+        {
+            continue;
+        }
+
+        NewTris.Add(IA);
+        NewTris.Add(IB);
+        NewTris.Add(IC);
+    }
+
+    M.Triangles = MoveTemp(NewTris);
+}
+
+// ============================================================
+// Recompute normals / tangents after mesh topology changes
+// ============================================================
+
+static void MG_RecomputeNormalsAndTangents(FChunkMeshData& M)
+{
+    const int32 V = M.Vertices.Num();
+    const int32 I = M.Triangles.Num();
+
+    if (V <= 0 || I < 3)
+    {
+        return;
+    }
+
+    const TArray<FVector> OldNormals = M.Normals;
+
+    M.Normals.SetNumZeroed(V);
+    M.Tangents.SetNumZeroed(V);
+
+    const int32 NumTris = I / 3;
+
+    for (int32 t = 0; t < NumTris; ++t)
+    {
+        const int32 IA = M.Triangles[t * 3 + 0];
+        const int32 IB = M.Triangles[t * 3 + 1];
+        const int32 IC = M.Triangles[t * 3 + 2];
+
+        if (!M.Vertices.IsValidIndex(IA) ||
+            !M.Vertices.IsValidIndex(IB) ||
+            !M.Vertices.IsValidIndex(IC))
+        {
+            continue;
+        }
+
+        const FVector A = M.Vertices[IA];
+        const FVector B = M.Vertices[IB];
+        const FVector C = M.Vertices[IC];
+
+        const FVector AB = B - A;
+        const FVector AC = C - A;
+
+        FVector FaceNormal = FVector::CrossProduct(AB, AC);
+
+        if (!FaceNormal.Normalize())
+        {
+            continue;
+        }
+
+        FVector ReferenceNormal = FVector::ZeroVector;
+
+        if (OldNormals.IsValidIndex(IA)) ReferenceNormal += OldNormals[IA];
+        if (OldNormals.IsValidIndex(IB)) ReferenceNormal += OldNormals[IB];
+        if (OldNormals.IsValidIndex(IC)) ReferenceNormal += OldNormals[IC];
+
+        if (ReferenceNormal.Normalize())
+        {
+            if (FVector::DotProduct(FaceNormal, ReferenceNormal) < 0.f)
+            {
+                FaceNormal *= -1.f;
+            }
+        }
+
+        M.Normals[IA] += FaceNormal;
+        M.Normals[IB] += FaceNormal;
+        M.Normals[IC] += FaceNormal;
+    }
+
+    for (int32 i = 0; i < V; ++i)
+    {
+        if (!M.Normals[i].Normalize())
+        {
+            if (OldNormals.IsValidIndex(i) && OldNormals[i].SizeSquared() > KINDA_SMALL_NUMBER)
+            {
+                M.Normals[i] = OldNormals[i].GetSafeNormal();
+            }
+            else
+            {
+                M.Normals[i] = FVector::UpVector;
+            }
+        }
+
+        // 절벽 수직면에서도 안정적으로 동작하는 탄젠트 생성.
+        // UpVector와 거의 평행하면 RightVector를 보조축으로 사용한다.
+        FVector TangentX = FVector::CrossProduct(FVector::UpVector, M.Normals[i]);
+
+        if (TangentX.SizeSquared() < KINDA_SMALL_NUMBER)
+        {
+            TangentX = FVector::CrossProduct(FVector::RightVector, M.Normals[i]);
+        }
+
+        if (!TangentX.Normalize())
+        {
+            TangentX = FVector::ForwardVector;
+        }
+
+        M.Tangents[i] = FProcMeshTangent(TangentX, false);
+    }
+}
+
 // ============================================================
 // Actor
 // ============================================================
@@ -937,6 +1115,17 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             MG_CullMeshIslands(MeshData, MinTrisToKeepAfterCull, true);
         }
 
+
+        // 특정 위치의 이상 음영 원인이 되는 바늘형/퇴화 삼각형을 먼저 제거한다.
+        // 기준은 VoxelSize에 비례시켜 형상 손상을 제한한다.
+        MG_RemoveBadTriangles(
+            MeshData,
+            FMath::Square(S.VoxelSizeCm * 0.08f),
+            S.VoxelSizeCm * 0.03f
+        );
+
+        MG_RecomputeNormalsAndTangents(MeshData);
+
         if (bDebugPipeline && bEnableIslandCull)
         {
             DebugPrintGT(
@@ -1171,6 +1360,16 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     );
                 }
             }
+
+
+            // Runtime에서도 Editor와 동일하게 불량 삼각형을 제거한 뒤 노멀/탄젠트를 재계산한다.
+            MG_RemoveBadTriangles(
+                MeshData,
+                FMath::Square(S.VoxelSizeCm * 0.08f),
+                S.VoxelSizeCm * 0.03f
+            );
+
+            MG_RecomputeNormalsAndTangents(MeshData);
 
             // ---- GameThread apply ----
             AsyncTask(ENamedThreads::GameThread,
