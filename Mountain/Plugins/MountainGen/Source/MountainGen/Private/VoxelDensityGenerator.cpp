@@ -91,12 +91,16 @@ void FVoxelDensityGenerator::InitCachedConstants()
     C.Base3DOct = FMath::Clamp(S.BaseField3DOctaves, 1, 8);
 
     // Detail
-    C.DetailScale = FMath::Max(600.f, S.DetailScaleCm);
+    // Detail scale is constrained by voxel size to avoid sub-voxel noise that creates jagged normals.
+    C.DetailScale = FMath::Max(C.Voxel * 4.f, S.DetailScaleCm);
+    C.DetailAmp = FMath::Clamp(S.DetailStrengthCm, 0.f, 12000.f);
     C.DetailOct = FMath::Clamp(S.DetailOctaves, 1, 4);
 
     // Roughness near surface
     C.RoughBand = FMath::Max(150.f, C.Voxel * 3.f);
-    C.RoughScale = FMath::Max(300.f, S.DetailScaleCm * 0.35f);
+    C.RoughScale = FMath::Max(C.Voxel * 3.f, C.DetailScale * 0.45f);
+    C.RoughAmp = FMath::Clamp(S.SurfaceRoughnessStrengthCm, 0.f, 8000.f);
+    C.RoughMaskStrength = FMath::Clamp(S.SurfaceRoughnessMaskStrength, 0.f, 1.f);
 }
 
 float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
@@ -164,13 +168,13 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     // Detail
     // -----------------------------
     {
-        if (BaseFieldAmp != 0.f)
+        if (C.DetailAmp != 0.f)
         {
             const float Scale = C.DetailScale;
             const int32 Oct = C.DetailOct;
 
             const float n = FBM3D(Domain / Scale, Oct, 2.0f, 0.55f);
-            density += n * (0.18f * BaseFieldAmp);
+            density += n * C.DetailAmp;
         }
     }
 
@@ -181,11 +185,14 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
         const float Band = C.RoughBand;
         const float surfMask = 1.f - SmoothStep(0.f, Band, FMath::Abs(density - Iso));
 
-        if (surfMask > 0.f && BaseFieldAmp != 0.f)
+        if (surfMask > 0.f && C.RoughAmp != 0.f)
         {
             const float Scale = C.RoughScale;
             const float n = FBM3D(Domain / Scale, 3, 2.0f, 0.55f);
-            density += n * (0.10f * BaseFieldAmp) * surfMask;
+
+            // Higher mask strength suppresses thin noisy transitions around the iso-surface.
+            const float SafeMask = FMath::Pow(surfMask, 1.0f + C.RoughMaskStrength * 2.0f);
+            density += n * C.RoughAmp * SafeMask;
         }
     }
 

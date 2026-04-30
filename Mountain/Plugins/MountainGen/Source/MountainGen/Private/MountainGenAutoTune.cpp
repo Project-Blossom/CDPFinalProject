@@ -142,7 +142,14 @@ struct FMGMetricsContext
         const FVector Up(0, 0, 1);
 
         // 병렬 누적용 (원자 연산 피하려고 TLS 합산)
-        struct FAcc { int32 Valid = 0, Over = 0, Steep = 0; };
+        struct FAcc
+        {
+            int32 Valid = 0;
+            int32 Over = 0;
+            int32 Steep = 0;
+            int32 Rough = 0;
+            int32 ShadowRisk = 0;
+        };
         TArray<FAcc> Accs;
         const int32 NumWorkers = FMath::Max(1, FTaskGraphInterface::Get().GetNumWorkerThreads());
         Accs.SetNumZeroed(NumWorkers + 1);
@@ -200,6 +207,26 @@ struct FMGMetricsContext
 
                 const float UpDot = FVector::DotProduct(N, Up);
 
+                // Surface quality metric:
+                // Compare the hit normal with nearby normals in Y/Z directions.
+                // This catches high-frequency tearing that Overhang/Steep alone cannot distinguish.
+                const float qStep = FMath::Max(e * 1.5f, Voxel * 0.5f);
+                const FVector Ny = EstimateNormalCentralDiff(Gen, Hit + FVector(0.f, qStep, 0.f), e);
+                const FVector Nz = EstimateNormalCentralDiff(Gen, Hit + FVector(0.f, 0.f, qStep), e);
+
+                float NormalDelta = 0.f;
+                if (!Ny.IsNearlyZero())
+                {
+                    NormalDelta = FMath::Max(NormalDelta, 1.f - FMath::Clamp(FVector::DotProduct(N, Ny), -1.f, 1.f));
+                }
+                if (!Nz.IsNearlyZero())
+                {
+                    NormalDelta = FMath::Max(NormalDelta, 1.f - FMath::Clamp(FVector::DotProduct(N, Nz), -1.f, 1.f));
+                }
+
+                const float RoughDeltaThreshold = 0.18f;
+                const float ShadowDeltaThreshold = 0.30f;
+
                 const float NxAbs = FMath::Abs(N.X);
                 const float NyAbs = FMath::Abs(N.Y);
                 const bool bIsBaseCliff =
@@ -212,17 +239,29 @@ struct FMGMetricsContext
 
                 A.Valid++;
 
+                if (NormalDelta >= RoughDeltaThreshold)
+                {
+                    A.Rough++;
+                }
+
+                if (NormalDelta >= ShadowDeltaThreshold)
+                {
+                    A.ShadowRisk++;
+                }
+
                 static constexpr float OverhangUpDotThreshold = -0.15f;
                 if (UpDot <= OverhangUpDotThreshold) A.Over++;
                 if (FMath::Abs(UpDot) <= SteepDot)   A.Steep++;
             });
 
-        int32 Valid = 0, Over = 0, Steep = 0;
+        int32 Valid = 0, Over = 0, Steep = 0, Rough = 0, ShadowRisk = 0;
         for (const FAcc& A : Accs)
         {
             Valid += A.Valid;
             Over += A.Over;
             Steep += A.Steep;
+            Rough += A.Rough;
+            ShadowRisk += A.ShadowRisk;
         }
 
         M.SurfaceNearSamples = Valid;
@@ -230,11 +269,15 @@ struct FMGMetricsContext
         {
             M.OverhangRatio = (float)Over / (float)Valid;
             M.SteepRatio = (float)Steep / (float)Valid;
+            M.RoughnessRatio = (float)Rough / (float)Valid;
+            M.ShadowRiskRatio = (float)ShadowRisk / (float)Valid;
         }
         else
         {
             M.OverhangRatio = 0.f;
             M.SteepRatio = 0.f;
+            M.RoughnessRatio = 0.f;
+            M.ShadowRiskRatio = 0.f;
         }
 
         return M;
@@ -279,10 +322,16 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
     case EMountainGenDifficulty::Easy:
         P.Targets.OverhangMin = 0.12f; P.Targets.OverhangMax = 0.38f;
         P.Targets.SteepMin = 0.15f; P.Targets.SteepMax = 0.35f;
+        P.Targets.RoughnessMax = 0.12f;
+        P.Targets.ShadowRiskMax = 0.035f;
 
         P.BaseField3DStrengthCm = 6500.f;
         P.BaseField3DScaleCm = 22000.f;
         P.DetailScaleCm = 8000.f;
+        P.DetailStrengthCm = 520.f;
+        P.SurfaceRoughnessStrengthCm = 160.f;
+        P.SurfaceRoughnessMaskStrength = 0.88f;
+        P.SurfaceQualityScoreWeight = 1.60f;
 
         P.VolumeStrength = 0.35f;
         P.OverhangScaleCm = 14000.f;
@@ -294,6 +343,10 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
         B.BaseField3DStrengthCm = { 3000.f, 9000.f };
         B.BaseField3DScaleCm = { 18000.f, 30000.f };
         B.DetailScaleCm = { 6500.f, 14000.f };
+        B.DetailStrengthCm = { 300.f, 700.f };
+        B.SurfaceRoughnessStrengthCm = { 0.f, 220.f };
+        B.SurfaceRoughnessMaskStrength = { 0.75f, 0.95f };
+        B.SurfaceQualityScoreWeight = { 1.20f, 2.00f };
 
         B.VolumeStrength = { 0.10f, 0.55f };
         B.OverhangScaleCm = { 10000.f, 20000.f };
@@ -306,10 +359,16 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
     case EMountainGenDifficulty::Normal:
         P.Targets.OverhangMin = 0.18f; P.Targets.OverhangMax = 0.45f;
         P.Targets.SteepMin = 0.18f; P.Targets.SteepMax = 0.40f;
+        P.Targets.RoughnessMax = 0.16f;
+        P.Targets.ShadowRiskMax = 0.055f;
 
         P.BaseField3DStrengthCm = 8500.f;
         P.BaseField3DScaleCm = 18000.f;
         P.DetailScaleCm = 7000.f;
+        P.DetailStrengthCm = 760.f;
+        P.SurfaceRoughnessStrengthCm = 220.f;
+        P.SurfaceRoughnessMaskStrength = 0.78f;
+        P.SurfaceQualityScoreWeight = 1.40f;
 
         P.VolumeStrength = 0.55f;
         P.OverhangScaleCm = 10000.f;
@@ -321,6 +380,10 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
         B.BaseField3DStrengthCm = { 5000.f, 12000.f };
         B.BaseField3DScaleCm = { 14000.f, 24000.f };
         B.DetailScaleCm = { 5000.f, 10000.f };
+        B.DetailStrengthCm = { 500.f, 1000.f };
+        B.SurfaceRoughnessStrengthCm = { 100.f, 320.f };
+        B.SurfaceRoughnessMaskStrength = { 0.65f, 0.90f };
+        B.SurfaceQualityScoreWeight = { 1.00f, 1.80f };
 
         B.VolumeStrength = { 0.25f, 0.9f };
         B.OverhangScaleCm = { 7000.f, 14000.f };
@@ -334,10 +397,16 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
     default:
         P.Targets.OverhangMin = 0.28f; P.Targets.OverhangMax = 0.60f;
         P.Targets.SteepMin = 0.25f; P.Targets.SteepMax = 0.55f;
+        P.Targets.RoughnessMax = 0.22f;
+        P.Targets.ShadowRiskMax = 0.080f;
 
         P.BaseField3DStrengthCm = 12000.f;
         P.BaseField3DScaleCm = 16000.f;
         P.DetailScaleCm = 6000.f;
+        P.DetailStrengthCm = 1100.f;
+        P.SurfaceRoughnessStrengthCm = 320.f;
+        P.SurfaceRoughnessMaskStrength = 0.70f;
+        P.SurfaceQualityScoreWeight = 1.10f;
 
         P.VolumeStrength = 1.00f;
         P.OverhangScaleCm = 8000.f;
@@ -349,6 +418,10 @@ FMGDifficultyPreset MGMakeDifficultyPreset(EMountainGenDifficulty D)
         B.BaseField3DStrengthCm = { 9000.f, 16000.f };
         B.BaseField3DScaleCm = { 11000.f, 20000.f };
         B.DetailScaleCm = { 3500.f, 8000.f };
+        B.DetailStrengthCm = { 800.f, 1500.f };
+        B.SurfaceRoughnessStrengthCm = { 160.f, 450.f };
+        B.SurfaceRoughnessMaskStrength = { 0.55f, 0.85f };
+        B.SurfaceQualityScoreWeight = { 0.80f, 1.50f };
 
         B.VolumeStrength = { 0.75f, 1.4f };
         B.OverhangScaleCm = { 5000.f, 11000.f };
@@ -370,6 +443,10 @@ void MGClampToDifficultyBounds(FMountainGenSettings& S)
     S.BaseField3DStrengthCm = B.BaseField3DStrengthCm.Clamp(S.BaseField3DStrengthCm);
     S.BaseField3DScaleCm = B.BaseField3DScaleCm.Clamp(S.BaseField3DScaleCm);
     S.DetailScaleCm = B.DetailScaleCm.Clamp(S.DetailScaleCm);
+    S.DetailStrengthCm = B.DetailStrengthCm.Clamp(S.DetailStrengthCm);
+    S.SurfaceRoughnessStrengthCm = B.SurfaceRoughnessStrengthCm.Clamp(S.SurfaceRoughnessStrengthCm);
+    S.SurfaceRoughnessMaskStrength = B.SurfaceRoughnessMaskStrength.Clamp(S.SurfaceRoughnessMaskStrength);
+    S.SurfaceQualityScoreWeight = B.SurfaceQualityScoreWeight.Clamp(S.SurfaceQualityScoreWeight);
 
     S.VolumeStrength = B.VolumeStrength.Clamp(S.VolumeStrength);
     S.OverhangScaleCm = B.OverhangScaleCm.Clamp(S.OverhangScaleCm);
@@ -388,6 +465,10 @@ void MGApplyDifficultyPreset(FMountainGenSettings& S)
     S.BaseField3DStrengthCm = P.BaseField3DStrengthCm;
     S.BaseField3DScaleCm = P.BaseField3DScaleCm;
     S.DetailScaleCm = P.DetailScaleCm;
+    S.DetailStrengthCm = P.DetailStrengthCm;
+    S.SurfaceRoughnessStrengthCm = P.SurfaceRoughnessStrengthCm;
+    S.SurfaceRoughnessMaskStrength = P.SurfaceRoughnessMaskStrength;
+    S.SurfaceQualityScoreWeight = P.SurfaceQualityScoreWeight;
 
     S.VolumeStrength = P.VolumeStrength;
     S.OverhangScaleCm = P.OverhangScaleCm;
@@ -426,6 +507,8 @@ void MGAutoTuneIntentParams(
 
         const float eOver = (TargetOver - M.OverhangRatio);
         const float eSteep = (TargetSteep - M.SteepRatio);
+        const float eRough = FMath::Max(0.f, M.RoughnessRatio - InOutS.Targets.RoughnessMax);
+        const float eShadow = FMath::Max(0.f, M.ShadowRiskRatio - InOutS.Targets.ShadowRiskMax);
 
         const float kO = 0.35f;
         const float kS = 0.25f;
@@ -438,11 +521,24 @@ void MGAutoTuneIntentParams(
         InOutS.BaseField3DStrengthCm += (kS * eSteep) * 4500.f;
         InOutS.DetailScaleCm -= (kS * eSteep) * 1800.f;
 
+        // If surface quality is poor, reduce high-frequency amplitude first.
+        // This keeps difficulty shape controlled by Overhang/Steep while stabilizing normals and shadows.
+        if (eRough > 0.f || eShadow > 0.f)
+        {
+            const float QualityError = eRough + eShadow * 1.5f;
+            InOutS.DetailStrengthCm -= QualityError * 1200.f;
+            InOutS.SurfaceRoughnessStrengthCm -= QualityError * 900.f;
+            InOutS.SurfaceRoughnessMaskStrength += QualityError * 0.40f;
+            InOutS.DetailScaleCm += QualityError * 2200.f;
+        }
+
         MGClampToDifficultyBounds(InOutS);
 
         const bool bOverOK = InRange(M.OverhangRatio, InOutS.Targets.OverhangMin, InOutS.Targets.OverhangMax);
         const bool bSteepOK = InRange(M.SteepRatio, InOutS.Targets.SteepMin, InOutS.Targets.SteepMax);
-        if (bOverOK && bSteepOK) break;
+        const bool bRoughOK = (M.RoughnessRatio <= InOutS.Targets.RoughnessMax);
+        const bool bShadowOK = (M.ShadowRiskRatio <= InOutS.Targets.ShadowRiskMax);
+        if (bOverOK && bSteepOK && bRoughOK && bShadowOK) break;
     }
 }
 
@@ -490,10 +586,18 @@ int32 MGSearchSeedForTargets(
 
         const bool bOverOK = InRange(M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax);
         const bool bSteepOK = InRange(M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax);
+        const bool bRoughOK = (M.RoughnessRatio <= Cand.Targets.RoughnessMax);
+        const bool bShadowOK = (M.ShadowRiskRatio <= Cand.Targets.ShadowRiskMax);
 
-        const float Score =
+        const float ShapeScore =
             ScoreToRange(M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax) +
             ScoreToRange(M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax);
+
+        const float QualityScore =
+            FMath::Max(0.f, M.RoughnessRatio - Cand.Targets.RoughnessMax) +
+            FMath::Max(0.f, M.ShadowRiskRatio - Cand.Targets.ShadowRiskMax) * 1.5f;
+
+        const float Score = ShapeScore + Cand.SurfaceQualityScoreWeight * QualityScore;
 
         if (Score < BestScore)
         {
@@ -509,16 +613,19 @@ int32 MGSearchSeedForTargets(
             if (bPrint)
             {
                 const FString Line = FString::Printf(
-                    TEXT("seed=%d | Over=%.3f [%.2f~%.2f] %s | Steep=%.3f [%.2f~%.2f] %s | Near=%d | Score=%.3f"),
+                    TEXT("seed=%d | Over=%.3f [%.2f~%.2f] %s | Steep=%.3f [%.2f~%.2f] %s | Rough=%.3f <= %.3f %s | Shadow=%.3f <= %.3f %s | Near=%d | Score=%.3f"),
                     Seed,
                     M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax, bOverOK ? TEXT("OK") : TEXT("FAIL"),
                     M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax, bSteepOK ? TEXT("OK") : TEXT("FAIL"),
+                    M.RoughnessRatio, Cand.Targets.RoughnessMax, bRoughOK ? TEXT("OK") : TEXT("FAIL"),
+                    M.ShadowRiskRatio, Cand.Targets.ShadowRiskMax, bShadowOK ? TEXT("OK") : TEXT("FAIL"),
                     M.SurfaceNearSamples,
                     Score
                 );
 
                 FColor C = FColor::Red;
-                if (bOverOK && bSteepOK) C = FColor::Green;
+                if (bOverOK && bSteepOK && bRoughOK && bShadowOK) C = FColor::Green;
+                else if (bOverOK && bSteepOK) C = FColor::Orange;
                 else if (!bOverOK && bSteepOK) C = FColor::Blue;
                 else if (bOverOK && !bSteepOK) C = FColor::Yellow;
 
@@ -526,15 +633,17 @@ int32 MGSearchSeedForTargets(
             }
         }
 
-        if (bOverOK && bSteepOK)
+        if (bOverOK && bSteepOK && bRoughOK && bShadowOK)
         {
             if (bDebug && DebugPrint)
             {
                 const FString Line = FString::Printf(
-                    TEXT("seed=%d | Over=%.3f [%.2f~%.2f] %s | Steep=%.3f [%.2f~%.2f] %s | Near=%d | Score=%.3f"),
+                    TEXT("seed=%d | Over=%.3f [%.2f~%.2f] OK | Steep=%.3f [%.2f~%.2f] OK | Rough=%.3f <= %.3f OK | Shadow=%.3f <= %.3f OK | Near=%d | Score=%.3f"),
                     Seed,
-                    M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax, TEXT("OK"),
-                    M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax, TEXT("OK"),
+                    M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax,
+                    M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax,
+                    M.RoughnessRatio, Cand.Targets.RoughnessMax,
+                    M.ShadowRiskRatio, Cand.Targets.ShadowRiskMax,
                     M.SurfaceNearSamples,
                     Score
                 );

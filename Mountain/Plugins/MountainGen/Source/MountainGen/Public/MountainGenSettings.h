@@ -1,4 +1,4 @@
-#pragma once
+癤�#pragma once
 #include "CoreMinimal.h"
 #include "MountainGenSettings.generated.h"
 
@@ -29,6 +29,11 @@ struct FMGTargets
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Targets", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float SteepMax = 0.50f;
+
+    // Preset-derived surface-quality targets.
+    // Not exposed to Details panel: Difficulty preset owns these values.
+    float RoughnessMax = 0.18f;
+    float ShadowRiskMax = 0.08f;
 };
 
 // ============================================================
@@ -99,6 +104,14 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Detail", meta = (ClampMin = "1", ClampMax = "12"))
     int32 DetailOctaves = 2;
 
+    // Preset-derived detail controls.
+    // Not exposed to Details panel: Difficulty preset owns these values.
+    // Macro shape strength and small surface detail are intentionally separated in code.
+    float DetailStrengthCm = 0.f;
+    float SurfaceRoughnessStrengthCm = 0.f;
+    float SurfaceRoughnessMaskStrength = 0.75f;
+    float SurfaceQualityScoreWeight = 1.0f;
+
     // ========================================================
     // 5) Overhang / Undercut
     // ========================================================
@@ -132,7 +145,6 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "1000.0"))
     float CliffDepthCm = 18000.f;
 
-    // 0 이하이면 CliffDepthCm 기반 기본 앞면 판정 범위를 사용한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "0.0"))
     float FrontBandDepthCm = 0.f;
 

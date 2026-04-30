@@ -59,10 +59,13 @@ private:
         int32 Base3DOct = 1;
 
         float DetailScale = 600.f;
+        float DetailAmp = 0.f;
         int32 DetailOct = 1;
 
         float RoughBand = 150.f;
         float RoughScale = 300.f;
+        float RoughAmp = 0.f;
+        float RoughMaskStrength = 0.75f;
     };
 
     FCached C;

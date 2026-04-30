@@ -389,10 +389,15 @@ FString AMountainGenWorldActor::MakeMetricsLine(
     bOutOverhangOK = MG_InRange(M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax);
     bOutSteepOK = MG_InRange(M.SteepRatio, S.Targets.SteepMin, S.Targets.SteepMax);
 
+    const bool bRoughOK = (M.RoughnessRatio <= S.Targets.RoughnessMax);
+    const bool bShadowOK = (M.ShadowRiskRatio <= S.Targets.ShadowRiskMax);
+
     return FString::Printf(
-        TEXT("Overhang %.3f [%.3f~%.3f] %s | Steep %.3f [%.3f~%.3f] %s | Near=%d"),
+        TEXT("Overhang %.3f [%.3f~%.3f] %s | Steep %.3f [%.3f~%.3f] %s | Rough %.3f <= %.3f %s | Shadow %.3f <= %.3f %s | Near=%d"),
         M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax, bOutOverhangOK ? TEXT("OK") : TEXT("FAIL"),
         M.SteepRatio, S.Targets.SteepMin, S.Targets.SteepMax, bOutSteepOK ? TEXT("OK") : TEXT("FAIL"),
+        M.RoughnessRatio, S.Targets.RoughnessMax, bRoughOK ? TEXT("OK") : TEXT("FAIL"),
+        M.ShadowRiskRatio, S.Targets.ShadowRiskMax, bShadowOK ? TEXT("OK") : TEXT("FAIL"),
         M.SurfaceNearSamples
     );
 }
@@ -416,6 +421,8 @@ uint32 AMountainGenWorldActor::ComputeSettingsHash_Editor() const
     H = HashCombine(H, ::GetTypeHash(Settings.Targets.OverhangMax));
     H = HashCombine(H, ::GetTypeHash(Settings.Targets.SteepMin));
     H = HashCombine(H, ::GetTypeHash(Settings.Targets.SteepMax));
+    H = HashCombine(H, ::GetTypeHash(Settings.Targets.RoughnessMax));
+    H = HashCombine(H, ::GetTypeHash(Settings.Targets.ShadowRiskMax));
 
     // Voxel / Mesh
     H = HashCombine(H, ::GetTypeHash(Settings.VoxelSizeCm));
@@ -435,7 +442,11 @@ uint32 AMountainGenWorldActor::ComputeSettingsHash_Editor() const
     H = HashCombine(H, ::GetTypeHash(Settings.BaseField3DScaleCm));
     H = HashCombine(H, ::GetTypeHash(Settings.BaseField3DOctaves));
     H = HashCombine(H, ::GetTypeHash(Settings.DetailScaleCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.DetailStrengthCm));
     H = HashCombine(H, ::GetTypeHash(Settings.DetailOctaves));
+    H = HashCombine(H, ::GetTypeHash(Settings.SurfaceRoughnessStrengthCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.SurfaceRoughnessMaskStrength));
+    H = HashCombine(H, ::GetTypeHash(Settings.SurfaceQualityScoreWeight));
 
     // 오버행 / 언더컷
     H = HashCombine(H, ::GetTypeHash(Settings.VolumeStrength));
@@ -594,7 +605,12 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
         return;
     }
 
-    ReusableColors.SetNumZeroed(Result.MeshData.Vertices.Num());
+    ReusableColors.SetNumUninitialized(Result.MeshData.Vertices.Num());
+
+    for (FLinearColor& C : ReusableColors)
+    {
+        C = FLinearColor::White;
+    }
 
     ProcMesh->CreateMeshSection_LinearColor(
         0,
@@ -941,7 +957,12 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             return;
         }
 
-        ReusableColors.SetNumZeroed(MeshData.Vertices.Num());
+        ReusableColors.SetNumUninitialized(MeshData.Vertices.Num());
+
+        for (FLinearColor& C : ReusableColors)
+        {
+            C = FLinearColor::White;
+        }
 
         ProcMesh->CreateMeshSection_LinearColor(
             0,

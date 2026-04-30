@@ -1,18 +1,22 @@
-#pragma once
+癤�#pragma once
 
 #include "CoreMinimal.h"
 #include "MountainGenSettings.h"
 
 struct FMGMetrics
 {
-    float OverhangRatio = 0.f;   // 0..1
-    float SteepRatio = 0.f;      // 0..1
+    float OverhangRatio = 0.f;     // 0..1
+    float SteepRatio = 0.f;        // 0..1
+
+    // 0..1. Ratio of sampled surface points whose local normal changes too abruptly.
+    float RoughnessRatio = 0.f;
+
+    // 0..1. Ratio of sampled surface points likely to create harsh shadow / grab artifacts.
+    float ShadowRiskRatio = 0.f;
+
     int32 SurfaceNearSamples = 0;
 };
 
-// ------------------------------
-// 난이도 = 허용 공간(Bounds)
-// ------------------------------
 struct FMGClampRange
 {
     float Min = 0.f;
@@ -26,10 +30,13 @@ struct FMGClampRange
 
 struct FMGPresetBounds
 {
-    // 의도 파라미터 (난이도 차이를 만드는 것들만)
     FMGClampRange BaseField3DStrengthCm;
     FMGClampRange BaseField3DScaleCm;
     FMGClampRange DetailScaleCm;
+    FMGClampRange DetailStrengthCm;
+    FMGClampRange SurfaceRoughnessStrengthCm;
+    FMGClampRange SurfaceRoughnessMaskStrength;
+    FMGClampRange SurfaceQualityScoreWeight;
 
     FMGClampRange VolumeStrength;
     FMGClampRange OverhangScaleCm;
@@ -43,10 +50,13 @@ struct FMGDifficultyPreset
     FMGTargets Targets;
     FMGPresetBounds Bounds;
 
-    // 기본값(초기점)
     float BaseField3DStrengthCm = 12000.f;
     float BaseField3DScaleCm = 16000.f;
     float DetailScaleCm = 6000.f;
+    float DetailStrengthCm = 0.f;
+    float SurfaceRoughnessStrengthCm = 0.f;
+    float SurfaceRoughnessMaskStrength = 0.75f;
+    float SurfaceQualityScoreWeight = 1.0f;
 
     float VolumeStrength = 1.0f;
     float OverhangScaleCm = 8000.f;
@@ -61,7 +71,7 @@ void MGApplyDifficultyPreset(FMountainGenSettings& S);
 
 void MGClampToDifficultyBounds(FMountainGenSettings& S);
 
-// 빠른 Metrics
+//Metrics
 FMGMetrics MGComputeMetricsQuick(
     const FMountainGenSettings& S,
     const FVector& TerrainOriginWorld,
