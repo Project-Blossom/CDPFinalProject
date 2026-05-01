@@ -1,9 +1,10 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "MountainGenSettings.h"
 #include "MountainGenMeshData.h"
+#include "GDPCGTypes.h"
 #include "MountainGenWorldActor.generated.h"
 
 class UProceduralMeshComponent;
@@ -11,6 +12,185 @@ class UMaterialInterface;
 class UMaterialInstanceDynamic;
 
 struct FMGMetrics;
+
+// ============================================================
+// Goal-driven terrain data shared with placement/gameplay modules
+// ============================================================
+
+UENUM(BlueprintType)
+enum class EMGSurfaceType : uint8
+{
+    Unknown   UMETA(DisplayName = "Unknown"),
+    Ground    UMETA(DisplayName = "Ground"),
+    Wall      UMETA(DisplayName = "Wall"),
+    Cliff     UMETA(DisplayName = "Cliff"),
+    Overhang  UMETA(DisplayName = "Overhang"),
+    Steep     UMETA(DisplayName = "Steep"),
+    Blocked   UMETA(DisplayName = "Blocked")
+};
+
+UENUM(BlueprintType)
+enum class EMGPlacementUsage : uint8
+{
+    Monster  UMETA(DisplayName = "Monster"),
+    Item     UMETA(DisplayName = "Item"),
+    Platform UMETA(DisplayName = "Platform"),
+    Gameplay UMETA(DisplayName = "Gameplay")
+};
+
+USTRUCT(BlueprintType)
+struct FMGSurfaceUsageFlags
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    bool bVisual = true;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    bool bCollision = true;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    bool bGameplay = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    bool bPlacement = false;
+};
+
+USTRUCT(BlueprintType)
+struct FMGSurfaceSample
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    FVector Location = FVector::ZeroVector;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    FVector Normal = FVector::UpVector;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    float SlopeAngleDeg = 0.f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    EMGSurfaceType SurfaceType = EMGSurfaceType::Unknown;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    FMGSurfaceUsageFlags Usage;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    bool bCanPlaceMonster = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    bool bCanPlaceItem = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    bool bCanPlacePlatform = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    float DangerScore = 0.f;
+};
+
+USTRUCT(BlueprintType)
+struct FMGGenerationZone
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zone")
+    FName ZoneName = NAME_None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zone")
+    bool bEnabled = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zone")
+    float RelativeZMinCm = 0.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zone")
+    float RelativeZMaxCm = 0.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zone")
+    float TargetOverhangMin = 0.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zone")
+    float TargetOverhangMax = 1.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zone")
+    float TargetSteepMin = 0.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zone")
+    float TargetSteepMax = 1.f;
+};
+
+USTRUCT(BlueprintType)
+struct FMGZoneMetricReport
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    FName ZoneName = NAME_None;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    int32 SampleCount = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    float OverhangRatio = 0.f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    float SteepRatio = 0.f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    float PlacementRatio = 0.f;
+};
+
+USTRUCT(BlueprintType)
+struct FMGMeshQualityReport
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    int32 VertexCount = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    int32 TriangleCount = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    int32 RemovedBadTriangleCount = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    float BadTriangleRatio = 0.f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    float ThinTriangleRatio = 0.f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    float NormalRiskRatio = 0.f;
+};
+
+USTRUCT(BlueprintType)
+struct FMGGenerationReport
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    int32 FinalSeed = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    float FinalScore = 0.f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    bool bPassedAllTargets = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    TArray<FGDPCGMetricValue> Metrics;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    FMGMeshQualityReport MeshQuality;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    TArray<FMGZoneMetricReport> ZoneReports;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    int32 SurfaceSampleCount = 0;
+};
+
 
 USTRUCT()
 struct FMGAsyncResult
@@ -22,6 +202,8 @@ struct FMGAsyncResult
 
     FMountainGenSettings FinalSettings;
     FChunkMeshData MeshData;
+
+    int32 RemovedBadTriangleCount = 0;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMountainGenerated, AMountainGenWorldActor*, Generator);
@@ -113,6 +295,24 @@ public:
         return (FrontX - LocalX);
     }
 
+    UFUNCTION(BlueprintCallable, Category = "MountainGen|Query")
+    bool QuerySurfaceAtLocation(const FVector& WorldLocation, FMGSurfaceSample& OutSample, float SearchRadiusCm = 300.f) const;
+
+    UFUNCTION(BlueprintCallable, Category = "MountainGen|Query")
+    void GetPlacementCandidates(TArray<FMGSurfaceSample>& OutCandidates, EMGPlacementUsage Usage) const;
+
+    UFUNCTION(BlueprintCallable, Category = "MountainGen|Query")
+    bool IsLocationValidForPlacement(const FVector& WorldLocation, EMGPlacementUsage Usage, float SearchRadiusCm = 300.f) const;
+
+    UFUNCTION(BlueprintCallable, Category = "MountainGen|Query")
+    void GetGeneratedSurfaceSamples(TArray<FMGSurfaceSample>& OutSamples) const;
+
+    UFUNCTION(BlueprintPure, Category = "MountainGen|Report")
+    FMGGenerationReport GetLastGenerationReport() const
+    {
+        return LastGenerationReport;
+    }
+
 public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen")
     TObjectPtr<UProceduralMeshComponent> ProcMesh;
@@ -147,17 +347,51 @@ public:
     int32 DebugPrintEveryNAttempt = 10;
 
     // ---------- Optimization ----------
+    // 선택 사항: Marching Cubes 직후 1차 Weld.
+    // 형상 자체를 많이 바꾸고 싶지 않으면 false로 두고, 아래 Seam Repair만 사용한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization")
     bool bEnablePostWeld = false;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization", meta = (ClampMin = "0.01"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization", meta = (ClampMin = "0.001"))
     float PostWeldEpsilonScale = 0.15f;
+
+    // 최종 출력 직전의 균열/슬랩 경계/중복 정점 보정용 Weld.
+    // 액터에 저장된 bEnablePostWeld 값이 false여도 이 값이 true면 마지막에 한 번 더 안전하게 정점을 통합한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization")
+    bool bRepairMeshSeams = true;
+
+    // VoxelSizeCm에 곱해지는 최종 Seam Weld 거리.
+    // 0.02면 VoxelSize 100cm 기준 2cm로, 눈에 보이는 균열만 닫고 형상 손상은 줄인다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization", meta = (ClampMin = "0.001", ClampMax = "0.25"))
+    float MeshSeamWeldEpsilonScale = 0.02f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization")
     bool bEnableIslandCull = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization", meta = (ClampMin = "1"))
     int32 MinTrisToKeepAfterCull = 200;
+
+    // ---------- Goal-driven Surface Data / Query ----------
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Surface", meta = (ClampMin = "1", ClampMax = "256"))
+    int32 SurfaceSampleTriangleStride = 6;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Surface", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+    float MonsterMaxSlopeDeg = 42.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Surface", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+    float ItemMaxSlopeDeg = 55.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Surface", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+    float PlatformMaxSlopeDeg = 75.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zones")
+    TArray<FMGGenerationZone> GenerationZones;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    TArray<FMGSurfaceSample> GeneratedSurfaceSamples;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
+    FMGGenerationReport LastGenerationReport;
 
     // ---------- Material : Snow / Rock Auto Blend ----------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")

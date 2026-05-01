@@ -1,4 +1,4 @@
-﻿#include "MountainGenWorldActor.h"
+#include "MountainGenWorldActor.h"
 
 #include "ProceduralMeshComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -6,6 +6,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/Engine.h"
 #include "HAL/PlatformTime.h"
+#include "Misc/Crc.h"
 
 #include "Components/InputComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -296,18 +297,27 @@ static void MG_CullMeshIslands(FChunkMeshData& Out, int32 MinTrisToKeep, bool bK
 // Remove bad triangles
 // ============================================================
 
-static void MG_RemoveBadTriangles(FChunkMeshData& M, float MinAreaCm2, float MinEdgeCm)
+static int32 MG_RemoveBadTriangles(FChunkMeshData& M, float MinAreaCm2, float MinEdgeCm)
 {
     const int32 V = M.Vertices.Num();
     const int32 I = M.Triangles.Num();
 
     if (V <= 0 || I < 3)
     {
-        return;
+        return 0;
     }
 
-    MinAreaCm2 = FMath::Max(0.001f, MinAreaCm2);
-    MinEdgeCm = FMath::Max(0.001f, MinEdgeCm);
+    const int32 OriginalTriCount = I / 3;
+
+    // 주의:
+    // Marching Cubes 표면에는 매우 얇지만 실제 표면을 연결하는 삼각형이 생길 수 있다.
+    // 이전 버전처럼 VoxelSize 기준의 넓은 면적/변 길이로 삼각형을 제거하면
+    // 실제로 필요한 얇은 연결 삼각형까지 삭제되어 선택 시 노란 경계선처럼 보이는
+    // 미세 균열/구멍이 생길 수 있다.
+    // 따라서 여기서는 "보기 싫은 얇은 삼각형"을 제거하지 않고,
+    // 렌더링과 인덱스 안정성을 해치는 진짜 퇴화 삼각형만 제거한다.
+    MinAreaCm2 = FMath::Max(0.000001f, MinAreaCm2);
+    MinEdgeCm = FMath::Max(0.0001f, MinEdgeCm);
 
     const float MinEdge2 = MinEdgeCm * MinEdgeCm;
 
@@ -346,16 +356,15 @@ static void MG_RemoveBadTriangles(FChunkMeshData& M, float MinAreaCm2, float Min
         const float BC2 = BC.SizeSquared();
         const float CA2 = CA.SizeSquared();
 
-        // 너무 짧은 변이 있는 삼각형은 노멀/섀도우 계산에서 튈 수 있다.
+        // 완전히 겹친 정점/거의 0 길이 변만 제거한다.
+        // 얇지만 정상적인 표면 연결 삼각형은 유지해야 미세 균열이 생기지 않는다.
         if (AB2 < MinEdge2 || BC2 < MinEdge2 || CA2 < MinEdge2)
         {
             continue;
         }
 
-        // 면적이 거의 0인 퇴화 삼각형 제거.
-        // Cross.Size()는 실제 삼각형 면적의 2배다.
         const FVector Cross = FVector::CrossProduct(AB, C - A);
-        const float Area2 = Cross.Size();
+        const float Area2 = Cross.Size(); // 실제 삼각형 면적의 2배
 
         if (Area2 < MinAreaCm2 * 2.0f)
         {
@@ -367,7 +376,276 @@ static void MG_RemoveBadTriangles(FChunkMeshData& M, float MinAreaCm2, float Min
         NewTris.Add(IC);
     }
 
+    const int32 NewTriCount = NewTris.Num() / 3;
     M.Triangles = MoveTemp(NewTris);
+    return FMath::Max(0, OriginalTriCount - NewTriCount);
+}
+
+static EMGSurfaceType MG_ClassifySurfaceType(const FVector& Normal, float SlopeAngleDeg)
+{
+    if (Normal.Z < -0.20f)
+    {
+        return EMGSurfaceType::Overhang;
+    }
+
+    if (SlopeAngleDeg >= 78.f)
+    {
+        return EMGSurfaceType::Wall;
+    }
+
+    if (SlopeAngleDeg >= 58.f)
+    {
+        return EMGSurfaceType::Cliff;
+    }
+
+    if (SlopeAngleDeg >= 42.f)
+    {
+        return EMGSurfaceType::Steep;
+    }
+
+    return EMGSurfaceType::Ground;
+}
+
+static float MG_ComputeDangerScore(const EMGSurfaceType SurfaceType, float SlopeAngleDeg)
+{
+    float Danger = FMath::Clamp(SlopeAngleDeg / 90.f, 0.f, 1.f);
+
+    if (SurfaceType == EMGSurfaceType::Overhang)
+    {
+        Danger = FMath::Max(Danger, 0.85f);
+    }
+    else if (SurfaceType == EMGSurfaceType::Wall || SurfaceType == EMGSurfaceType::Cliff)
+    {
+        Danger = FMath::Max(Danger, 0.65f);
+    }
+
+    return Danger;
+}
+
+static void MG_AnalyzeMeshQuality(
+    const FChunkMeshData& MeshData,
+    int32 RemovedBadTriangles,
+    float MinThinAreaCm2,
+    FMGMeshQualityReport& OutReport)
+{
+    OutReport = FMGMeshQualityReport();
+
+    const int32 V = MeshData.Vertices.Num();
+    const int32 T = MeshData.Triangles.Num() / 3;
+
+    OutReport.VertexCount = V;
+    OutReport.TriangleCount = T;
+    OutReport.RemovedBadTriangleCount = RemovedBadTriangles;
+    OutReport.BadTriangleRatio = (T + RemovedBadTriangles) > 0
+        ? (float)RemovedBadTriangles / (float)(T + RemovedBadTriangles)
+        : 0.f;
+
+    if (V <= 0 || T <= 0)
+    {
+        return;
+    }
+
+    int32 ThinCount = 0;
+    int32 NormalRiskCount = 0;
+
+    for (int32 t = 0; t < T; ++t)
+    {
+        const int32 IA = MeshData.Triangles[t * 3 + 0];
+        const int32 IB = MeshData.Triangles[t * 3 + 1];
+        const int32 IC = MeshData.Triangles[t * 3 + 2];
+
+        if (!MeshData.Vertices.IsValidIndex(IA) || !MeshData.Vertices.IsValidIndex(IB) || !MeshData.Vertices.IsValidIndex(IC))
+        {
+            continue;
+        }
+
+        const FVector A = MeshData.Vertices[IA];
+        const FVector B = MeshData.Vertices[IB];
+        const FVector C = MeshData.Vertices[IC];
+
+        const FVector FaceCross = FVector::CrossProduct(B - A, C - A);
+        const float Area = FaceCross.Size() * 0.5f;
+
+        if (Area < MinThinAreaCm2)
+        {
+            ++ThinCount;
+        }
+
+        FVector FaceNormal = FaceCross.GetSafeNormal();
+        FVector AvgNormal = FVector::ZeroVector;
+        if (MeshData.Normals.IsValidIndex(IA)) AvgNormal += MeshData.Normals[IA];
+        if (MeshData.Normals.IsValidIndex(IB)) AvgNormal += MeshData.Normals[IB];
+        if (MeshData.Normals.IsValidIndex(IC)) AvgNormal += MeshData.Normals[IC];
+
+        if (FaceNormal.IsNearlyZero() || !AvgNormal.Normalize() || FVector::DotProduct(FaceNormal, AvgNormal) < 0.35f)
+        {
+            ++NormalRiskCount;
+        }
+    }
+
+    OutReport.ThinTriangleRatio = T > 0 ? (float)ThinCount / (float)T : 0.f;
+    OutReport.NormalRiskRatio = T > 0 ? (float)NormalRiskCount / (float)T : 0.f;
+}
+
+static void MG_BuildSurfaceSamples(
+    const FChunkMeshData& MeshData,
+    const FVector& ActorWorld,
+    int32 TriangleStride,
+    float MonsterMaxSlopeDeg,
+    float ItemMaxSlopeDeg,
+    float PlatformMaxSlopeDeg,
+    TArray<FMGSurfaceSample>& OutSamples)
+{
+    OutSamples.Reset();
+
+    const int32 T = MeshData.Triangles.Num() / 3;
+    if (T <= 0)
+    {
+        return;
+    }
+
+    TriangleStride = FMath::Clamp(TriangleStride, 1, 256);
+    OutSamples.Reserve(FMath::Max(1, T / TriangleStride));
+
+    for (int32 t = 0; t < T; t += TriangleStride)
+    {
+        const int32 IA = MeshData.Triangles[t * 3 + 0];
+        const int32 IB = MeshData.Triangles[t * 3 + 1];
+        const int32 IC = MeshData.Triangles[t * 3 + 2];
+
+        if (!MeshData.Vertices.IsValidIndex(IA) || !MeshData.Vertices.IsValidIndex(IB) || !MeshData.Vertices.IsValidIndex(IC))
+        {
+            continue;
+        }
+
+        const FVector A = MeshData.Vertices[IA];
+        const FVector B = MeshData.Vertices[IB];
+        const FVector C = MeshData.Vertices[IC];
+
+        FVector N = FVector::CrossProduct(B - A, C - A).GetSafeNormal();
+        if (N.IsNearlyZero())
+        {
+            continue;
+        }
+
+        if (MeshData.Normals.IsValidIndex(IA) && MeshData.Normals.IsValidIndex(IB) && MeshData.Normals.IsValidIndex(IC))
+        {
+            const FVector AvgN = (MeshData.Normals[IA] + MeshData.Normals[IB] + MeshData.Normals[IC]).GetSafeNormal();
+            if (!AvgN.IsNearlyZero())
+            {
+                N = AvgN;
+            }
+        }
+
+        const float SlopeDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(N.Z, -1.f, 1.f)));
+        const EMGSurfaceType SurfaceType = MG_ClassifySurfaceType(N, SlopeDeg);
+
+        FMGSurfaceSample Sample;
+        Sample.Location = ActorWorld + ((A + B + C) / 3.f);
+        Sample.Normal = N;
+        Sample.SlopeAngleDeg = SlopeDeg;
+        Sample.SurfaceType = SurfaceType;
+        Sample.DangerScore = MG_ComputeDangerScore(SurfaceType, SlopeDeg);
+
+        const bool bBlocked = (SurfaceType == EMGSurfaceType::Blocked);
+        const bool bOverhang = (SurfaceType == EMGSurfaceType::Overhang);
+        const bool bWall = (SurfaceType == EMGSurfaceType::Wall);
+
+        Sample.bCanPlaceMonster = !bBlocked && !bOverhang && !bWall && SlopeDeg <= MonsterMaxSlopeDeg;
+        Sample.bCanPlaceItem = !bBlocked && !bOverhang && SlopeDeg <= ItemMaxSlopeDeg;
+        Sample.bCanPlacePlatform = !bBlocked && SlopeDeg <= PlatformMaxSlopeDeg;
+
+        Sample.Usage.bGameplay = (SurfaceType == EMGSurfaceType::Cliff || SurfaceType == EMGSurfaceType::Wall || SurfaceType == EMGSurfaceType::Overhang);
+        Sample.Usage.bPlacement = Sample.bCanPlaceMonster || Sample.bCanPlaceItem || Sample.bCanPlacePlatform;
+
+        OutSamples.Add(Sample);
+    }
+}
+
+static void MG_BuildZoneReports(
+    const TArray<FMGSurfaceSample>& Samples,
+    const TArray<FMGGenerationZone>& Zones,
+    const FVector& ActorWorld,
+    TArray<FMGZoneMetricReport>& OutReports)
+{
+    OutReports.Reset();
+
+    for (const FMGGenerationZone& Zone : Zones)
+    {
+        if (!Zone.bEnabled)
+        {
+            continue;
+        }
+
+        const float MinZ = ActorWorld.Z + Zone.RelativeZMinCm;
+        const float MaxZ = ActorWorld.Z + Zone.RelativeZMaxCm;
+        if (MaxZ <= MinZ)
+        {
+            continue;
+        }
+
+        FMGZoneMetricReport R;
+        R.ZoneName = Zone.ZoneName.IsNone() ? FName(TEXT("Zone")) : Zone.ZoneName;
+
+        int32 OverhangCount = 0;
+        int32 SteepCount = 0;
+        int32 PlaceCount = 0;
+
+        for (const FMGSurfaceSample& S : Samples)
+        {
+            if (S.Location.Z < MinZ || S.Location.Z > MaxZ)
+            {
+                continue;
+            }
+
+            ++R.SampleCount;
+            if (S.SurfaceType == EMGSurfaceType::Overhang) ++OverhangCount;
+            if (S.SurfaceType == EMGSurfaceType::Steep || S.SurfaceType == EMGSurfaceType::Cliff || S.SurfaceType == EMGSurfaceType::Wall) ++SteepCount;
+            if (S.Usage.bPlacement) ++PlaceCount;
+        }
+
+        if (R.SampleCount > 0)
+        {
+            R.OverhangRatio = (float)OverhangCount / (float)R.SampleCount;
+            R.SteepRatio = (float)SteepCount / (float)R.SampleCount;
+            R.PlacementRatio = (float)PlaceCount / (float)R.SampleCount;
+        }
+
+        OutReports.Add(R);
+    }
+}
+
+static void MG_FillReportMetrics(const FMountainGenSettings& S, const FMGMetrics& M, FMGGenerationReport& OutReport)
+{
+    OutReport.Metrics.Reset();
+
+    auto AddMetric = [&OutReport](FName Name, float Value, float Score, bool bPassed)
+        {
+            FGDPCGMetricValue V;
+            V.MetricName = Name;
+            V.Value = Value;
+            V.Score = Score;
+            V.bPassed = bPassed;
+            OutReport.Metrics.Add(V);
+        };
+
+    const bool bOverOK = (M.OverhangRatio >= S.Targets.OverhangMin && M.OverhangRatio <= S.Targets.OverhangMax);
+    const bool bSteepOK = (M.SteepRatio >= S.Targets.SteepMin && M.SteepRatio <= S.Targets.SteepMax);
+    const bool bRoughOK = (M.RoughnessRatio <= S.Targets.RoughnessMax);
+    const bool bShadowOK = (M.ShadowRiskRatio <= S.Targets.ShadowRiskMax);
+
+    const float OverScore = bOverOK ? 0.f : FMath::Min(FMath::Abs(M.OverhangRatio - S.Targets.OverhangMin), FMath::Abs(M.OverhangRatio - S.Targets.OverhangMax));
+    const float SteepScore = bSteepOK ? 0.f : FMath::Min(FMath::Abs(M.SteepRatio - S.Targets.SteepMin), FMath::Abs(M.SteepRatio - S.Targets.SteepMax));
+    const float RoughScore = FMath::Max(0.f, M.RoughnessRatio - S.Targets.RoughnessMax);
+    const float ShadowScore = FMath::Max(0.f, M.ShadowRiskRatio - S.Targets.ShadowRiskMax);
+
+    AddMetric(TEXT("OverhangRatio"), M.OverhangRatio, OverScore, bOverOK);
+    AddMetric(TEXT("SteepRatio"), M.SteepRatio, SteepScore, bSteepOK);
+    AddMetric(TEXT("RoughnessRatio"), M.RoughnessRatio, RoughScore, bRoughOK);
+    AddMetric(TEXT("ShadowRiskRatio"), M.ShadowRiskRatio, ShadowScore, bShadowOK);
+
+    OutReport.FinalScore = OverScore + SteepScore + RoughScore + ShadowScore;
+    OutReport.bPassedAllTargets = bOverOK && bSteepOK && bRoughOK && bShadowOK;
 }
 
 // ============================================================
@@ -581,6 +859,22 @@ FString AMountainGenWorldActor::MakeMetricsLine(
 }
 
 #if WITH_EDITOR
+static uint32 MG_HashBoolForSettings(bool bValue)
+{
+    return ::GetTypeHash(bValue ? 1 : 0);
+}
+
+static uint32 MG_HashFloatForSettings(float Value)
+{
+    return ::GetTypeHash(FMath::RoundToInt(Value * 1000.0f));
+}
+
+static uint32 MG_HashNameForSettings(FName Value)
+{
+    const FString S = Value.ToString();
+    return FCrc::StrCrc32(*S);
+}
+
 uint32 AMountainGenWorldActor::ComputeSettingsHash_Editor() const
 {
     uint32 H = 0;
@@ -590,59 +884,93 @@ uint32 AMountainGenWorldActor::ComputeSettingsHash_Editor() const
 
     // 난이도 / AutoTune
     H = HashCombine(H, ::GetTypeHash((uint8)Settings.Difficulty));
-    H = HashCombine(H, ::GetTypeHash(Settings.bAutoTune));
+    H = HashCombine(H, MG_HashBoolForSettings(Settings.bAutoTune));
     H = HashCombine(H, ::GetTypeHash(Settings.FeedbackIters));
     H = HashCombine(H, ::GetTypeHash(Settings.SeedSearchTries));
-    H = HashCombine(H, ::GetTypeHash(Settings.bRetrySeedUntilSatisfied));
+    H = HashCombine(H, MG_HashBoolForSettings(Settings.bRetrySeedUntilSatisfied));
     H = HashCombine(H, ::GetTypeHash(Settings.MaxSeedAttempts));
-    H = HashCombine(H, ::GetTypeHash(Settings.Targets.OverhangMin));
-    H = HashCombine(H, ::GetTypeHash(Settings.Targets.OverhangMax));
-    H = HashCombine(H, ::GetTypeHash(Settings.Targets.SteepMin));
-    H = HashCombine(H, ::GetTypeHash(Settings.Targets.SteepMax));
-    H = HashCombine(H, ::GetTypeHash(Settings.Targets.RoughnessMax));
-    H = HashCombine(H, ::GetTypeHash(Settings.Targets.ShadowRiskMax));
+
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.Targets.OverhangMin));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.Targets.OverhangMax));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.Targets.SteepMin));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.Targets.SteepMax));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.Targets.RoughnessMax));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.Targets.ShadowRiskMax));
 
     // Voxel / Mesh
-    H = HashCombine(H, ::GetTypeHash(Settings.VoxelSizeCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.IsoLevel));
-    H = HashCombine(H, ::GetTypeHash(Settings.bCreateCollision));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.VoxelSizeCm));
+    H = HashCombine(H, ::GetTypeHash((uint8)Settings.TerrainAlgorithm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.IsoLevel));
+    H = HashCombine(H, MG_HashBoolForSettings(Settings.bCreateCollision));
 
     // 기본 위치 / 절벽 크기
-    H = HashCombine(H, ::GetTypeHash(Settings.BaseHeightCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.CliffHalfWidthCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.CliffHeightCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.CliffThicknessCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.CliffDepthCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.FrontBandDepthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.BaseHeightCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.CliffHalfWidthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.CliffHeightCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.CliffThicknessCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.CliffDepthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.FrontBandDepthCm));
 
     // 밀도장 / 디테일
-    H = HashCombine(H, ::GetTypeHash(Settings.BaseField3DStrengthCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.BaseField3DScaleCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.BaseField3DStrengthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.BaseField3DScaleCm));
     H = HashCombine(H, ::GetTypeHash(Settings.BaseField3DOctaves));
-    H = HashCombine(H, ::GetTypeHash(Settings.DetailScaleCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.DetailStrengthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.DetailScaleCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.DetailStrengthCm));
     H = HashCombine(H, ::GetTypeHash(Settings.DetailOctaves));
-    H = HashCombine(H, ::GetTypeHash(Settings.SurfaceRoughnessStrengthCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.SurfaceRoughnessMaskStrength));
-    H = HashCombine(H, ::GetTypeHash(Settings.SurfaceQualityScoreWeight));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.SurfaceRoughnessStrengthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.SurfaceRoughnessMaskStrength));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.SurfaceQualityScoreWeight));
 
     // 오버행 / 언더컷
-    H = HashCombine(H, ::GetTypeHash(Settings.VolumeStrength));
-    H = HashCombine(H, ::GetTypeHash(Settings.OverhangScaleCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.OverhangBias));
-    H = HashCombine(H, ::GetTypeHash(Settings.OverhangDepthCm));
-    H = HashCombine(H, ::GetTypeHash(Settings.OverhangFadeCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.VolumeStrength));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.OverhangScaleCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.OverhangBias));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.OverhangDepthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.OverhangFadeCm));
 
     // Metrics
-    H = HashCombine(H, ::GetTypeHash(Settings.MetricsStepCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.MetricsStepCm));
     H = HashCombine(H, ::GetTypeHash(Settings.MetricsSamplesPerTry));
-    H = HashCombine(H, ::GetTypeHash(Settings.SteepDotOverride));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.SteepDotOverride));
 
     // 메시 후처리
-    H = HashCombine(H, ::GetTypeHash(bEnablePostWeld));
-    H = HashCombine(H, ::GetTypeHash(PostWeldEpsilonScale));
-    H = HashCombine(H, ::GetTypeHash(bEnableIslandCull));
+    H = HashCombine(H, MG_HashBoolForSettings(bEnablePostWeld));
+    H = HashCombine(H, MG_HashFloatForSettings(PostWeldEpsilonScale));
+    H = HashCombine(H, MG_HashBoolForSettings(bRepairMeshSeams));
+    H = HashCombine(H, MG_HashFloatForSettings(MeshSeamWeldEpsilonScale));
+    H = HashCombine(H, MG_HashBoolForSettings(bEnableIslandCull));
     H = HashCombine(H, ::GetTypeHash(MinTrisToKeepAfterCull));
+
+    // Goal-driven hierarchical search
+    H = HashCombine(H, MG_HashBoolForSettings(Settings.bUseHierarchicalGoalSearch));
+    H = HashCombine(H, ::GetTypeHash(Settings.ProxySeedBudget));
+    H = HashCombine(H, ::GetTypeHash(Settings.ProxySurvivorCount));
+    H = HashCombine(H, ::GetTypeHash(Settings.ProxyMetricsSamplesPerTry));
+    H = HashCombine(H, ::GetTypeHash(Settings.GoalFeedbackRounds));
+    H = HashCombine(H, ::GetTypeHash(Settings.GoalFeedbackBatchSize));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.HardConstraintPenaltyWeight));
+
+    // Surface/query/report settings
+    H = HashCombine(H, ::GetTypeHash(SurfaceSampleTriangleStride));
+    H = HashCombine(H, MG_HashFloatForSettings(MonsterMaxSlopeDeg));
+    H = HashCombine(H, MG_HashFloatForSettings(ItemMaxSlopeDeg));
+    H = HashCombine(H, MG_HashFloatForSettings(PlatformMaxSlopeDeg));
+
+    // Zone settings
+    H = HashCombine(H, ::GetTypeHash(GenerationZones.Num()));
+
+    for (const FMGGenerationZone& Zone : GenerationZones)
+    {
+        H = HashCombine(H, MG_HashNameForSettings(Zone.ZoneName));
+        H = HashCombine(H, MG_HashBoolForSettings(Zone.bEnabled));
+        H = HashCombine(H, MG_HashFloatForSettings(Zone.RelativeZMinCm));
+        H = HashCombine(H, MG_HashFloatForSettings(Zone.RelativeZMaxCm));
+        H = HashCombine(H, MG_HashFloatForSettings(Zone.TargetOverhangMin));
+        H = HashCombine(H, MG_HashFloatForSettings(Zone.TargetOverhangMax));
+        H = HashCombine(H, MG_HashFloatForSettings(Zone.TargetSteepMin));
+        H = HashCombine(H, MG_HashFloatForSettings(Zone.TargetSteepMax));
+    }
 
     return H;
 }
@@ -752,6 +1080,89 @@ void AMountainGenWorldActor::BeginPlay()
     }
 }
 
+
+bool AMountainGenWorldActor::QuerySurfaceAtLocation(const FVector& WorldLocation, FMGSurfaceSample& OutSample, float SearchRadiusCm) const
+{
+    SearchRadiusCm = FMath::Max(1.f, SearchRadiusCm);
+    const float MaxDist2 = SearchRadiusCm * SearchRadiusCm;
+
+    bool bFound = false;
+    float BestDist2 = MaxDist2;
+
+    for (const FMGSurfaceSample& Sample : GeneratedSurfaceSamples)
+    {
+        const float D2 = FVector::DistSquared(WorldLocation, Sample.Location);
+        if (D2 <= BestDist2)
+        {
+            BestDist2 = D2;
+            OutSample = Sample;
+            bFound = true;
+        }
+    }
+
+    return bFound;
+}
+
+void AMountainGenWorldActor::GetPlacementCandidates(TArray<FMGSurfaceSample>& OutCandidates, EMGPlacementUsage Usage) const
+{
+    OutCandidates.Reset();
+
+    for (const FMGSurfaceSample& Sample : GeneratedSurfaceSamples)
+    {
+        bool bAccept = false;
+        switch (Usage)
+        {
+        case EMGPlacementUsage::Monster:
+            bAccept = Sample.bCanPlaceMonster;
+            break;
+        case EMGPlacementUsage::Item:
+            bAccept = Sample.bCanPlaceItem;
+            break;
+        case EMGPlacementUsage::Platform:
+            bAccept = Sample.bCanPlacePlatform;
+            break;
+        case EMGPlacementUsage::Gameplay:
+            bAccept = Sample.Usage.bGameplay;
+            break;
+        default:
+            break;
+        }
+
+        if (bAccept)
+        {
+            OutCandidates.Add(Sample);
+        }
+    }
+}
+
+bool AMountainGenWorldActor::IsLocationValidForPlacement(const FVector& WorldLocation, EMGPlacementUsage Usage, float SearchRadiusCm) const
+{
+    FMGSurfaceSample Sample;
+    if (!QuerySurfaceAtLocation(WorldLocation, Sample, SearchRadiusCm))
+    {
+        return false;
+    }
+
+    switch (Usage)
+    {
+    case EMGPlacementUsage::Monster:
+        return Sample.bCanPlaceMonster;
+    case EMGPlacementUsage::Item:
+        return Sample.bCanPlaceItem;
+    case EMGPlacementUsage::Platform:
+        return Sample.bCanPlacePlatform;
+    case EMGPlacementUsage::Gameplay:
+        return Sample.Usage.bGameplay;
+    default:
+        return false;
+    }
+}
+
+void AMountainGenWorldActor::GetGeneratedSurfaceSamples(TArray<FMGSurfaceSample>& OutSamples) const
+{
+    OutSamples = GeneratedSurfaceSamples;
+}
+
 void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, bool bShowRuntimeSeedMessage)
 {
     if (Result.BuildSerial != InFlightBuildSerial)
@@ -781,6 +1192,40 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
             BuildChunkAndMesh();
         }
         return;
+    }
+
+    // Build shared surface metadata/report for runtime-generated results.
+    GeneratedSurfaceSamples.Reset();
+    LastGenerationReport = FMGGenerationReport();
+    LastGenerationReport.FinalSeed = Result.FinalSettings.Seed;
+
+    MG_BuildSurfaceSamples(
+        Result.MeshData,
+        GetActorLocation(),
+        SurfaceSampleTriangleStride,
+        MonsterMaxSlopeDeg,
+        ItemMaxSlopeDeg,
+        PlatformMaxSlopeDeg,
+        GeneratedSurfaceSamples
+    );
+
+    {
+        const FMountainGenSettings& FS = Result.FinalSettings;
+        const float Voxel = FMath::Max(1.f, FS.VoxelSizeCm);
+        const FVector ActorWorld = GetActorLocation();
+        const float FrontX = FMath::Max(200.f, FS.CliffThicknessCm);
+        const FVector TerrainOriginWorld = ActorWorld - FVector(FrontX, 0.f, 0.f);
+        const float Band = FMath::Max(FS.CliffDepthCm, Voxel * 2.f);
+        const float HalfW = FMath::Max(1.f, FS.CliffHalfWidthCm);
+        const float H = FMath::Max(1.f, FS.CliffHeightCm);
+        const FVector WorldMin = TerrainOriginWorld + FVector(FrontX - Band, -HalfW, FS.BaseHeightCm);
+        const FVector WorldMax = TerrainOriginWorld + FVector(FrontX + Band, +HalfW, FS.BaseHeightCm + H);
+
+        const FMGMetrics FinalMetricsForReport = MGComputeMetricsQuick(FS, TerrainOriginWorld, WorldMin, WorldMax);
+        MG_FillReportMetrics(FS, FinalMetricsForReport, LastGenerationReport);
+        MG_AnalyzeMeshQuality(Result.MeshData, Result.RemovedBadTriangleCount, FMath::Square(FS.VoxelSizeCm * 0.08f), LastGenerationReport.MeshQuality);
+        MG_BuildZoneReports(GeneratedSurfaceSamples, GenerationZones, GetActorLocation(), LastGenerationReport.ZoneReports);
+        LastGenerationReport.SurfaceSampleCount = GeneratedSurfaceSamples.Num();
     }
 
     ReusableColors.SetNumUninitialized(Result.MeshData.Vertices.Num());
@@ -1118,11 +1563,20 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
         // 특정 위치의 이상 음영 원인이 되는 바늘형/퇴화 삼각형을 먼저 제거한다.
         // 기준은 VoxelSize에 비례시켜 형상 손상을 제한한다.
-        MG_RemoveBadTriangles(
+        const int32 RemovedBadTriangles = MG_RemoveBadTriangles(
             MeshData,
-            FMath::Square(S.VoxelSizeCm * 0.08f),
-            S.VoxelSizeCm * 0.03f
+            FMath::Square(S.VoxelSizeCm * 0.001f),
+            S.VoxelSizeCm * 0.0005f
         );
+
+        // 최종 출력 직전 균열 보정.
+        // Marching Cubes를 병렬 slab 단위로 만든 뒤 경계/중복 정점이 남으면 선택 시 노란 선처럼 보이거나
+        // Lit 모드에서 미세한 seam/균열이 보일 수 있다.
+        // 너무 큰 Weld는 형상을 녹이므로 VoxelSize 기준 소량만 통합한다.
+        if (bRepairMeshSeams)
+        {
+            MG_WeldVertices_Quantized(MeshData, S.VoxelSizeCm * MeshSeamWeldEpsilonScale);
+        }
 
         MG_RecomputeNormalsAndTangents(MeshData);
 
@@ -1145,6 +1599,27 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             DebugPrintGT(TEXT("[MountainGen][Editor] MeshData 비어있음 (Cull/Weld로 모두 제거됨)"), 2.0f, FColor::Red);
             return;
         }
+
+        // Build shared surface metadata/report for later placement/gameplay modules.
+        GeneratedSurfaceSamples.Reset();
+        LastGenerationReport = FMGGenerationReport();
+        LastGenerationReport.FinalSeed = S.Seed;
+
+        MG_BuildSurfaceSamples(
+            MeshData,
+            GetActorLocation(),
+            SurfaceSampleTriangleStride,
+            MonsterMaxSlopeDeg,
+            ItemMaxSlopeDeg,
+            PlatformMaxSlopeDeg,
+            GeneratedSurfaceSamples
+        );
+
+        const FMGMetrics FinalMetricsForReport = MGComputeMetricsQuick(S, TerrainOriginWorld, WorldMin, WorldMax);
+        MG_FillReportMetrics(S, FinalMetricsForReport, LastGenerationReport);
+        MG_AnalyzeMeshQuality(MeshData, RemovedBadTriangles, FMath::Square(S.VoxelSizeCm * 0.08f), LastGenerationReport.MeshQuality);
+        MG_BuildZoneReports(GeneratedSurfaceSamples, GenerationZones, GetActorLocation(), LastGenerationReport.ZoneReports);
+        LastGenerationReport.SurfaceSampleCount = GeneratedSurfaceSamples.Num();
 
         ReusableColors.SetNumUninitialized(MeshData.Vertices.Num());
 
@@ -1192,6 +1667,8 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
     const bool bLocalEnablePostWeld = bEnablePostWeld;
     const float LocalPostWeldEpsilonScale = PostWeldEpsilonScale;
+    const bool bLocalRepairMeshSeams = bRepairMeshSeams;
+    const float LocalMeshSeamWeldEpsilonScale = MeshSeamWeldEpsilonScale;
     const bool bLocalEnableIslandCull = bEnableIslandCull;
     const int32 LocalMinTrisToKeepAfterCull = MinTrisToKeepAfterCull;
     const bool bLocalDebugPipeline = bDebugPipeline;
@@ -1215,6 +1692,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         SampleX, SampleY, SampleZ, Voxel,
         InputSeed, TriesForSeedSearch, LocalBuildSerial,
         bLocalEnablePostWeld, LocalPostWeldEpsilonScale,
+        bLocalRepairMeshSeams, LocalMeshSeamWeldEpsilonScale,
         bLocalEnableIslandCull, LocalMinTrisToKeepAfterCull,
         bLocalDebugPipeline, bLocalDebugSeedSearch, LocalDebugPrintEveryNAttempt]() mutable
         {
@@ -1363,17 +1841,23 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
 
             // Runtime에서도 Editor와 동일하게 불량 삼각형을 제거한 뒤 노멀/탄젠트를 재계산한다.
-            MG_RemoveBadTriangles(
+            const int32 RemovedBadTriangles = MG_RemoveBadTriangles(
                 MeshData,
-                FMath::Square(S.VoxelSizeCm * 0.08f),
-                S.VoxelSizeCm * 0.03f
+                FMath::Square(S.VoxelSizeCm * 0.001f),
+                S.VoxelSizeCm * 0.0005f
             );
+
+            // Runtime에서도 최종 출력 직전에 같은 Seam Repair를 적용한다.
+            if (bLocalRepairMeshSeams)
+            {
+                MG_WeldVertices_Quantized(MeshData, S.VoxelSizeCm * LocalMeshSeamWeldEpsilonScale);
+            }
 
             MG_RecomputeNormalsAndTangents(MeshData);
 
             // ---- GameThread apply ----
             AsyncTask(ENamedThreads::GameThread,
-                [WeakThis, FinalS = S, MeshData = MoveTemp(MeshData), LocalBuildSerial, bLocalDebugPipeline]() mutable
+                [WeakThis, FinalS = S, MeshData = MoveTemp(MeshData), RemovedBadTriangles, LocalBuildSerial, bLocalDebugPipeline]() mutable
                 {
                     if (!WeakThis.IsValid()) return;
                     if (WeakThis->InFlightBuildSerial != LocalBuildSerial) return;
@@ -1383,6 +1867,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     Result.BuildSerial = LocalBuildSerial;
                     Result.FinalSettings = FinalS;
                     Result.MeshData = MoveTemp(MeshData);
+                    Result.RemovedBadTriangleCount = RemovedBadTriangles;
 
                     if (bLocalDebugPipeline)
                     {

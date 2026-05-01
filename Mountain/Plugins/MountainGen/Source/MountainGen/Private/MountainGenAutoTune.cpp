@@ -1,4 +1,5 @@
 ﻿#include "MountainGenAutoTune.h"
+#include "GDPCGScoring.h"
 #include "VoxelDensityGenerator.h"
 #include "HAL/PlatformTime.h"
 #include "Async/ParallelFor.h"
@@ -521,8 +522,6 @@ void MGAutoTuneIntentParams(
         InOutS.BaseField3DStrengthCm += (kS * eSteep) * 4500.f;
         InOutS.DetailScaleCm -= (kS * eSteep) * 1800.f;
 
-        // If surface quality is poor, reduce high-frequency amplitude first.
-        // This keeps difficulty shape controlled by Overhang/Steep while stabilizing normals and shadows.
         if (eRough > 0.f || eShadow > 0.f)
         {
             const float QualityError = eRough + eShadow * 1.5f;
@@ -543,11 +542,200 @@ void MGAutoTuneIntentParams(
 }
 
 // ============================================================
+// GoalDrivenPCG adapter for MountainGen cliff metrics
+// 절벽 전용 Metrics를 목표 기반 제어형 PCG 공통 구조로 변환한다.
+// ============================================================
+
+static FGDPCGTargetProfile MGMakeGoalProfileFromSettings(const FMountainGenSettings& S)
+{
+    FGDPCGTargetProfile Profile;
+
+    switch (S.Difficulty)
+    {
+    case EMountainGenDifficulty::Easy:
+        Profile.ProfileName = TEXT("MountainGen.Easy");
+        break;
+    case EMountainGenDifficulty::Normal:
+        Profile.ProfileName = TEXT("MountainGen.Normal");
+        break;
+    case EMountainGenDifficulty::Hard:
+    default:
+        Profile.ProfileName = TEXT("MountainGen.Hard");
+        break;
+    }
+
+    Profile.Targets.Add(FGDPCGMetricTarget{
+        TEXT("OverhangRatio"),
+        EGDPCGMetricGoalType::Range,
+        S.Targets.OverhangMin,
+        S.Targets.OverhangMax,
+        1.0f
+        });
+
+    Profile.Targets.Add(FGDPCGMetricTarget{
+        TEXT("SteepRatio"),
+        EGDPCGMetricGoalType::Range,
+        S.Targets.SteepMin,
+        S.Targets.SteepMax,
+        1.0f
+        });
+
+    Profile.Targets.Add(FGDPCGMetricTarget{
+        TEXT("RoughnessRatio"),
+        EGDPCGMetricGoalType::LowerIsBetter,
+        0.0f,
+        S.Targets.RoughnessMax,
+        FMath::Max(0.0f, S.SurfaceQualityScoreWeight)
+        });
+
+    Profile.Targets.Add(FGDPCGMetricTarget{
+        TEXT("ShadowRiskRatio"),
+        EGDPCGMetricGoalType::LowerIsBetter,
+        0.0f,
+        S.Targets.ShadowRiskMax,
+        FMath::Max(0.0f, S.SurfaceQualityScoreWeight * 1.5f)
+        });
+
+    return Profile;
+}
+
+static TArray<FGDPCGMetricValue> MGMakeObservedMetricsFromMetrics(const FMGMetrics& M)
+{
+    TArray<FGDPCGMetricValue> Out;
+    Out.Reserve(4);
+
+    auto AddMetric = [&Out](const TCHAR* Name, float Value)
+        {
+            FGDPCGMetricValue Metric;
+            Metric.MetricName = FName(Name);
+            Metric.Value = Value;
+            Out.Add(Metric);
+        };
+
+    AddMetric(TEXT("OverhangRatio"), M.OverhangRatio);
+    AddMetric(TEXT("SteepRatio"), M.SteepRatio);
+    AddMetric(TEXT("RoughnessRatio"), M.RoughnessRatio);
+    AddMetric(TEXT("ShadowRiskRatio"), M.ShadowRiskRatio);
+
+    return Out;
+}
+
+// ============================================================
+// Hierarchical Goal Search
+// ============================================================
+
+struct FMGSeedCandidate
+{
+    int32 Seed = 1;
+    FMountainGenSettings Settings;
+    FMGMetrics ProxyMetrics;
+    FMGMetrics FullMetrics;
+    float ProxyScore = FLT_MAX;
+    float FullScore = FLT_MAX;
+    bool bProxyPassed = false;
+    bool bFullPassed = false;
+};
+
+static float MGComputeGoalScore(const FMountainGenSettings& S, const FMGMetrics& M, bool& bOutPassed)
+{
+    const FGDPCGTargetProfile GoalProfile = MGMakeGoalProfileFromSettings(S);
+    const TArray<FGDPCGMetricValue> ObservedMetrics = MGMakeObservedMetricsFromMetrics(M);
+    const FGDPCGCandidateResult GoalResult = GDPCGScoring::EvaluateCandidate(S.Seed, GoalProfile, ObservedMetrics);
+
+    float Score = GoalResult.FinalScore;
+
+    // Hard constraints: 렌더링/표면 안정성 계열은 목표 상한을 넘으면 훨씬 강하게 벌점 처리한다.
+    // 이렇게 해야 Overhang/Steep만 맞고 표면 품질이 망가진 후보가 선별되는 것을 막는다.
+    const float HardPenalty = FMath::Max(1.0f, S.HardConstraintPenaltyWeight);
+    const float RoughExcess = FMath::Max(0.f, M.RoughnessRatio - S.Targets.RoughnessMax);
+    const float ShadowExcess = FMath::Max(0.f, M.ShadowRiskRatio - S.Targets.ShadowRiskMax);
+
+    Score += (RoughExcess + ShadowExcess * 1.5f) * HardPenalty;
+
+    // 표면을 거의 찾지 못한 후보는 Proxy가 불안정하므로 강하게 탈락시킨다.
+    if (M.SurfaceNearSamples <= 3)
+    {
+        Score += HardPenalty * 10.f;
+    }
+
+    bOutPassed =
+        InRange(M.OverhangRatio, S.Targets.OverhangMin, S.Targets.OverhangMax) &&
+        InRange(M.SteepRatio, S.Targets.SteepMin, S.Targets.SteepMax) &&
+        (M.RoughnessRatio <= S.Targets.RoughnessMax) &&
+        (M.ShadowRiskRatio <= S.Targets.ShadowRiskMax) &&
+        (M.SurfaceNearSamples > 3);
+
+    return Score;
+}
+
+static FMountainGenSettings MGMakeProxySettings(const FMountainGenSettings& S)
+{
+    FMountainGenSettings Proxy = S;
+    Proxy.MetricsSamplesPerTry = FMath::Clamp(S.ProxyMetricsSamplesPerTry, 16, 2048);
+    return Proxy;
+}
+
+static void MGApplyGoalFeedbackToSettings(FMountainGenSettings& InOutS, const FMGMetrics& M)
+{
+    const float TargetOver = RangeMid(InOutS.Targets.OverhangMin, InOutS.Targets.OverhangMax);
+    const float TargetSteep = RangeMid(InOutS.Targets.SteepMin, InOutS.Targets.SteepMax);
+
+    const float eOver = TargetOver - M.OverhangRatio;
+    const float eSteep = TargetSteep - M.SteepRatio;
+    const float eRough = FMath::Max(0.f, M.RoughnessRatio - InOutS.Targets.RoughnessMax);
+    const float eShadow = FMath::Max(0.f, M.ShadowRiskRatio - InOutS.Targets.ShadowRiskMax);
+
+    // 목표 오차 방향으로 다음 후보 그룹의 파라미터를 이동시킨다.
+    // 이 단계는 최종 메시를 만들기 전 Proxy 탐색 안에서만 동작한다.
+    InOutS.VolumeStrength += eOver * 0.30f;
+    InOutS.OverhangDepthCm += eOver * 1600.f;
+    InOutS.OverhangBias -= eOver * 0.08f;
+    InOutS.OverhangFadeCm += eOver * 2400.f;
+
+    InOutS.BaseField3DStrengthCm += eSteep * 3500.f;
+    InOutS.BaseField3DScaleCm -= eSteep * 900.f;
+
+    if (eRough > 0.f || eShadow > 0.f)
+    {
+        const float QualityError = eRough + eShadow * 1.75f;
+        InOutS.DetailStrengthCm -= QualityError * 1100.f;
+        InOutS.SurfaceRoughnessStrengthCm -= QualityError * 850.f;
+        InOutS.SurfaceRoughnessMaskStrength += QualityError * 0.35f;
+        InOutS.DetailScaleCm += QualityError * 1800.f;
+    }
+
+    MGClampToDifficultyBounds(InOutS);
+}
+
+static FString MGMakeSearchDebugLine(const TCHAR* Prefix, int32 Attempt, int32 MaxTry, const FMGSeedCandidate& C)
+{
+    const FMGMetrics& M = C.ProxyMetrics;
+    return FString::Printf(
+        TEXT("[%s] %d/%d seed=%d | ProxyScore=%.3f | Over=%.3f | Steep=%.3f | Rough=%.3f | Shadow=%.3f | Near=%d"),
+        Prefix,
+        Attempt,
+        MaxTry,
+        C.Seed,
+        C.ProxyScore,
+        M.OverhangRatio,
+        M.SteepRatio,
+        M.RoughnessRatio,
+        M.ShadowRiskRatio,
+        M.SurfaceNearSamples
+    );
+}
+
 // Seed Search
+// 목표 기반 계층 탐색:
+// 1) 저해상도 Proxy Metrics로 많은 후보를 빠르게 평가한다.
+// 2) 목표와 먼 후보는 메시 생성/정밀 평가 전에 버린다.
+// 3) Proxy 상위 후보만 정밀 Metrics로 재평가한다.
+// 4) Proxy 오차를 보고 다음 후보 그룹의 파라미터를 보정한다.
+// 5) 선택된 후보의 Seed와 보정된 Settings를 InOutS에 반영한다.
 // ============================================================
 
 int32 MGSearchSeedForTargets(
-    const FMountainGenSettings& BaseS,
+    FMountainGenSettings& InOutS,
     const FVector& TerrainOriginWorld,
     const FVector& WorldMin,
     const FVector& WorldMax,
@@ -559,110 +747,176 @@ int32 MGSearchSeedForTargets(
     int32 DebugEveryN,
     TFunction<void(const FString&, float, FColor)> DebugPrint)
 {
-    const int32 WantedTries = FMath::Max(1, Tries);
-    const int32 MaxTry = bRetryUntilSatisfied ? FMath::Max(1, MaxAttempts) : WantedTries;
+    const int32 LegacyTryBudget = bRetryUntilSatisfied ? FMath::Max(1, MaxAttempts) : FMath::Max(1, Tries);
+    const int32 ProxyBudget = InOutS.bUseHierarchicalGoalSearch
+        ? FMath::Max(1, InOutS.ProxySeedBudget)
+        : LegacyTryBudget;
+
+    const int32 TotalProxyBudget = FMath::Max(1, ProxyBudget);
+    const int32 SurvivorCount = FMath::Clamp(InOutS.ProxySurvivorCount, 1, 128);
+    const int32 FeedbackRounds = InOutS.bUseHierarchicalGoalSearch
+        ? FMath::Clamp(InOutS.GoalFeedbackRounds, 1, 16)
+        : 1;
+
+    const int32 AutoBatch = FMath::Max(1, FMath::CeilToInt((float)TotalProxyBudget / (float)FeedbackRounds));
+    const int32 BatchSize = InOutS.GoalFeedbackBatchSize > 0
+        ? FMath::Clamp(InOutS.GoalFeedbackBatchSize, 1, 1024)
+        : AutoBatch;
 
     FRandomStream Rng;
     if (InputSeed > 0) Rng.Initialize(InputSeed ^ 0x1F3A9B2D);
     else Rng.Initialize((int32)FPlatformTime::Cycles64());
 
-    int32 BestSeed = (InputSeed > 0) ? InputSeed : Rng.RandRange(1, INT32_MAX);
-    float BestScore = FLT_MAX;
+    TArray<FMGSeedCandidate> Survivors;
+    Survivors.Reserve(SurvivorCount * 2);
 
-    FMGMetricsContext Ctx;
-    Ctx.Build(BaseS, TerrainOriginWorld, WorldMin, WorldMax);
+    FMountainGenSettings SearchBase = InOutS;
+    MGClampToDifficultyBounds(SearchBase);
 
-    for (int32 Attempt = 1; Attempt <= MaxTry; ++Attempt)
+    FMGSeedCandidate BestProxy;
+    FMGSeedCandidate BestFull;
+
+    int32 Attempt = 0;
+
+    for (int32 Round = 0; Round < FeedbackRounds && Attempt < TotalProxyBudget; ++Round)
     {
-        const int32 Seed =
-            (Attempt == 1 && InputSeed > 0) ? InputSeed : Rng.RandRange(1, INT32_MAX);
+        FMGSeedCandidate BestRound;
 
-        FMountainGenSettings Cand = BaseS;
-        Cand.Seed = Seed;
-
-        MGDeriveReproducibleDomainFromSeed(Cand, Seed);
-
-        const FMGMetrics M = Ctx.Compute(Cand);
-
-        const bool bOverOK = InRange(M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax);
-        const bool bSteepOK = InRange(M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax);
-        const bool bRoughOK = (M.RoughnessRatio <= Cand.Targets.RoughnessMax);
-        const bool bShadowOK = (M.ShadowRiskRatio <= Cand.Targets.ShadowRiskMax);
-
-        const float ShapeScore =
-            ScoreToRange(M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax) +
-            ScoreToRange(M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax);
-
-        const float QualityScore =
-            FMath::Max(0.f, M.RoughnessRatio - Cand.Targets.RoughnessMax) +
-            FMath::Max(0.f, M.ShadowRiskRatio - Cand.Targets.ShadowRiskMax) * 1.5f;
-
-        const float Score = ShapeScore + Cand.SurfaceQualityScoreWeight * QualityScore;
-
-        if (Score < BestScore)
+        const int32 RoundCount = FMath::Min(BatchSize, TotalProxyBudget - Attempt);
+        for (int32 i = 0; i < RoundCount; ++i)
         {
-            BestScore = Score;
-            BestSeed = Seed;
+            ++Attempt;
+
+            const int32 Seed = (Attempt == 1 && InputSeed > 0)
+                ? InputSeed
+                : Rng.RandRange(1, INT32_MAX);
+
+            FMGSeedCandidate C;
+            C.Seed = Seed;
+            C.Settings = SearchBase;
+            C.Settings.Seed = Seed;
+            MGDeriveReproducibleDomainFromSeed(C.Settings, Seed);
+
+            FMountainGenSettings ProxyS = MGMakeProxySettings(C.Settings);
+            FMGMetricsContext ProxyCtx;
+            ProxyCtx.Build(ProxyS, TerrainOriginWorld, WorldMin, WorldMax);
+            C.ProxyMetrics = ProxyCtx.Compute(ProxyS);
+            C.ProxyScore = MGComputeGoalScore(ProxyS, C.ProxyMetrics, C.bProxyPassed);
+
+            if (C.ProxyScore < BestProxy.ProxyScore)
+            {
+                BestProxy = C;
+            }
+            if (C.ProxyScore < BestRound.ProxyScore)
+            {
+                BestRound = C;
+            }
+
+            Survivors.Add(C);
+            Survivors.Sort([](const FMGSeedCandidate& A, const FMGSeedCandidate& B)
+                {
+                    return A.ProxyScore < B.ProxyScore;
+                });
+            if (Survivors.Num() > SurvivorCount)
+            {
+                Survivors.SetNum(SurvivorCount);
+            }
+
+            if (bDebug && DebugPrint)
+            {
+                const int32 EveryN = FMath::Max(1, DebugEveryN);
+                if (Attempt == 1 || Attempt == TotalProxyBudget || (Attempt % EveryN) == 0)
+                {
+                    DebugPrint(
+                        MGMakeSearchDebugLine(TEXT("ProxySearch"), Attempt, TotalProxyBudget, C),
+                        3.0f,
+                        C.bProxyPassed ? FColor::Green : FColor::Cyan
+                    );
+                }
+            }
+        }
+
+        // Proxy 단계에서 목표를 만족한 후보가 나와도 바로 반환하지 않는다.
+        // 반드시 정밀 Metrics 단계로 넘겨서 실제 선택 후보와 비교한다.
+        if (InOutS.bUseHierarchicalGoalSearch && BestRound.ProxyScore < FLT_MAX)
+        {
+            MGApplyGoalFeedbackToSettings(SearchBase, BestRound.ProxyMetrics);
+        }
+    }
+
+    if (Survivors.Num() == 0)
+    {
+        InOutS.Seed = (InputSeed > 0) ? InputSeed : 1;
+        return InOutS.Seed;
+    }
+
+    // Proxy 상위 후보만 정밀 Metrics로 평가한다.
+    // 여기서도 아직 메시를 만들지는 않는다. 밀도장 기반 정밀 지표로 마지막 Seed를 고른다.
+    for (FMGSeedCandidate& C : Survivors)
+    {
+        FMountainGenSettings FullS = C.Settings;
+        FullS.MetricsSamplesPerTry = FMath::Max(FullS.MetricsSamplesPerTry, InOutS.MetricsSamplesPerTry);
+
+        FMGMetricsContext FullCtx;
+        FullCtx.Build(FullS, TerrainOriginWorld, WorldMin, WorldMax);
+        C.FullMetrics = FullCtx.Compute(FullS);
+        C.FullScore = MGComputeGoalScore(FullS, C.FullMetrics, C.bFullPassed);
+
+        if (C.FullScore < BestFull.FullScore)
+        {
+            BestFull = C;
         }
 
         if (bDebug && DebugPrint)
         {
-            const int32 EveryN = FMath::Max(1, DebugEveryN);
-            const bool bPrint = (Attempt == 1) || (Attempt == MaxTry) || ((Attempt % EveryN) == 0);
-
-            if (bPrint)
-            {
-                const FString Line = FString::Printf(
-                    TEXT("seed=%d | Over=%.3f [%.2f~%.2f] %s | Steep=%.3f [%.2f~%.2f] %s | Rough=%.3f <= %.3f %s | Shadow=%.3f <= %.3f %s | Near=%d | Score=%.3f"),
-                    Seed,
-                    M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax, bOverOK ? TEXT("OK") : TEXT("FAIL"),
-                    M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax, bSteepOK ? TEXT("OK") : TEXT("FAIL"),
-                    M.RoughnessRatio, Cand.Targets.RoughnessMax, bRoughOK ? TEXT("OK") : TEXT("FAIL"),
-                    M.ShadowRiskRatio, Cand.Targets.ShadowRiskMax, bShadowOK ? TEXT("OK") : TEXT("FAIL"),
-                    M.SurfaceNearSamples,
-                    Score
-                );
-
-                FColor C = FColor::Red;
-                if (bOverOK && bSteepOK && bRoughOK && bShadowOK) C = FColor::Green;
-                else if (bOverOK && bSteepOK) C = FColor::Orange;
-                else if (!bOverOK && bSteepOK) C = FColor::Blue;
-                else if (bOverOK && !bSteepOK) C = FColor::Yellow;
-
-                DebugPrint(FString::Printf(TEXT("[SeedSearch] %d/%d %s"), Attempt, MaxTry, *Line), 4.5f, C);
-            }
+            DebugPrint(
+                FString::Printf(
+                    TEXT("[RefineSearch] seed=%d | FullScore=%.3f | Over=%.3f | Steep=%.3f | Rough=%.3f | Shadow=%.3f | Near=%d"),
+                    C.Seed,
+                    C.FullScore,
+                    C.FullMetrics.OverhangRatio,
+                    C.FullMetrics.SteepRatio,
+                    C.FullMetrics.RoughnessRatio,
+                    C.FullMetrics.ShadowRiskRatio,
+                    C.FullMetrics.SurfaceNearSamples),
+                4.5f,
+                C.bFullPassed ? FColor::Green : FColor::Orange
+            );
         }
 
-        if (bOverOK && bSteepOK && bRoughOK && bShadowOK)
-        {
-            if (bDebug && DebugPrint)
-            {
-                const FString Line = FString::Printf(
-                    TEXT("seed=%d | Over=%.3f [%.2f~%.2f] OK | Steep=%.3f [%.2f~%.2f] OK | Rough=%.3f <= %.3f OK | Shadow=%.3f <= %.3f OK | Near=%d | Score=%.3f"),
-                    Seed,
-                    M.OverhangRatio, Cand.Targets.OverhangMin, Cand.Targets.OverhangMax,
-                    M.SteepRatio, Cand.Targets.SteepMin, Cand.Targets.SteepMax,
-                    M.RoughnessRatio, Cand.Targets.RoughnessMax,
-                    M.ShadowRiskRatio, Cand.Targets.ShadowRiskMax,
-                    M.SurfaceNearSamples,
-                    Score
-                );
-
-                DebugPrint(
-                    FString::Printf(
-                        TEXT("[SeedSearch] %d/%d SUCCESS %s"),
-                        Attempt, MaxTry, *Line
-                    ),
-                    6.0f,
-                    FColor::Green
-                );
-            }
-
-            return Seed;
-        }
+        // 정밀 평가에서 완전 통과한 후보가 있으면 점수순으로 이미 비교되므로,
+        // 더 낮은 점수를 찾기 위해 끝까지 본다. 조기 반환하지 않는다.
     }
 
-    return BestSeed;
+    if (BestFull.FullScore < FLT_MAX)
+    {
+        InOutS = BestFull.Settings;
+        InOutS.Seed = BestFull.Seed;
+        MGClampToDifficultyBounds(InOutS);
+        MGDeriveReproducibleDomainFromSeed(InOutS, BestFull.Seed);
+
+        if (bDebug && DebugPrint)
+        {
+            DebugPrint(
+                FString::Printf(
+                    TEXT("[GoalSearch][Selected] seed=%d | Score=%.3f | ProxyScore=%.3f | Passed=%s"),
+                    BestFull.Seed,
+                    BestFull.FullScore,
+                    BestFull.ProxyScore,
+                    BestFull.bFullPassed ? TEXT("true") : TEXT("false")),
+                6.0f,
+                BestFull.bFullPassed ? FColor::Green : FColor::Yellow
+            );
+        }
+
+        return BestFull.Seed;
+    }
+
+    InOutS = BestProxy.Settings;
+    InOutS.Seed = BestProxy.Seed;
+    MGClampToDifficultyBounds(InOutS);
+    MGDeriveReproducibleDomainFromSeed(InOutS, BestProxy.Seed);
+    return BestProxy.Seed;
 }
 
 void MGDeriveReproducibleDomainFromSeed(FMountainGenSettings& InOutS, int32 Seed)

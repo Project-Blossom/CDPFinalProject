@@ -8,10 +8,10 @@ struct FMGMetrics
     float OverhangRatio = 0.f;     // 0..1
     float SteepRatio = 0.f;        // 0..1
 
-    // 0..1. Ratio of sampled surface points whose local normal changes too abruptly.
+    // 0..1.
     float RoughnessRatio = 0.f;
 
-    // 0..1. Ratio of sampled surface points likely to create harsh shadow / grab artifacts.
+    // 0..1.
     float ShadowRiskRatio = 0.f;
 
     int32 SurfaceNearSamples = 0;
@@ -87,7 +87,7 @@ void MGAutoTuneIntentParams(
 
 // SeedSearch
 int32 MGSearchSeedForTargets(
-    const FMountainGenSettings& BaseS,
+    FMountainGenSettings& InOutS,
     const FVector& TerrainOriginWorld,
     const FVector& WorldMin,
     const FVector& WorldMax,

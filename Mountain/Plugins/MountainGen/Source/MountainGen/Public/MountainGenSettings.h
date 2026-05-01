@@ -1,4 +1,4 @@
-癤�#pragma once
+#pragma once
 #include "CoreMinimal.h"
 #include "MountainGenSettings.generated.h"
 
@@ -8,6 +8,15 @@ enum class EMountainGenDifficulty : uint8
     Easy     UMETA(DisplayName = "Easy"),
     Normal   UMETA(DisplayName = "Normal"),
     Hard     UMETA(DisplayName = "Hard"),
+};
+
+UENUM(BlueprintType)
+enum class EMGTerrainAlgorithm : uint8
+{
+    RidgedCliff       UMETA(DisplayName = "Ridged Cliff"),
+    DensityFBM        UMETA(DisplayName = "Density FBM"),
+    LayeredNoise      UMETA(DisplayName = "Layered Noise"),
+    ZoneMaskedDensity UMETA(DisplayName = "Zone Masked Density")
 };
 
 // ============================================================
@@ -79,6 +88,11 @@ struct FMountainGenSettings
     // ========================================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Voxel", meta = (ClampMin = "1.0"))
     float VoxelSizeCm = 200.f;
+
+    // Algorithm diversity without building a full node graph yet.
+    // The terrain module can swap density styles while still using the same goal-driven scoring loop.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Terrain")
+    EMGTerrainAlgorithm TerrainAlgorithm = EMGTerrainAlgorithm::RidgedCliff;
 
     // ========================================================
     // 3) Base
@@ -168,4 +182,36 @@ struct FMountainGenSettings
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Metrics", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
     float SteepDotOverride = -1.f;
+
+    // ========================================================
+    // 9) Goal-Driven Hierarchical Search
+    // ========================================================
+    // 목표 기반 탐색을 메시 생성 전에 저비용 Proxy Metrics로 먼저 거르는 방식으로 수행한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|GoalSearch")
+    bool bUseHierarchicalGoalSearch = true;
+
+    // Proxy 단계에서 검사할 후보 수. 값이 클수록 목표에 맞는 Seed를 찾을 가능성은 높지만 CPU 비용이 증가한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|GoalSearch", meta = (ClampMin = "1", ClampMax = "4096"))
+    int32 ProxySeedBudget = 128;
+
+    // Proxy 단계 통과 후 정밀 Metrics로 다시 평가할 상위 후보 수.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|GoalSearch", meta = (ClampMin = "1", ClampMax = "128"))
+    int32 ProxySurvivorCount = 12;
+
+    // Proxy Metrics에 사용할 저해상도 샘플 수. 전체 메시 생성 없이 목표 가능성을 빠르게 추정한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|GoalSearch", meta = (ClampMin = "16", ClampMax = "2048"))
+    int32 ProxyMetricsSamplesPerTry = 32;
+
+    // 목표 오차를 보고 다음 후보 그룹의 생성 파라미터를 보정하는 횟수.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|GoalSearch", meta = (ClampMin = "1", ClampMax = "16"))
+    int32 GoalFeedbackRounds = 3;
+
+    // 한 Feedback Round에서 평가할 Proxy 후보 수. 0이면 ProxySeedBudget / GoalFeedbackRounds로 자동 분배한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|GoalSearch", meta = (ClampMin = "0", ClampMax = "1024"))
+    int32 GoalFeedbackBatchSize = 0;
+
+    // 필수 품질 조건 위반 후보에 부여하는 벌점 배율.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|GoalSearch", meta = (ClampMin = "1.0", ClampMax = "100.0"))
+    float HardConstraintPenaltyWeight = 12.0f;
+
 };

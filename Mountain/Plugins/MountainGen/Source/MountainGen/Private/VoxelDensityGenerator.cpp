@@ -1,4 +1,4 @@
-﻿#include "VoxelDensityGenerator.h"
+#include "VoxelDensityGenerator.h"
 
 static FORCEINLINE float SmoothStep01(float t)
 {
@@ -136,7 +136,20 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
         const float mid = 1.f - FMath::Abs(2.f * z01 - 1.f);
         const float heightMask = FMath::Pow(FMath::Clamp(mid, 0.f, 1.f), 1.6f);
 
-        const float Amp = C.OverhangAmp;
+        float Amp = C.OverhangAmp;
+        if (S.TerrainAlgorithm == EMGTerrainAlgorithm::DensityFBM)
+        {
+            Amp *= 0.35f;
+        }
+        else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::LayeredNoise)
+        {
+            Amp *= 0.70f;
+        }
+        else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::ZoneMaskedDensity)
+        {
+            const float TopBoost = SmoothStep(0.35f, 0.90f, z01);
+            Amp *= FMath::Lerp(0.55f, 1.25f, TopBoost);
+        }
 
         if (Amp != 0.f && nearFaceMask != 0.f && heightMask != 0.f)
         {
@@ -159,7 +172,19 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
             const float Scale = C.Base3DScale;
             const int32 Oct = C.Base3DOct;
 
-            const float n = FBM3D(Domain / Scale, Oct, 2.0f, 0.5f);
+            float n = FBM3D(Domain / Scale, Oct, 2.0f, 0.5f);
+
+            if (S.TerrainAlgorithm == EMGTerrainAlgorithm::LayeredNoise)
+            {
+                const float Layer = FBM3D((Domain + FVector(9131.f, -2217.f, 5411.f)) / (Scale * 0.42f), FMath::Max(1, Oct - 1), 2.15f, 0.48f);
+                n = n * 0.72f + Layer * 0.28f;
+            }
+            else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::ZoneMaskedDensity)
+            {
+                const float HeightMask = FMath::Lerp(0.75f, 1.20f, SmoothStep(0.20f, 0.85f, z01));
+                n *= HeightMask;
+            }
+
             density += n * BaseFieldAmp;
         }
     }
@@ -173,8 +198,20 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
             const float Scale = C.DetailScale;
             const int32 Oct = C.DetailOct;
 
-            const float n = FBM3D(Domain / Scale, Oct, 2.0f, 0.55f);
-            density += n * C.DetailAmp;
+            float n = FBM3D(Domain / Scale, Oct, 2.0f, 0.55f);
+            float DetailAmp = C.DetailAmp;
+
+            if (S.TerrainAlgorithm == EMGTerrainAlgorithm::DensityFBM)
+            {
+                DetailAmp *= 0.55f;
+            }
+            else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::LayeredNoise)
+            {
+                n = n * 0.70f + RidgedFBM01((Domain + FVector(-3711.f, 7187.f, 1297.f)) / (Scale * 0.75f), Oct, 2.0f, 0.50f) * 0.30f;
+                DetailAmp *= 1.15f;
+            }
+
+            density += n * DetailAmp;
         }
     }
 
