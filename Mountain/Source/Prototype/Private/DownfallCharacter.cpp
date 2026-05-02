@@ -3678,10 +3678,7 @@ void ADownfallCharacter::DeactivateRainVFX()
     UE_LOG(LogDownFall, Warning, TEXT("RainVFX DEACTIVATED"));
 }
 
-// ─────────────────────────────────────────────────────────────────
 // Blizzard Hallucination VFX
-// ─────────────────────────────────────────────────────────────────
-
 void ADownfallCharacter::ActivateBlizzardVFX()
 {
     if (bBlizzardActive)
@@ -3806,9 +3803,6 @@ void ADownfallCharacter::DeactivateBlizzardVFX()
 void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)
 {
     // 1. 스테이지 인덱스 기반 분기
-    //    Stage 1 → Rain VFX (UpdateRainVFX에서 처리)
-    //    Stage 2 이상 → Blizzard VFX
-    //    Stage 0 (미설정) → 아무것도 하지 않음
     const UGameInstance* GI = GetGameInstance();
     const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GI);
     if (!DGI)

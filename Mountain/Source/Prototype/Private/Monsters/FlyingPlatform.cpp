@@ -196,10 +196,8 @@ void AFlyingPlatform::OnObstacleDetected(const FVector& ObstacleDirection)
     }
 }
 
-// ========================================
-// Carrier System (WallCrawler Transport)
-// ========================================
 
+// Carrier System (WallCrawler Transport)
 AWallCrawler* AFlyingPlatform::FindNearbyWallCrawler()
 {
     // 모든 WallCrawler 찾기
