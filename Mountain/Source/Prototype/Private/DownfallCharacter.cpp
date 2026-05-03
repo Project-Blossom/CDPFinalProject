@@ -3877,11 +3877,28 @@ void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)
         return;
     }
 
-    // Niagara 위치 추적 (플레이어 XY + Z 오프셋)
-    const FVector NewLocation = FVector(
-        GetActorLocation().X,
-        GetActorLocation().Y,
-        GetActorLocation().Z + 300.0f
+    // Niagara 위치 추적 — Wind 궤도 역방향 보정
+    // Wind Force (80, 30, -300) × WindSpeedScale 20 = (1600, 600, -6000) cm/s 기준
+    // Z=20000cm 낙하 시간 = 20000/6000 ≈ 3.33초
+    // XY 보정 = Wind XY × 낙하시간 반대 방향
+    //   X 보정: 1600 × 3.33 ≈ -5333cm (Wind 반대방향)
+    //   Y 보정: 600  × 3.33 ≈ -2000cm (Wind 반대방향)
+    // → 파티클이 스폰 후 Wind에 밀려 카메라 근처를 통과하도록 배치
+
+    const float BlizzardWindX       = 80.f;
+    const float BlizzardWindY       = 30.f;
+    const float BlizzardWindZ       = -300.f;
+    const float BlizzardWindScale   = 20.f;
+    const float BlizzardZOffset     = 20000.f;
+
+    const float ActualWindVZ = BlizzardWindZ * BlizzardWindScale;           // -6000
+    const float FallTime     = FMath::Abs(BlizzardZOffset / ActualWindVZ);  // 3.33s
+
+    // 스폰 지점 = 캐릭터 위치 + Z오프셋 + XY 역보정
+    const FVector NewLocation = GetActorLocation() + FVector(
+        -(BlizzardWindX * BlizzardWindScale * FallTime),   // X: -5333cm
+        -(BlizzardWindY * BlizzardWindScale * FallTime),   // Y: -2000cm
+        BlizzardZOffset                                     // Z: +20000cm
     );
     BlizzardNiagaraComponent->SetWorldLocation(NewLocation);
 
