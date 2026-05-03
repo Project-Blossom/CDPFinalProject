@@ -87,8 +87,6 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Voxel", meta = (ClampMin = "1.0"))
     float VoxelSizeCm = 200.f;
 
-    // Algorithm diversity without building a full node graph yet.
-    // The terrain module can swap density styles while still using the same goal-driven scoring loop.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Terrain")
     EMGTerrainAlgorithm TerrainAlgorithm = EMGTerrainAlgorithm::RidgedCliff;
 
@@ -116,9 +114,6 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Detail", meta = (ClampMin = "1", ClampMax = "12"))
     int32 DetailOctaves = 2;
 
-    // Preset-derived detail controls.
-    // Not exposed to Details panel: Difficulty preset owns these values.
-    // Macro shape strength and small surface detail are intentionally separated in code.
     float DetailStrengthCm = 0.f;
     float SurfaceRoughnessStrengthCm = 0.f;
     float SurfaceRoughnessMaskStrength = 0.75f;
@@ -164,6 +159,7 @@ struct FMountainGenSettings
     // 6-1) Top Flat Plateau
     // ========================================================
     // 절벽 생성이 끝난 뒤, 최상단에 단순 직육면체 평지 블록을 추가한다.
+    // 왼쪽에서 봤을 때 절벽 위에 평평한 블록이 얹힌 ㄱ자 형태를 만든다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
     bool bAddTopFlatPlateau = true;
 
