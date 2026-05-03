@@ -294,6 +294,103 @@ static void MG_CullMeshIslands(FChunkMeshData& Out, int32 MinTrisToKeep, bool bK
 
 
 // ============================================================
+// Top flat plateau append
+// ============================================================
+
+static void MG_AppendTopFlatPlateau(FChunkMeshData& M, const FMountainGenSettings& S)
+{
+    if (!S.bAddTopFlatPlateau)
+    {
+        return;
+    }
+
+    const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
+    const float Thickness = FMath::Max(10.f, S.TopPlateauThicknessCm);
+    const float HalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
+
+    if (Depth <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
+
+    // MeshData vertices are stored in actor-local coordinates.
+    // This function intentionally adds only a simple rectangular block.
+    // Local X = 0 is the cliff front/top edge. The block extends backward in -X.
+    const float XBack = -Depth;
+    const float XFront = FMath::Max(0.f, S.TopPlateauFrontOverlapCm);
+    const float YLeft = -HalfW;
+    const float YRight = HalfW;
+    const float ZTop = S.BaseHeightCm + S.CliffHeightCm + S.TopPlateauHeightOffsetCm;
+    const float ZBottom = ZTop - Thickness;
+
+    const FVector V000(XBack, YLeft, ZBottom);
+    const FVector V010(XBack, YRight, ZBottom);
+    const FVector V100(XFront, YLeft, ZBottom);
+    const FVector V110(XFront, YRight, ZBottom);
+
+    const FVector V001(XBack, YLeft, ZTop);
+    const FVector V011(XBack, YRight, ZTop);
+    const FVector V101(XFront, YLeft, ZTop);
+    const FVector V111(XFront, YRight, ZTop);
+
+    auto AddQuad = [&M](
+        const FVector& A,
+        const FVector& B,
+        const FVector& C,
+        const FVector& D,
+        const FVector& FaceNormal)
+        {
+            const int32 Base = M.Vertices.Num();
+
+            M.Vertices.Add(A);
+            M.Vertices.Add(B);
+            M.Vertices.Add(C);
+            M.Vertices.Add(D);
+
+            M.Normals.Add(FaceNormal);
+            M.Normals.Add(FaceNormal);
+            M.Normals.Add(FaceNormal);
+            M.Normals.Add(FaceNormal);
+
+            M.UV0.Add(FVector2D(0.f, 0.f));
+            M.UV0.Add(FVector2D(1.f, 0.f));
+            M.UV0.Add(FVector2D(1.f, 1.f));
+            M.UV0.Add(FVector2D(0.f, 1.f));
+
+            FVector TangentX = FVector::CrossProduct(FaceNormal, FVector::UpVector);
+            if (TangentX.SizeSquared() < KINDA_SMALL_NUMBER)
+            {
+                TangentX = FVector::RightVector;
+            }
+            TangentX.Normalize();
+
+            const FProcMeshTangent Tangent(TangentX, false);
+            M.Tangents.Add(Tangent);
+            M.Tangents.Add(Tangent);
+            M.Tangents.Add(Tangent);
+            M.Tangents.Add(Tangent);
+
+            // Simple two-triangle quad.
+            M.Triangles.Add(Base + 0);
+            M.Triangles.Add(Base + 1);
+            M.Triangles.Add(Base + 2);
+            M.Triangles.Add(Base + 0);
+            M.Triangles.Add(Base + 2);
+            M.Triangles.Add(Base + 3);
+        };
+
+    // The block is deliberately simple: six quads, no curved lip, no special shape.
+    AddQuad(V001, V101, V111, V011, FVector::UpVector);          // Top
+    AddQuad(V000, V010, V110, V100, -FVector::UpVector);         // Bottom
+    AddQuad(V100, V110, V111, V101, FVector::ForwardVector);     // Front
+    AddQuad(V010, V000, V001, V011, -FVector::ForwardVector);    // Back
+    AddQuad(V110, V010, V011, V111, FVector::RightVector);       // Right
+    AddQuad(V000, V100, V101, V001, -FVector::RightVector);      // Left
+}
+
+
+
+// ============================================================
 // Remove bad triangles
 // ============================================================
 
@@ -910,6 +1007,13 @@ uint32 AMountainGenWorldActor::ComputeSettingsHash_Editor() const
     H = HashCombine(H, MG_HashFloatForSettings(Settings.CliffThicknessCm));
     H = HashCombine(H, MG_HashFloatForSettings(Settings.CliffDepthCm));
     H = HashCombine(H, MG_HashFloatForSettings(Settings.FrontBandDepthCm));
+
+    // 상단 평지 후처리
+    H = HashCombine(H, MG_HashBoolForSettings(Settings.bAddTopFlatPlateau));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauDepthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauThicknessCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauFrontOverlapCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauHeightOffsetCm));
 
     // 밀도장 / 디테일
     H = HashCombine(H, MG_HashFloatForSettings(Settings.BaseField3DStrengthCm));
@@ -1560,6 +1664,9 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             MG_CullMeshIslands(MeshData, MinTrisToKeepAfterCull, true);
         }
 
+        // 절벽 생성이 끝난 뒤 최상단에 평지 슬래브를 덧붙인다.
+        // 이 후처리는 지형 목표 탐색에는 영향을 주지 않고, 최종 메시/충돌/SurfaceMetadata에만 포함된다.
+        MG_AppendTopFlatPlateau(MeshData, S);
 
         // 특정 위치의 이상 음영 원인이 되는 바늘형/퇴화 삼각형을 먼저 제거한다.
         // 기준은 VoxelSize에 비례시켜 형상 손상을 제한한다.
@@ -1839,6 +1946,9 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                 }
             }
 
+            // 절벽 생성이 끝난 뒤 최상단에 평지 슬래브를 덧붙인다.
+            // Runtime에서도 Editor와 동일한 최종 메시 구조를 만든다.
+            MG_AppendTopFlatPlateau(MeshData, S);
 
             // Runtime에서도 Editor와 동일하게 불량 삼각형을 제거한 뒤 노멀/탄젠트를 재계산한다.
             const int32 RemovedBadTriangles = MG_RemoveBadTriangles(

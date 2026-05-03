@@ -39,8 +39,6 @@ struct FMGTargets
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Targets", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float SteepMax = 0.50f;
 
-    // Preset-derived surface-quality targets.
-    // Not exposed to Details panel: Difficulty preset owns these values.
     float RoughnessMax = 0.18f;
     float ShadowRiskMax = 0.08f;
 };
@@ -161,6 +159,30 @@ struct FMountainGenSettings
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "0.0"))
     float FrontBandDepthCm = 0.f;
+
+    // ========================================================
+    // 6-1) Top Flat Plateau
+    // ========================================================
+    // 절벽 생성이 끝난 뒤, 최상단에 단순 직육면체 평지 블록을 추가한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
+    bool bAddTopFlatPlateau = true;
+
+    // 상단 평지 블록이 절벽 뒤쪽으로 이어지는 깊이. Actor 기준 -X 방향으로 뻗는다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "0.0"))
+    float TopPlateauDepthCm = 24000.f;
+
+    // 상단 평지 블록의 두께. 기본값 100cm = 1m.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "10.0"))
+    float TopPlateauThicknessCm = 100.f;
+
+    // 절벽 앞면 방향으로 겹치는 길이. 기본값 0이면 Actor X=0에서 정확히 끝나는 단순 블록이다.
+    // 틈을 덮고 싶을 때만 값을 올린다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "0.0"))
+    float TopPlateauFrontOverlapCm = 0.f;
+
+    // 평지 상단 높이 보정. 기본 0이면 BaseHeightCm + CliffHeightCm 위치가 블록 윗면이다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
+    float TopPlateauHeightOffsetCm = 0.f;
 
     // ========================================================
     // 7) Meshing

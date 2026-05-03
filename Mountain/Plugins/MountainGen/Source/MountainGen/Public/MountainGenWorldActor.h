@@ -387,7 +387,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Zones")
     TArray<FMGGenerationZone> GenerationZones;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Surface")
+    UPROPERTY(Transient)
     TArray<FMGSurfaceSample> GeneratedSurfaceSamples;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
