@@ -87,6 +87,8 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Voxel", meta = (ClampMin = "1.0"))
     float VoxelSizeCm = 200.f;
 
+    // Algorithm diversity without building a full node graph yet.
+    // The terrain module can swap density styles while still using the same goal-driven scoring loop.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Terrain")
     EMGTerrainAlgorithm TerrainAlgorithm = EMGTerrainAlgorithm::RidgedCliff;
 
@@ -114,6 +116,9 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Detail", meta = (ClampMin = "1", ClampMax = "12"))
     int32 DetailOctaves = 2;
 
+    // Preset-derived detail controls.
+    // Not exposed to Details panel: Difficulty preset owns these values.
+    // Macro shape strength and small surface detail are intentionally separated in code.
     float DetailStrengthCm = 0.f;
     float SurfaceRoughnessStrengthCm = 0.f;
     float SurfaceRoughnessMaskStrength = 0.75f;
@@ -158,27 +163,53 @@ struct FMountainGenSettings
     // ========================================================
     // 6-1) Top Flat Plateau
     // ========================================================
-    // 절벽 생성이 끝난 뒤, 최상단에 단순 직육면체 평지 블록을 추가한다.
-    // 왼쪽에서 봤을 때 절벽 위에 평평한 블록이 얹힌 ㄱ자 형태를 만든다.
+    // 절벽 생성이 끝난 뒤, 최상단에 별도 평지 컴포넌트를 추가한다.
+    // 이 평지는 절벽 메시/목표 지표/Surface Metadata에는 포함되지 않는다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
     bool bAddTopFlatPlateau = true;
 
-    // 상단 평지 블록이 절벽 뒤쪽으로 이어지는 깊이. Actor 기준 -X 방향으로 뻗는다.
+    // 상단 평지가 절벽 뒤쪽으로 이어지는 깊이. Actor 기준 -X 방향으로 뻗는다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "0.0"))
     float TopPlateauDepthCm = 24000.f;
 
-    // 상단 평지 블록의 두께. 기본값 100cm = 1m.
+    // 상단 평지 블록의 기본 두께. 기본값 100cm = 1m.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "10.0"))
     float TopPlateauThicknessCm = 100.f;
 
-    // 절벽 앞면 방향으로 겹치는 길이. 기본값 0이면 Actor X=0에서 정확히 끝나는 단순 블록이다.
-    // 틈을 덮고 싶을 때만 값을 올린다.
+    // 절벽과 맞닿는 앞쪽 경계를 절벽 상단 노이즈/실루엣에 맞출지 여부.
+    // true면 접합부만 절벽 모양을 따라가고, 뒤쪽은 단순 박스 형태를 유지한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
+    bool bConformTopPlateauToCliff = true;
+
+    // 접합부를 절벽 앞면 방향으로 얼마나 겹치게 할지 결정한다.
+    // 너무 크면 절벽 위를 과하게 덮고, 0이면 절벽 실루엣에 맞춘 위치에서 끝난다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "0.0"))
     float TopPlateauFrontOverlapCm = 0.f;
 
-    // 평지 상단 높이 보정. 기본 0이면 BaseHeightCm + CliffHeightCm 위치가 블록 윗면이다.
+    // 평지 상단 높이 보정. 기본 0이면 BaseHeightCm + CliffHeightCm 위치가 평지 윗면이다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
     float TopPlateauHeightOffsetCm = 0.f;
+
+    // 절벽 실루엣을 따라가는 앞쪽 경계의 Y 방향 분할 수.
+    // 값이 클수록 절벽 상단 모양을 더 촘촘하게 따라가지만 정점 수가 증가한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "4", ClampMax = "512"))
+    int32 TopPlateauConformSegmentsY = 96;
+
+    // 각 Y 지점에서 절벽 상단 후보를 찾을 때 사용하는 좌우 검색 폭.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "10.0"))
+    float TopPlateauConformSampleBandCm = 800.f;
+
+    // 평지 윗면 기준 아래쪽으로 어느 깊이까지 절벽 상단 후보를 찾을지 결정한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "100.0"))
+    float TopPlateauConformSearchDepthCm = 6000.f;
+
+    // 접합부가 절벽 표면과 미세하게 벌어지는 것을 줄이기 위해 아래쪽으로 살짝 내리는 값.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "0.0"))
+    float TopPlateauContactOverlapDownCm = 20.f;
+
+    // 절벽 상단 후보가 너무 낮게 잡혔을 때 앞쪽 접합부가 과도하게 아래로 내려가는 것을 제한한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "100.0"))
+    float TopPlateauMaxConformDropCm = 2500.f;
 
     // ========================================================
     // 7) Meshing

@@ -317,20 +317,18 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen")
     TObjectPtr<UProceduralMeshComponent> ProcMesh;
 
-    // 절벽 본체와 분리된 상단 평지 블록 컴포넌트다.
-    // 이 블록은 MountainGen의 절벽 Metrics, Surface Metadata, Placement Query에 포함하지 않는다.
+    // 절벽과 분리된 상단 평지 전용 메시 컴포넌트.
+    // 목표 지표, Surface Metadata, 배치 후보에는 포함하지 않는다.
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|TopPlateau")
     TObjectPtr<UProceduralMeshComponent> TopPlateauMesh;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Mesh")
     TObjectPtr<UMaterialInterface> VoxelMaterial;
 
-    // 상단 평지 블록 전용 머티리얼. 절벽 머티리얼과 공유하지 않는다.
+    // 상단 평지 전용 머티리얼. 절벽 머티리얼과 공유하지 않는다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
     TObjectPtr<UMaterialInterface> TopPlateauMaterial;
 
-    // 상단 평지 블록의 물리 충돌 여부.
-    // MountainGen의 등반/배치/표면 질의에는 포함되지 않지만, 필요하면 일반 지형처럼 서 있을 수 있게 충돌만 켤 수 있다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
     bool bTopPlateauCreateCollision = true;
 
@@ -428,9 +426,7 @@ private:
     void ApplyGeneratedMeshResult(FMGAsyncResult&& Result, bool bShowRuntimeSeedMessage);
     void UI_Status(const FString& Msg, float Seconds = 2.0f, FColor Color = FColor::Cyan) const;
     void ApplyVoxelMaterialParameters();
-    void ApplyTopPlateauMaterial();
-    void BuildTopPlateauComponent(const FMountainGenSettings& S);
-    void ClearTopPlateauComponent();
+    void RebuildTopPlateauMesh(const FChunkMeshData& CliffMeshData, const FMountainGenSettings& FinalSettings);
     void UpdateGeneratedMeshStateAndBroadcast();
 
     static FString MakeMetricsLine(

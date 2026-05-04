@@ -294,12 +294,147 @@ static void MG_CullMeshIslands(FChunkMeshData& Out, int32 MinTrisToKeep, bool bK
 
 
 // ============================================================
-// Top flat plateau box mesh data
+// Top flat plateau mesh builder
 // ============================================================
 
-static void MG_BuildTopFlatPlateauBoxData(FChunkMeshData& M, const FMountainGenSettings& S)
+static bool MG_FindCliffTopContactAtY(
+    const FChunkMeshData& CliffMesh,
+    const FMountainGenSettings& S,
+    float QueryY,
+    float ZTop,
+    float& OutX,
+    float& OutZ)
 {
-    M = FChunkMeshData();
+    const float Band = FMath::Max(10.f, S.TopPlateauConformSampleBandCm);
+    const float SearchDepth = FMath::Max(100.f, S.TopPlateauConformSearchDepthCm);
+    const float MinZ = ZTop - SearchDepth;
+    const float MaxZ = ZTop + FMath::Max(100.f, S.VoxelSizeCm * 2.f);
+
+    bool bFound = false;
+    float BestZ = -FLT_MAX;
+    float BestX = 0.f;
+    float BestYDist = FLT_MAX;
+
+    for (const FVector& P : CliffMesh.Vertices)
+    {
+        if (P.Z < MinZ || P.Z > MaxZ)
+        {
+            continue;
+        }
+
+        const float YDist = FMath::Abs(P.Y - QueryY);
+        if (YDist > Band)
+        {
+            continue;
+        }
+
+        // 우선 가장 높은 상단 후보를 고르고, 높이가 거의 같으면 더 가까운 Y와 더 앞쪽 X를 선호한다.
+        const bool bBetterHeight = P.Z > BestZ + 1.f;
+        const bool bSimilarHeight = FMath::Abs(P.Z - BestZ) <= 1.f;
+        const bool bBetterLateral = YDist < BestYDist - 1.f;
+        const bool bBetterFront = P.X > BestX;
+
+        if (!bFound || bBetterHeight || (bSimilarHeight && (bBetterLateral || (FMath::Abs(YDist - BestYDist) <= 1.f && bBetterFront))))
+        {
+            bFound = true;
+            BestZ = P.Z;
+            BestX = P.X;
+            BestYDist = YDist;
+        }
+    }
+
+    if (!bFound)
+    {
+        return false;
+    }
+
+    OutX = BestX + FMath::Max(0.f, S.TopPlateauFrontOverlapCm);
+
+    const float MaxDrop = FMath::Max(100.f, S.TopPlateauMaxConformDropCm);
+    const float ContactOverlapDown = FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
+    OutZ = FMath::Clamp(BestZ - ContactOverlapDown, ZTop - MaxDrop, ZTop - 1.f);
+
+    return true;
+}
+
+static void MG_AddPlateauQuad(
+    FChunkMeshData& M,
+    const FVector& A,
+    const FVector& B,
+    const FVector& C,
+    const FVector& D,
+    const FVector& DesiredNormal,
+    const FVector2D& UVA = FVector2D(0.f, 0.f),
+    const FVector2D& UVB = FVector2D(1.f, 0.f),
+    const FVector2D& UVC = FVector2D(1.f, 1.f),
+    const FVector2D& UVD = FVector2D(0.f, 1.f))
+{
+    const int32 Base = M.Vertices.Num();
+
+    M.Vertices.Add(A);
+    M.Vertices.Add(B);
+    M.Vertices.Add(C);
+    M.Vertices.Add(D);
+
+    FVector N = DesiredNormal.GetSafeNormal();
+    if (N.IsNearlyZero())
+    {
+        N = FVector::UpVector;
+    }
+
+    M.Normals.Add(N);
+    M.Normals.Add(N);
+    M.Normals.Add(N);
+    M.Normals.Add(N);
+
+    M.UV0.Add(UVA);
+    M.UV0.Add(UVB);
+    M.UV0.Add(UVC);
+    M.UV0.Add(UVD);
+
+    FVector TangentX = FVector::CrossProduct(FVector::UpVector, N);
+    if (TangentX.SizeSquared() < KINDA_SMALL_NUMBER)
+    {
+        TangentX = FVector::CrossProduct(FVector::RightVector, N);
+    }
+    if (!TangentX.Normalize())
+    {
+        TangentX = FVector::ForwardVector;
+    }
+
+    const FProcMeshTangent Tangent(TangentX, false);
+    M.Tangents.Add(Tangent);
+    M.Tangents.Add(Tangent);
+    M.Tangents.Add(Tangent);
+    M.Tangents.Add(Tangent);
+
+    const FVector FaceN = FVector::CrossProduct(B - A, C - A).GetSafeNormal();
+    if (FVector::DotProduct(FaceN, N) >= 0.f)
+    {
+        M.Triangles.Add(Base + 0);
+        M.Triangles.Add(Base + 2);
+        M.Triangles.Add(Base + 1);
+        M.Triangles.Add(Base + 0);
+        M.Triangles.Add(Base + 3);
+        M.Triangles.Add(Base + 2);
+    }
+    else
+    {
+        M.Triangles.Add(Base + 0);
+        M.Triangles.Add(Base + 1);
+        M.Triangles.Add(Base + 2);
+        M.Triangles.Add(Base + 0);
+        M.Triangles.Add(Base + 2);
+        M.Triangles.Add(Base + 3);
+    }
+}
+
+static void MG_BuildTopPlateauMeshData(
+    const FChunkMeshData& CliffMesh,
+    const FMountainGenSettings& S,
+    FChunkMeshData& Out)
+{
+    Out = FChunkMeshData();
 
     if (!S.bAddTopFlatPlateau)
     {
@@ -309,92 +444,91 @@ static void MG_BuildTopFlatPlateauBoxData(FChunkMeshData& M, const FMountainGenS
     const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
     const float Thickness = FMath::Max(10.f, S.TopPlateauThicknessCm);
     const float HalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
-
     if (Depth <= KINDA_SMALL_NUMBER)
     {
         return;
     }
 
-    // 별도 컴포넌트용 단순 직육면체 메시다.
-    // 절벽 MeshData에 합치지 않으므로 MountainGen의 Metrics, Surface Metadata, Placement Query에 포함되지 않는다.
-    // Local X = 0은 절벽 앞쪽 끝이며, 블록은 Actor 기준 -X 방향으로 뻗는다.
+    const int32 SegY = FMath::Clamp(S.TopPlateauConformSegmentsY, 4, 512);
     const float XBack = -Depth;
-    const float XFront = FMath::Max(0.f, S.TopPlateauFrontOverlapCm);
+    const float DefaultContactX = FMath::Max(0.f, S.TopPlateauFrontOverlapCm);
     const float YLeft = -HalfW;
     const float YRight = HalfW;
     const float ZTop = S.BaseHeightCm + S.CliffHeightCm + S.TopPlateauHeightOffsetCm;
     const float ZBottom = ZTop - Thickness;
 
-    const FVector V000(XBack, YLeft, ZBottom);
-    const FVector V010(XBack, YRight, ZBottom);
-    const FVector V100(XFront, YLeft, ZBottom);
-    const FVector V110(XFront, YRight, ZBottom);
+    TArray<float> ContactX;
+    TArray<float> ContactZ;
+    ContactX.SetNum(SegY + 1);
+    ContactZ.SetNum(SegY + 1);
 
-    const FVector V001(XBack, YLeft, ZTop);
-    const FVector V011(XBack, YRight, ZTop);
-    const FVector V101(XFront, YLeft, ZTop);
-    const FVector V111(XFront, YRight, ZTop);
+    for (int32 i = 0; i <= SegY; ++i)
+    {
+        const float A = (float)i / (float)SegY;
+        const float Y = FMath::Lerp(YLeft, YRight, A);
 
-    M.Vertices.Reserve(24);
-    M.Normals.Reserve(24);
-    M.UV0.Reserve(24);
-    M.Tangents.Reserve(24);
-    M.Triangles.Reserve(36);
+        float FoundX = DefaultContactX;
+        float FoundZ = ZBottom;
+        const bool bFound = S.bConformTopPlateauToCliff && MG_FindCliffTopContactAtY(CliffMesh, S, Y, ZTop, FoundX, FoundZ);
 
-    auto AddQuad = [&M](
-        const FVector& A,
-        const FVector& B,
-        const FVector& C,
-        const FVector& D,
-        const FVector& FaceNormal)
-        {
-            const int32 Base = M.Vertices.Num();
+        ContactX[i] = bFound ? FMath::Max(FoundX, XBack + 10.f) : DefaultContactX;
+        ContactZ[i] = bFound ? FoundZ : ZBottom;
+    }
 
-            M.Vertices.Add(A);
-            M.Vertices.Add(B);
-            M.Vertices.Add(C);
-            M.Vertices.Add(D);
+    Out.Vertices.Reserve(SegY * 24);
+    Out.Triangles.Reserve(SegY * 36 + 24);
+    Out.Normals.Reserve(SegY * 24);
+    Out.UV0.Reserve(SegY * 24);
+    Out.Tangents.Reserve(SegY * 24);
 
-            M.Normals.Add(FaceNormal);
-            M.Normals.Add(FaceNormal);
-            M.Normals.Add(FaceNormal);
-            M.Normals.Add(FaceNormal);
+    for (int32 i = 0; i < SegY; ++i)
+    {
+        const float A0 = (float)i / (float)SegY;
+        const float A1 = (float)(i + 1) / (float)SegY;
+        const float Y0 = FMath::Lerp(YLeft, YRight, A0);
+        const float Y1 = FMath::Lerp(YLeft, YRight, A1);
 
-            M.UV0.Add(FVector2D(0.f, 0.f));
-            M.UV0.Add(FVector2D(1.f, 0.f));
-            M.UV0.Add(FVector2D(1.f, 1.f));
-            M.UV0.Add(FVector2D(0.f, 1.f));
+        const FVector FrontTop0(ContactX[i], Y0, ZTop);
+        const FVector FrontTop1(ContactX[i + 1], Y1, ZTop);
+        const FVector FrontBottom0(ContactX[i], Y0, ContactZ[i]);
+        const FVector FrontBottom1(ContactX[i + 1], Y1, ContactZ[i + 1]);
 
-            FVector TangentX = FVector::CrossProduct(FaceNormal, FVector::UpVector);
-            if (TangentX.SizeSquared() < KINDA_SMALL_NUMBER)
-            {
-                TangentX = FVector::RightVector;
-            }
-            TangentX.Normalize();
+        const FVector BackTop0(XBack, Y0, ZTop);
+        const FVector BackTop1(XBack, Y1, ZTop);
+        const FVector BackBottom0(XBack, Y0, ZBottom);
+        const FVector BackBottom1(XBack, Y1, ZBottom);
 
-            const FProcMeshTangent Tangent(TangentX, false);
-            M.Tangents.Add(Tangent);
-            M.Tangents.Add(Tangent);
-            M.Tangents.Add(Tangent);
-            M.Tangents.Add(Tangent);
+        // 윗면은 평평하게 유지하되, 앞쪽 X 경계만 절벽 상단 실루엣을 따른다.
+        MG_AddPlateauQuad(Out, BackTop0, BackTop1, FrontTop1, FrontTop0, FVector::UpVector);
 
-            M.Triangles.Add(Base + 0);
-            M.Triangles.Add(Base + 2);
-            M.Triangles.Add(Base + 1);
-            M.Triangles.Add(Base + 0);
-            M.Triangles.Add(Base + 3);
-            M.Triangles.Add(Base + 2);
-        };
+        // 아랫면은 뒤쪽은 박스 두께를 유지하고, 앞쪽 접합부만 절벽 상단 높이를 따라간다.
+        MG_AddPlateauQuad(Out, FrontBottom0, FrontBottom1, BackBottom1, BackBottom0, -FVector::UpVector);
 
-    AddQuad(V001, V101, V111, V011, FVector::UpVector);          // Top
-    AddQuad(V000, V010, V110, V100, -FVector::UpVector);         // Bottom
-    AddQuad(V100, V110, V111, V101, FVector::ForwardVector);     // Front
-    AddQuad(V010, V000, V001, V011, -FVector::ForwardVector);    // Back
-    AddQuad(V110, V010, V011, V111, FVector::RightVector);       // Right
-    AddQuad(V000, V100, V101, V001, -FVector::RightVector);      // Left
+        // 절벽과 맞닿는 앞면. 이 면만 랜덤 절벽 실루엣을 따라간다.
+        const FVector FrontNormal = FVector::CrossProduct(FrontTop1 - FrontTop0, FrontBottom0 - FrontTop0).GetSafeNormal();
+        MG_AddPlateauQuad(Out, FrontBottom0, FrontBottom1, FrontTop1, FrontTop0, FrontNormal.IsNearlyZero() ? FVector::ForwardVector : FrontNormal);
+
+        // 뒤쪽은 단순한 직육면체 박스 면이다.
+        MG_AddPlateauQuad(Out, BackBottom1, BackBottom0, BackTop0, BackTop1, -FVector::ForwardVector);
+    }
+
+    // 양 끝 측면은 닫아준다.
+    {
+        const FVector FrontTop(ContactX[0], YLeft, ZTop);
+        const FVector FrontBottom(ContactX[0], YLeft, ContactZ[0]);
+        const FVector BackTop(XBack, YLeft, ZTop);
+        const FVector BackBottom(XBack, YLeft, ZBottom);
+        MG_AddPlateauQuad(Out, BackBottom, FrontBottom, FrontTop, BackTop, -FVector::RightVector);
+    }
+
+    {
+        const FVector FrontTop(ContactX[SegY], YRight, ZTop);
+        const FVector FrontBottom(ContactX[SegY], YRight, ContactZ[SegY]);
+        const FVector BackTop(XBack, YRight, ZTop);
+        const FVector BackBottom(XBack, YRight, ZBottom);
+        MG_AddPlateauQuad(Out, FrontBottom, BackBottom, BackTop, FrontTop, FVector::RightVector);
+    }
 }
-
-
 
 // ============================================================
 // Remove bad triangles
@@ -868,7 +1002,7 @@ AMountainGenWorldActor::AMountainGenWorldActor()
     ProcMesh->SetMobility(EComponentMobility::Static);
 
     TopPlateauMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("TopPlateauMesh"));
-    TopPlateauMesh->SetupAttachment(RootComponent);
+    TopPlateauMesh->SetupAttachment(ProcMesh);
     TopPlateauMesh->bUseAsyncCooking = true;
     TopPlateauMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
     TopPlateauMesh->SetGenerateOverlapEvents(false);
@@ -939,81 +1073,6 @@ void AMountainGenWorldActor::ApplyVoxelMaterialParameters()
     VoxelMID->SetScalarParameterValue(TEXT("SnowNoiseStrength"), SnowNoiseStrength);
 
     ProcMesh->SetMaterial(0, VoxelMID);
-}
-
-void AMountainGenWorldActor::ApplyTopPlateauMaterial()
-{
-    if (!TopPlateauMesh)
-    {
-        return;
-    }
-
-    if (TopPlateauMaterial)
-    {
-        TopPlateauMesh->SetMaterial(0, TopPlateauMaterial);
-    }
-    else
-    {
-        TopPlateauMesh->SetMaterial(0, nullptr);
-    }
-}
-
-void AMountainGenWorldActor::ClearTopPlateauComponent()
-{
-    if (!TopPlateauMesh)
-    {
-        return;
-    }
-
-    TopPlateauMesh->ClearAllMeshSections();
-    TopPlateauMesh->ClearCollisionConvexMeshes();
-    TopPlateauMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-}
-
-void AMountainGenWorldActor::BuildTopPlateauComponent(const FMountainGenSettings& S)
-{
-    if (!TopPlateauMesh)
-    {
-        return;
-    }
-
-    TopPlateauMesh->ClearAllMeshSections();
-    TopPlateauMesh->ClearCollisionConvexMeshes();
-
-    if (!S.bAddTopFlatPlateau)
-    {
-        TopPlateauMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        return;
-    }
-
-    FChunkMeshData PlateauData;
-    MG_BuildTopFlatPlateauBoxData(PlateauData, S);
-
-    if (PlateauData.Vertices.Num() == 0 || PlateauData.Triangles.Num() == 0)
-    {
-        TopPlateauMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        return;
-    }
-
-    TArray<FLinearColor> Colors;
-    Colors.Init(FLinearColor::White, PlateauData.Vertices.Num());
-
-    TopPlateauMesh->CreateMeshSection_LinearColor(
-        0,
-        PlateauData.Vertices,
-        PlateauData.Triangles,
-        PlateauData.Normals,
-        PlateauData.UV0,
-        Colors,
-        PlateauData.Tangents,
-        bTopPlateauCreateCollision
-    );
-
-    TopPlateauMesh->SetCollisionEnabled(
-        bTopPlateauCreateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision
-    );
-
-    ApplyTopPlateauMaterial();
 }
 
 static bool MG_InRange(float V, float Min, float Max)
@@ -1100,8 +1159,14 @@ uint32 AMountainGenWorldActor::ComputeSettingsHash_Editor() const
     H = HashCombine(H, MG_HashBoolForSettings(Settings.bAddTopFlatPlateau));
     H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauDepthCm));
     H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauThicknessCm));
+    H = HashCombine(H, MG_HashBoolForSettings(Settings.bConformTopPlateauToCliff));
     H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauFrontOverlapCm));
     H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauHeightOffsetCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.TopPlateauConformSegmentsY));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauConformSampleBandCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauConformSearchDepthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauContactOverlapDownCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauMaxConformDropCm));
     H = HashCombine(H, MG_HashBoolForSettings(bTopPlateauCreateCollision));
 
     // 밀도장 / 디테일
@@ -1223,7 +1288,6 @@ void AMountainGenWorldActor::BeginPlay()
 
         if (bHasExistingSection || bHasValidBounds)
         {
-            BuildTopPlateauComponent(Settings);
             UpdateGeneratedMeshStateAndBroadcast();
         }
         else if (!bAsyncWorking)
@@ -1357,6 +1421,51 @@ void AMountainGenWorldActor::GetGeneratedSurfaceSamples(TArray<FMGSurfaceSample>
     OutSamples = GeneratedSurfaceSamples;
 }
 
+void AMountainGenWorldActor::RebuildTopPlateauMesh(const FChunkMeshData& CliffMeshData, const FMountainGenSettings& FinalSettings)
+{
+    if (!TopPlateauMesh)
+    {
+        return;
+    }
+
+    TopPlateauMesh->ClearAllMeshSections();
+    TopPlateauMesh->ClearCollisionConvexMeshes();
+
+    FChunkMeshData PlateauMeshData;
+    MG_BuildTopPlateauMeshData(CliffMeshData, FinalSettings, PlateauMeshData);
+
+    if (PlateauMeshData.Vertices.Num() == 0 || PlateauMeshData.Triangles.Num() == 0)
+    {
+        TopPlateauMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        return;
+    }
+
+    // TopPlateau는 절벽 MeshData와 분리된 독립 컴포넌트다.
+    // 따라서 목표 지표, Surface Metadata, 몬스터/아이템/플랫폼 배치 후보에는 포함하지 않는다.
+    TArray<FLinearColor> PlateauColors;
+    PlateauColors.Init(FLinearColor::White, PlateauMeshData.Vertices.Num());
+
+    TopPlateauMesh->CreateMeshSection_LinearColor(
+        0,
+        PlateauMeshData.Vertices,
+        PlateauMeshData.Triangles,
+        PlateauMeshData.Normals,
+        PlateauMeshData.UV0,
+        PlateauColors,
+        PlateauMeshData.Tangents,
+        bTopPlateauCreateCollision
+    );
+
+    TopPlateauMesh->SetCollisionEnabled(
+        bTopPlateauCreateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision
+    );
+
+    if (TopPlateauMaterial)
+    {
+        TopPlateauMesh->SetMaterial(0, TopPlateauMaterial);
+    }
+}
+
 void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, bool bShowRuntimeSeedMessage)
 {
     if (Result.BuildSerial != InFlightBuildSerial)
@@ -1366,7 +1475,6 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
 
     if (!ProcMesh)
     {
-        ClearTopPlateauComponent();
         bAsyncWorking = false;
         InFlightBuildSerial = 0;
         return;
@@ -1374,10 +1482,14 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
 
     ProcMesh->ClearAllMeshSections();
     ProcMesh->ClearCollisionConvexMeshes();
+    if (TopPlateauMesh)
+    {
+        TopPlateauMesh->ClearAllMeshSections();
+        TopPlateauMesh->ClearCollisionConvexMeshes();
+    }
 
     if (Result.MeshData.Vertices.Num() == 0 || Result.MeshData.Triangles.Num() == 0)
     {
-        ClearTopPlateauComponent();
         UI_Status(TEXT("[MountainGen] 생성 실패: MeshData 비어있음"), 2.0f, FColor::Red);
         bAsyncWorking = false;
         InFlightBuildSerial = 0;
@@ -1447,7 +1559,7 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
     );
 
     ApplyVoxelMaterialParameters();
-    BuildTopPlateauComponent(Result.FinalSettings);
+    RebuildTopPlateauMesh(Result.MeshData, Result.FinalSettings);
 
     Settings.Seed = Result.FinalSettings.Seed;
 
@@ -1757,9 +1869,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             MG_CullMeshIslands(MeshData, MinTrisToKeepAfterCull, true);
         }
 
-        // 상단 평지 블록은 절벽 MeshData에 합치지 않는다.
-        // 별도 TopPlateauMesh 컴포넌트로 생성하여 Metrics/SurfaceMetadata/Placement Query와 분리한다.
-
         // 특정 위치의 이상 음영 원인이 되는 바늘형/퇴화 삼각형을 먼저 제거한다.
         // 기준은 VoxelSize에 비례시켜 형상 손상을 제한한다.
         const int32 RemovedBadTriangles = MG_RemoveBadTriangles(
@@ -1792,10 +1901,14 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
 
         ProcMesh->ClearAllMeshSections();
         ProcMesh->ClearCollisionConvexMeshes();
+        if (TopPlateauMesh)
+        {
+            TopPlateauMesh->ClearAllMeshSections();
+            TopPlateauMesh->ClearCollisionConvexMeshes();
+        }
 
         if (MeshData.Vertices.Num() == 0 || MeshData.Triangles.Num() == 0)
         {
-            ClearTopPlateauComponent();
             DebugPrintGT(TEXT("[MountainGen][Editor] MeshData 비어있음 (Cull/Weld로 모두 제거됨)"), 2.0f, FColor::Red);
             return;
         }
@@ -1844,7 +1957,7 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         );
 
         ApplyVoxelMaterialParameters();
-        BuildTopPlateauComponent(S);
+        RebuildTopPlateauMesh(MeshData, S);
 
         Settings.Seed = S.Seed;
 
@@ -2039,9 +2152,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
                     );
                 }
             }
-
-            // 상단 평지 블록은 Runtime에서도 절벽 MeshData에 합치지 않는다.
-            // GameThread에서 별도 TopPlateauMesh 컴포넌트로 생성한다.
 
             // Runtime에서도 Editor와 동일하게 불량 삼각형을 제거한 뒤 노멀/탄젠트를 재계산한다.
             const int32 RemovedBadTriangles = MG_RemoveBadTriangles(
