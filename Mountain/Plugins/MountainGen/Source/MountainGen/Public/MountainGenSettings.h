@@ -19,6 +19,39 @@ enum class EMGTerrainAlgorithm : uint8
     ZoneMaskedDensity UMETA(DisplayName = "Zone Masked Density")
 };
 
+UENUM(BlueprintType)
+enum class EMGStitchPriority : uint8
+{
+    CliffDominant   UMETA(DisplayName = "Cliff Dominant"),
+    PlateauDominant UMETA(DisplayName = "Plateau Dominant"),
+    BlendBoth       UMETA(DisplayName = "Blend Both")
+};
+
+// ============================================================
+// Plateau Terrain Module Targets
+// ============================================================
+USTRUCT(BlueprintType)
+struct FMGPlateauTargets
+{
+    GENERATED_BODY()
+
+    // Plateau 윗면의 평균 경사 허용치.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauTargets", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+    float MaxAverageSlopeDeg = 12.f;
+
+    // Plateau 윗면 중 보행 가능한 면적 비율의 최소값.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauTargets", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float MinWalkableAreaRatio = 0.75f;
+
+    // Plateau 윗면의 최대 높이 편차 허용치.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauTargets", meta = (ClampMin = "0.0"))
+    float MaxHeightDeltaCm = 450.f;
+
+    // Cliff와 Plateau 접합부의 최대 허용 간격.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauTargets", meta = (ClampMin = "0.0"))
+    float MaxContactGapCm = 80.f;
+};
+
 // ============================================================
 // Metrics Targets
 // ============================================================
@@ -161,55 +194,84 @@ struct FMountainGenSettings
     float FrontBandDepthCm = 0.f;
 
     // ========================================================
-    // 6-1) Top Flat Plateau
+    // 6-1) Plateau Terrain Module
     // ========================================================
-    // 절벽 생성이 끝난 뒤, 최상단에 별도 평지 컴포넌트를 추가한다.
-    // 이 평지는 절벽 메시/목표 지표/Surface Metadata에는 포함되지 않는다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
+    // 절벽 생성이 끝난 뒤, 최상단에 별도 Plateau 지형 모듈을 생성한다.
+    // Plateau는 절벽 Metrics / Surface Metadata / Placement Query에는 포함되지 않는다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
     bool bAddTopFlatPlateau = true;
 
-    // 상단 평지가 절벽 뒤쪽으로 이어지는 깊이. Actor 기준 -X 방향으로 뻗는다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "0.0"))
+    // Plateau가 절벽 뒤쪽으로 이어지는 깊이. Actor 기준 -X 방향으로 뻗는다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "0.0"))
     float TopPlateauDepthCm = 24000.f;
 
-    // 상단 평지 블록의 기본 두께. 기본값 100cm = 1m.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "10.0"))
+    // Plateau 하부 두께. 기본값 100cm = 1m.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "10.0"))
     float TopPlateauThicknessCm = 100.f;
 
-    // 절벽과 맞닿는 앞쪽 경계를 절벽 상단 노이즈/실루엣에 맞출지 여부.
-    // true면 접합부만 절벽 모양을 따라가고, 뒤쪽은 단순 박스 형태를 유지한다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
+    // 접합부에서 Plateau가 절벽 상단 실루엣을 따라가도록 한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
     bool bConformTopPlateauToCliff = true;
 
-    // 접합부를 절벽 앞면 방향으로 얼마나 겹치게 할지 결정한다.
-    // 너무 크면 절벽 위를 과하게 덮고, 0이면 절벽 실루엣에 맞춘 위치에서 끝난다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "0.0"))
+    // 절벽 앞면 방향으로 겹치는 길이. 접합부의 미세 틈을 덮고 싶을 때만 올린다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "0.0"))
     float TopPlateauFrontOverlapCm = 0.f;
 
-    // 평지 상단 높이 보정. 기본 0이면 BaseHeightCm + CliffHeightCm 위치가 평지 윗면이다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
+    // Plateau 기준 상단 높이 보정.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
     float TopPlateauHeightOffsetCm = 0.f;
 
-    // 절벽 실루엣을 따라가는 앞쪽 경계의 Y 방향 분할 수.
-    // 값이 클수록 절벽 상단 모양을 더 촘촘하게 따라가지만 정점 수가 증가한다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "4", ClampMax = "512"))
+    // 접합부를 Y방향으로 나누는 수. 값이 높을수록 절벽 실루엣을 더 촘촘하게 따른다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "4", ClampMax = "512"))
     int32 TopPlateauConformSegmentsY = 96;
 
-    // 각 Y 지점에서 절벽 상단 후보를 찾을 때 사용하는 좌우 검색 폭.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "10.0"))
+    // 접합부 샘플링 시 같은 Y로 인정할 폭.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "10.0"))
     float TopPlateauConformSampleBandCm = 800.f;
 
-    // 평지 윗면 기준 아래쪽으로 어느 깊이까지 절벽 상단 후보를 찾을지 결정한다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "100.0"))
+    // 접합부를 찾기 위해 절벽 상단 아래로 탐색할 깊이.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "100.0"))
     float TopPlateauConformSearchDepthCm = 6000.f;
 
-    // 접합부가 절벽 표면과 미세하게 벌어지는 것을 줄이기 위해 아래쪽으로 살짝 내리는 값.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "0.0"))
+    // 접합부 앞면을 절벽 상단보다 살짝 아래로 내려 겹치게 하는 값.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "0.0"))
     float TopPlateauContactOverlapDownCm = 20.f;
 
-    // 절벽 상단 후보가 너무 낮게 잡혔을 때 앞쪽 접합부가 과도하게 아래로 내려가는 것을 제한한다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau", meta = (ClampMin = "100.0"))
+    // 접합부가 기준 Plateau 높이에서 최대로 내려갈 수 있는 거리.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "100.0"))
     float TopPlateauMaxConformDropCm = 2500.f;
+
+    // Plateau 전용 Seed. 최종 Cliff Seed + 이 값 + 후보 번호로 Plateau 후보를 만든다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
+    int32 PlateauSeedOffset = 100000;
+
+    // Plateau 후보 수. 여러 후보를 만든 뒤 목표 점수가 가장 좋은 후보만 출력한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "1", ClampMax = "128"))
+    int32 PlateauCandidateCount = 12;
+
+    // Plateau 깊이 방향 격자 분할 수.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "1", ClampMax = "128"))
+    int32 PlateauSegmentsX = 16;
+
+    // Plateau 윗면의 약한 랜덤 지형성 강도.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "0.0"))
+    float PlateauSurfaceNoiseStrengthCm = 150.f;
+
+    // Plateau 윗면 노이즈 스케일.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "100.0"))
+    float PlateauSurfaceNoiseScaleCm = 8000.f;
+
+    // Plateau 윗면 노이즈 옥타브 수.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "1", ClampMax = "8"))
+    int32 PlateauSurfaceNoiseOctaves = 2;
+
+    // 접합 우선순위. 현재 기본은 Cliff가 기준이고 Plateau가 절벽 실루엣에 맞춘다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
+    EMGStitchPriority PlateauStitchPriority = EMGStitchPriority::CliffDominant;
+
+    // Plateau 후보 평가 목표.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
+    FMGPlateauTargets PlateauTargets;
 
     // ========================================================
     // 7) Meshing

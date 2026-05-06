@@ -429,12 +429,174 @@ static void MG_AddPlateauQuad(
     }
 }
 
-static void MG_BuildTopPlateauMeshData(
+static float MG_PlateauSmoothStep(float Edge0, float Edge1, float X)
+{
+    if (FMath::IsNearlyEqual(Edge0, Edge1))
+    {
+        return X >= Edge1 ? 1.f : 0.f;
+    }
+
+    const float T = FMath::Clamp((X - Edge0) / (Edge1 - Edge0), 0.f, 1.f);
+    return T * T * (3.f - 2.f * T);
+}
+
+static float MG_PlateauNoise2D(const FMountainGenSettings& S, int32 PlateauSeed, float X, float Y, float FrontBlendAlpha)
+{
+    const float Strength = FMath::Max(0.f, S.PlateauSurfaceNoiseStrengthCm);
+    if (Strength <= KINDA_SMALL_NUMBER)
+    {
+        return 0.f;
+    }
+
+    const float Scale = FMath::Max(100.f, S.PlateauSurfaceNoiseScaleCm);
+    const int32 Octaves = FMath::Clamp(S.PlateauSurfaceNoiseOctaves, 1, 8);
+
+    float Sum = 0.f;
+    float Amp = 1.f;
+    float AmpSum = 0.f;
+    float Freq = 1.f / Scale;
+
+    const float SeedX = (float)(PlateauSeed % 100000) * 0.0137f;
+    const float SeedY = (float)((PlateauSeed / 7) % 100000) * 0.0191f;
+
+    for (int32 O = 0; O < Octaves; ++O)
+    {
+        const FVector2D P(X * Freq + SeedX + O * 37.17f, Y * Freq + SeedY - O * 19.31f);
+        Sum += FMath::PerlinNoise2D(P) * Amp;
+        AmpSum += Amp;
+        Amp *= 0.5f;
+        Freq *= 2.f;
+    }
+
+    const float N = AmpSum > KINDA_SMALL_NUMBER ? Sum / AmpSum : 0.f;
+
+    // Cliff 접합부 근처에서는 노이즈를 줄여 접합 안정성을 우선한다.
+    const float ContactFade = 1.f - MG_PlateauSmoothStep(0.70f, 1.0f, FrontBlendAlpha);
+    return N * Strength * ContactFade;
+}
+
+struct FMGPlateauCandidateBuildInfo
+{
+    int32 CandidateIndex = 0;
+    int32 Seed = 0;
+    int32 ContactSampleCount = 0;
+    int32 MissingContactCount = 0;
+    float MaxContactGapCm = 0.f;
+};
+
+static void MG_AnalyzePlateauCandidate(
+    const FChunkMeshData& Mesh,
+    const FMountainGenSettings& S,
+    const FMGPlateauCandidateBuildInfo& BuildInfo,
+    FMGPlateauGenerationReport& OutReport)
+{
+    OutReport = FMGPlateauGenerationReport();
+    OutReport.FinalSeed = BuildInfo.Seed;
+    OutReport.CandidateCount = FMath::Max(1, S.PlateauCandidateCount);
+    OutReport.SelectedCandidateIndex = BuildInfo.CandidateIndex;
+    OutReport.ContactSampleCount = BuildInfo.ContactSampleCount;
+    OutReport.MaxContactGapCm = BuildInfo.MaxContactGapCm;
+    OutReport.bUsedCliffDominantStitch = (S.PlateauStitchPriority == EMGStitchPriority::CliffDominant);
+    OutReport.VertexCount = Mesh.Vertices.Num();
+    OutReport.TriangleCount = Mesh.Triangles.Num() / 3;
+
+    const int32 T = Mesh.Triangles.Num() / 3;
+    if (T <= 0)
+    {
+        OutReport.FinalScore = FLT_MAX;
+        return;
+    }
+
+    float TopAreaSum = 0.f;
+    float WalkableAreaSum = 0.f;
+    float SlopeAreaSum = 0.f;
+    float MinTopZ = FLT_MAX;
+    float MaxTopZ = -FLT_MAX;
+
+    const float WalkableSlopeDeg = FMath::Clamp(S.PlateauTargets.MaxAverageSlopeDeg + 6.f, 0.f, 90.f);
+
+    for (int32 Tri = 0; Tri < T; ++Tri)
+    {
+        const int32 IA = Mesh.Triangles[Tri * 3 + 0];
+        const int32 IB = Mesh.Triangles[Tri * 3 + 1];
+        const int32 IC = Mesh.Triangles[Tri * 3 + 2];
+        if (!Mesh.Vertices.IsValidIndex(IA) || !Mesh.Vertices.IsValidIndex(IB) || !Mesh.Vertices.IsValidIndex(IC))
+        {
+            continue;
+        }
+
+        const FVector A = Mesh.Vertices[IA];
+        const FVector B = Mesh.Vertices[IB];
+        const FVector C = Mesh.Vertices[IC];
+
+        FVector N = FVector::CrossProduct(B - A, C - A).GetSafeNormal();
+        if (N.IsNearlyZero())
+        {
+            continue;
+        }
+
+        // Top surface만 Plateau 품질 평가에 사용한다. 측면/하부는 구조용이다.
+        if (N.Z < 0.35f)
+        {
+            continue;
+        }
+
+        const float Area = FVector::CrossProduct(B - A, C - A).Size() * 0.5f;
+        if (Area <= KINDA_SMALL_NUMBER)
+        {
+            continue;
+        }
+
+        const float SlopeDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(N.Z, -1.f, 1.f)));
+        TopAreaSum += Area;
+        SlopeAreaSum += SlopeDeg * Area;
+        if (SlopeDeg <= WalkableSlopeDeg)
+        {
+            WalkableAreaSum += Area;
+        }
+
+        MinTopZ = FMath::Min(MinTopZ, FMath::Min(A.Z, FMath::Min(B.Z, C.Z)));
+        MaxTopZ = FMath::Max(MaxTopZ, FMath::Max(A.Z, FMath::Max(B.Z, C.Z)));
+    }
+
+    OutReport.AverageSlopeDeg = TopAreaSum > KINDA_SMALL_NUMBER ? SlopeAreaSum / TopAreaSum : 90.f;
+    OutReport.WalkableAreaRatio = TopAreaSum > KINDA_SMALL_NUMBER ? WalkableAreaSum / TopAreaSum : 0.f;
+    OutReport.MaxHeightDeltaCm = (MaxTopZ > MinTopZ) ? (MaxTopZ - MinTopZ) : 0.f;
+
+    const FMGPlateauTargets& Target = S.PlateauTargets;
+    const float SlopePenalty = FMath::Max(0.f, OutReport.AverageSlopeDeg - Target.MaxAverageSlopeDeg) / FMath::Max(1.f, Target.MaxAverageSlopeDeg);
+    const float WalkPenalty = FMath::Max(0.f, Target.MinWalkableAreaRatio - OutReport.WalkableAreaRatio);
+    const float HeightPenalty = FMath::Max(0.f, OutReport.MaxHeightDeltaCm - Target.MaxHeightDeltaCm) / FMath::Max(1.f, Target.MaxHeightDeltaCm);
+    const float ContactPenalty = FMath::Max(0.f, OutReport.MaxContactGapCm - Target.MaxContactGapCm) / FMath::Max(1.f, Target.MaxContactGapCm);
+    const float MissingContactPenalty = BuildInfo.MissingContactCount > 0 ? (float)BuildInfo.MissingContactCount * 0.25f : 0.f;
+
+    OutReport.FinalScore =
+        SlopePenalty * 1.25f +
+        WalkPenalty * 2.0f +
+        HeightPenalty * 1.0f +
+        ContactPenalty * 3.0f +
+        MissingContactPenalty;
+
+    OutReport.bPassedTargets =
+        OutReport.AverageSlopeDeg <= Target.MaxAverageSlopeDeg &&
+        OutReport.WalkableAreaRatio >= Target.MinWalkableAreaRatio &&
+        OutReport.MaxHeightDeltaCm <= Target.MaxHeightDeltaCm &&
+        OutReport.MaxContactGapCm <= Target.MaxContactGapCm &&
+        BuildInfo.MissingContactCount == 0;
+}
+
+static void MG_BuildOnePlateauCandidateMeshData(
     const FChunkMeshData& CliffMesh,
     const FMountainGenSettings& S,
-    FChunkMeshData& Out)
+    int32 CandidateIndex,
+    int32 PlateauSeed,
+    FChunkMeshData& Out,
+    FMGPlateauCandidateBuildInfo& OutBuildInfo)
 {
     Out = FChunkMeshData();
+    OutBuildInfo = FMGPlateauCandidateBuildInfo();
+    OutBuildInfo.CandidateIndex = CandidateIndex;
+    OutBuildInfo.Seed = PlateauSeed;
 
     if (!S.bAddTopFlatPlateau)
     {
@@ -449,84 +611,171 @@ static void MG_BuildTopPlateauMeshData(
         return;
     }
 
+    const int32 SegX = FMath::Clamp(S.PlateauSegmentsX, 1, 128);
     const int32 SegY = FMath::Clamp(S.TopPlateauConformSegmentsY, 4, 512);
     const float XBack = -Depth;
     const float DefaultContactX = FMath::Max(0.f, S.TopPlateauFrontOverlapCm);
     const float YLeft = -HalfW;
     const float YRight = HalfW;
-    const float ZTop = S.BaseHeightCm + S.CliffHeightCm + S.TopPlateauHeightOffsetCm;
-    const float ZBottom = ZTop - Thickness;
+    const float ZTopBase = S.BaseHeightCm + S.CliffHeightCm + S.TopPlateauHeightOffsetCm;
+    const float ZBottomBase = ZTopBase - Thickness;
 
     TArray<float> ContactX;
     TArray<float> ContactZ;
     ContactX.SetNum(SegY + 1);
     ContactZ.SetNum(SegY + 1);
 
-    for (int32 i = 0; i <= SegY; ++i)
+    for (int32 iy = 0; iy <= SegY; ++iy)
     {
-        const float A = (float)i / (float)SegY;
-        const float Y = FMath::Lerp(YLeft, YRight, A);
+        const float TY = (float)iy / (float)SegY;
+        const float Y = FMath::Lerp(YLeft, YRight, TY);
 
         float FoundX = DefaultContactX;
-        float FoundZ = ZBottom;
-        const bool bFound = S.bConformTopPlateauToCliff && MG_FindCliffTopContactAtY(CliffMesh, S, Y, ZTop, FoundX, FoundZ);
+        float FoundZ = ZBottomBase;
+        const bool bFound = S.bConformTopPlateauToCliff &&
+            (S.PlateauStitchPriority == EMGStitchPriority::CliffDominant || S.PlateauStitchPriority == EMGStitchPriority::BlendBoth) &&
+            MG_FindCliffTopContactAtY(CliffMesh, S, Y, ZTopBase, FoundX, FoundZ);
 
-        ContactX[i] = bFound ? FMath::Max(FoundX, XBack + 10.f) : DefaultContactX;
-        ContactZ[i] = bFound ? FoundZ : ZBottom;
+        if (bFound)
+        {
+            OutBuildInfo.ContactSampleCount++;
+            ContactX[iy] = FMath::Max(FoundX, XBack + 10.f);
+            ContactZ[iy] = FoundZ;
+        }
+        else
+        {
+            OutBuildInfo.MissingContactCount++;
+            ContactX[iy] = DefaultContactX;
+            ContactZ[iy] = ZBottomBase;
+            OutBuildInfo.MaxContactGapCm = FMath::Max(OutBuildInfo.MaxContactGapCm, S.PlateauTargets.MaxContactGapCm + 1000.f);
+        }
     }
 
-    Out.Vertices.Reserve(SegY * 24);
-    Out.Triangles.Reserve(SegY * 36 + 24);
-    Out.Normals.Reserve(SegY * 24);
-    Out.UV0.Reserve(SegY * 24);
-    Out.Tangents.Reserve(SegY * 24);
+    const int32 EstimatedVertexCount = (SegX * SegY * 8) + (SegY * 16) + 64;
+    Out.Vertices.Reserve(EstimatedVertexCount);
+    Out.Triangles.Reserve((SegX * SegY * 12) + (SegY * 24) + 64);
+    Out.Normals.Reserve(EstimatedVertexCount);
+    Out.UV0.Reserve(EstimatedVertexCount);
+    Out.Tangents.Reserve(EstimatedVertexCount);
 
-    for (int32 i = 0; i < SegY; ++i)
+    auto MakeTopPoint = [&](int32 ix, int32 iy) -> FVector
+        {
+            const float TY = (float)iy / (float)SegY;
+            const float Y = FMath::Lerp(YLeft, YRight, TY);
+            const float TX = (float)ix / (float)SegX;
+            const float XFront = ContactX[iy];
+            const float X = FMath::Lerp(XBack, XFront, TX);
+            const float Noise = MG_PlateauNoise2D(S, PlateauSeed, X, Y, TX);
+            return FVector(X, Y, ZTopBase + Noise);
+        };
+
+    auto MakeBottomPoint = [&](int32 ix, int32 iy) -> FVector
+        {
+            const FVector Top = MakeTopPoint(ix, iy);
+            if (ix == SegX)
+            {
+                return FVector(Top.X, Top.Y, ContactZ[iy]);
+            }
+            return FVector(Top.X, Top.Y, Top.Z - Thickness);
+        };
+
+    for (int32 ix = 0; ix < SegX; ++ix)
     {
-        const float A0 = (float)i / (float)SegY;
-        const float A1 = (float)(i + 1) / (float)SegY;
-        const float Y0 = FMath::Lerp(YLeft, YRight, A0);
-        const float Y1 = FMath::Lerp(YLeft, YRight, A1);
+        for (int32 iy = 0; iy < SegY; ++iy)
+        {
+            const FVector T00 = MakeTopPoint(ix, iy);
+            const FVector T10 = MakeTopPoint(ix + 1, iy);
+            const FVector T11 = MakeTopPoint(ix + 1, iy + 1);
+            const FVector T01 = MakeTopPoint(ix, iy + 1);
 
-        const FVector FrontTop0(ContactX[i], Y0, ZTop);
-        const FVector FrontTop1(ContactX[i + 1], Y1, ZTop);
-        const FVector FrontBottom0(ContactX[i], Y0, ContactZ[i]);
-        const FVector FrontBottom1(ContactX[i + 1], Y1, ContactZ[i + 1]);
+            FVector TopN = FVector::CrossProduct(T10 - T00, T11 - T00).GetSafeNormal();
+            if (TopN.Z < 0.f) TopN *= -1.f;
+            if (TopN.IsNearlyZero()) TopN = FVector::UpVector;
+            MG_AddPlateauQuad(Out, T00, T10, T11, T01, TopN);
 
-        const FVector BackTop0(XBack, Y0, ZTop);
-        const FVector BackTop1(XBack, Y1, ZTop);
-        const FVector BackBottom0(XBack, Y0, ZBottom);
-        const FVector BackBottom1(XBack, Y1, ZBottom);
-
-        // 윗면은 평평하게 유지하되, 앞쪽 X 경계만 절벽 상단 실루엣을 따른다.
-        MG_AddPlateauQuad(Out, BackTop0, BackTop1, FrontTop1, FrontTop0, FVector::UpVector);
-
-        // 아랫면은 뒤쪽은 박스 두께를 유지하고, 앞쪽 접합부만 절벽 상단 높이를 따라간다.
-        MG_AddPlateauQuad(Out, FrontBottom0, FrontBottom1, BackBottom1, BackBottom0, -FVector::UpVector);
-
-        // 절벽과 맞닿는 앞면. 이 면만 랜덤 절벽 실루엣을 따라간다.
-        const FVector FrontNormal = FVector::CrossProduct(FrontTop1 - FrontTop0, FrontBottom0 - FrontTop0).GetSafeNormal();
-        MG_AddPlateauQuad(Out, FrontBottom0, FrontBottom1, FrontTop1, FrontTop0, FrontNormal.IsNearlyZero() ? FVector::ForwardVector : FrontNormal);
-
-        // 뒤쪽은 단순한 직육면체 박스 면이다.
-        MG_AddPlateauQuad(Out, BackBottom1, BackBottom0, BackTop0, BackTop1, -FVector::ForwardVector);
+            const FVector B00 = MakeBottomPoint(ix, iy);
+            const FVector B10 = MakeBottomPoint(ix + 1, iy);
+            const FVector B11 = MakeBottomPoint(ix + 1, iy + 1);
+            const FVector B01 = MakeBottomPoint(ix, iy + 1);
+            MG_AddPlateauQuad(Out, B10, B00, B01, B11, -FVector::UpVector);
+        }
     }
 
-    // 양 끝 측면은 닫아준다.
+    // Front contact face: CliffDominant 접합부. 이 면만 절벽 실루엣을 따른다.
+    for (int32 iy = 0; iy < SegY; ++iy)
     {
-        const FVector FrontTop(ContactX[0], YLeft, ZTop);
-        const FVector FrontBottom(ContactX[0], YLeft, ContactZ[0]);
-        const FVector BackTop(XBack, YLeft, ZTop);
-        const FVector BackBottom(XBack, YLeft, ZBottom);
-        MG_AddPlateauQuad(Out, BackBottom, FrontBottom, FrontTop, BackTop, -FVector::RightVector);
+        const FVector FT0 = MakeTopPoint(SegX, iy);
+        const FVector FT1 = MakeTopPoint(SegX, iy + 1);
+        const FVector FB0 = MakeBottomPoint(SegX, iy);
+        const FVector FB1 = MakeBottomPoint(SegX, iy + 1);
+        FVector FrontN = FVector::CrossProduct(FT1 - FT0, FB0 - FT0).GetSafeNormal();
+        if (FrontN.IsNearlyZero()) FrontN = FVector::ForwardVector;
+        MG_AddPlateauQuad(Out, FB0, FB1, FT1, FT0, FrontN);
     }
 
+    // Back face.
+    for (int32 iy = 0; iy < SegY; ++iy)
     {
-        const FVector FrontTop(ContactX[SegY], YRight, ZTop);
-        const FVector FrontBottom(ContactX[SegY], YRight, ContactZ[SegY]);
-        const FVector BackTop(XBack, YRight, ZTop);
-        const FVector BackBottom(XBack, YRight, ZBottom);
-        MG_AddPlateauQuad(Out, FrontBottom, BackBottom, BackTop, FrontTop, FVector::RightVector);
+        const FVector BT0 = MakeTopPoint(0, iy);
+        const FVector BT1 = MakeTopPoint(0, iy + 1);
+        const FVector BB0 = MakeBottomPoint(0, iy);
+        const FVector BB1 = MakeBottomPoint(0, iy + 1);
+        MG_AddPlateauQuad(Out, BB1, BB0, BT0, BT1, -FVector::ForwardVector);
+    }
+
+    // Left / Right side faces.
+    for (int32 ix = 0; ix < SegX; ++ix)
+    {
+        const FVector LT0 = MakeTopPoint(ix, 0);
+        const FVector LT1 = MakeTopPoint(ix + 1, 0);
+        const FVector LB0 = MakeBottomPoint(ix, 0);
+        const FVector LB1 = MakeBottomPoint(ix + 1, 0);
+        MG_AddPlateauQuad(Out, LB0, LB1, LT1, LT0, -FVector::RightVector);
+
+        const FVector RT0 = MakeTopPoint(ix, SegY);
+        const FVector RT1 = MakeTopPoint(ix + 1, SegY);
+        const FVector RB0 = MakeBottomPoint(ix, SegY);
+        const FVector RB1 = MakeBottomPoint(ix + 1, SegY);
+        MG_AddPlateauQuad(Out, RB1, RB0, RT0, RT1, FVector::RightVector);
+    }
+}
+
+static void MG_BuildTopPlateauMeshData(
+    const FChunkMeshData& CliffMesh,
+    const FMountainGenSettings& S,
+    FChunkMeshData& Out,
+    FMGPlateauGenerationReport& OutReport)
+{
+    Out = FChunkMeshData();
+    OutReport = FMGPlateauGenerationReport();
+
+    if (!S.bAddTopFlatPlateau)
+    {
+        return;
+    }
+
+    const int32 CandidateCount = FMath::Clamp(S.PlateauCandidateCount, 1, 128);
+    float BestScore = FLT_MAX;
+    bool bHasBest = false;
+
+    for (int32 CandidateIndex = 0; CandidateIndex < CandidateCount; ++CandidateIndex)
+    {
+        const int32 CandidateSeed = FMath::Max(1, S.Seed + S.PlateauSeedOffset + CandidateIndex * 7919);
+
+        FChunkMeshData CandidateMesh;
+        FMGPlateauCandidateBuildInfo BuildInfo;
+        MG_BuildOnePlateauCandidateMeshData(CliffMesh, S, CandidateIndex, CandidateSeed, CandidateMesh, BuildInfo);
+
+        FMGPlateauGenerationReport CandidateReport;
+        MG_AnalyzePlateauCandidate(CandidateMesh, S, BuildInfo, CandidateReport);
+
+        if (!bHasBest || CandidateReport.FinalScore < BestScore)
+        {
+            bHasBest = true;
+            BestScore = CandidateReport.FinalScore;
+            Out = MoveTemp(CandidateMesh);
+            OutReport = CandidateReport;
+        }
     }
 }
 
@@ -1167,6 +1416,17 @@ uint32 AMountainGenWorldActor::ComputeSettingsHash_Editor() const
     H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauConformSearchDepthCm));
     H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauContactOverlapDownCm));
     H = HashCombine(H, MG_HashFloatForSettings(Settings.TopPlateauMaxConformDropCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.PlateauSeedOffset));
+    H = HashCombine(H, ::GetTypeHash(Settings.PlateauCandidateCount));
+    H = HashCombine(H, ::GetTypeHash(Settings.PlateauSegmentsX));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.PlateauSurfaceNoiseStrengthCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.PlateauSurfaceNoiseScaleCm));
+    H = HashCombine(H, ::GetTypeHash(Settings.PlateauSurfaceNoiseOctaves));
+    H = HashCombine(H, ::GetTypeHash((uint8)Settings.PlateauStitchPriority));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.PlateauTargets.MaxAverageSlopeDeg));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.PlateauTargets.MinWalkableAreaRatio));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.PlateauTargets.MaxHeightDeltaCm));
+    H = HashCombine(H, MG_HashFloatForSettings(Settings.PlateauTargets.MaxContactGapCm));
     H = HashCombine(H, MG_HashBoolForSettings(bTopPlateauCreateCollision));
 
     // 밀도장 / 디테일
@@ -1432,7 +1692,8 @@ void AMountainGenWorldActor::RebuildTopPlateauMesh(const FChunkMeshData& CliffMe
     TopPlateauMesh->ClearCollisionConvexMeshes();
 
     FChunkMeshData PlateauMeshData;
-    MG_BuildTopPlateauMeshData(CliffMeshData, FinalSettings, PlateauMeshData);
+    LastPlateauReport = FMGPlateauGenerationReport();
+    MG_BuildTopPlateauMeshData(CliffMeshData, FinalSettings, PlateauMeshData, LastPlateauReport);
 
     if (PlateauMeshData.Vertices.Num() == 0 || PlateauMeshData.Triangles.Num() == 0)
     {
