@@ -3734,6 +3734,12 @@ void ADownfallCharacter::ActivateBlizzardVFX()
                 BlizzardNiagaraComponent->SetCullDistance(0.f);
                 BlizzardNiagaraComponent->LDMaxDrawDistance = 0.f;
                 BlizzardNiagaraComponent->SetVariableFloat(FName("SpawnRate"), BlizzardSpawnRateMin);
+
+                // Wind Force User Parameter 설정
+                // BlizzardWindForce만 그대로 전달 — 스케일은 Niagara Random Range가 에미터별 적용
+                BlizzardNiagaraComponent->SetVariableVec3(FName("Wind Speed"), BlizzardWindForce);
+                UE_LOG(LogDownFall, Log, TEXT("BlizzardVFX: Wind Speed set to (%.0f, %.0f, %.0f)"),
+                    BlizzardWindForce.X, BlizzardWindForce.Y, BlizzardWindForce.Z);
             }
         }
         else
@@ -3897,4 +3903,8 @@ void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)
     );
     const float CurrentSpawnRate = FMath::Lerp(BlizzardSpawnRateMin, BlizzardSpawnRateMax, IntensityAlpha);
     BlizzardNiagaraComponent->SetVariableFloat(FName("SpawnRate"), CurrentSpawnRate);
+
+    // Wind Force 실시간 동기화 — 에디터에서 BlizzardWindForce 변경 시 즉시 반영
+    // 스케일은 Niagara Random Range가 에미터별로 처리
+    BlizzardNiagaraComponent->SetVariableVec3(FName("Wind Speed"), BlizzardWindForce);
 }
