@@ -192,52 +192,6 @@ struct FMGGenerationReport
 };
 
 
-
-USTRUCT(BlueprintType)
-struct FMGPlateauGenerationReport
-{
-    GENERATED_BODY()
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    int32 FinalSeed = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    int32 CandidateCount = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    int32 SelectedCandidateIndex = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    float FinalScore = 0.f;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    bool bPassedTargets = false;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    int32 VertexCount = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    int32 TriangleCount = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    int32 ContactSampleCount = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    float AverageSlopeDeg = 0.f;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    float WalkableAreaRatio = 0.f;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    float MaxHeightDeltaCm = 0.f;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    float MaxContactGapCm = 0.f;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    bool bUsedCliffDominantStitch = false;
-};
-
 USTRUCT()
 struct FMGAsyncResult
 {
@@ -359,12 +313,6 @@ public:
         return LastGenerationReport;
     }
 
-    UFUNCTION(BlueprintPure, Category = "MountainGen|Report")
-    FMGPlateauGenerationReport GetLastPlateauGenerationReport() const
-    {
-        return LastPlateauReport;
-    }
-
 public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen")
     TObjectPtr<UProceduralMeshComponent> ProcMesh;
@@ -456,10 +404,6 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|Report")
     FMGGenerationReport LastGenerationReport;
-
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|PlateauReport")
-    FMGPlateauGenerationReport LastPlateauReport;
 
     // ---------- Material : Snow / Rock Auto Blend ----------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Material|SnowRock")

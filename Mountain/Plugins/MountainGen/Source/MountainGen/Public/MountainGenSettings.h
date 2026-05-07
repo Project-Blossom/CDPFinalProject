@@ -19,39 +19,6 @@ enum class EMGTerrainAlgorithm : uint8
     ZoneMaskedDensity UMETA(DisplayName = "Zone Masked Density")
 };
 
-UENUM(BlueprintType)
-enum class EMGStitchPriority : uint8
-{
-    CliffDominant   UMETA(DisplayName = "Cliff Dominant"),
-    PlateauDominant UMETA(DisplayName = "Plateau Dominant"),
-    BlendBoth       UMETA(DisplayName = "Blend Both")
-};
-
-// ============================================================
-// Plateau Terrain Module Targets
-// ============================================================
-USTRUCT(BlueprintType)
-struct FMGPlateauTargets
-{
-    GENERATED_BODY()
-
-    // Plateau 윗면의 평균 경사 허용치.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauTargets", meta = (ClampMin = "0.0", ClampMax = "90.0"))
-    float MaxAverageSlopeDeg = 12.f;
-
-    // Plateau 윗면 중 보행 가능한 면적 비율의 최소값.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauTargets", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float MinWalkableAreaRatio = 0.75f;
-
-    // Plateau 윗면의 최대 높이 편차 허용치.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauTargets", meta = (ClampMin = "0.0"))
-    float MaxHeightDeltaCm = 450.f;
-
-    // Cliff와 Plateau 접합부의 최대 허용 간격.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauTargets", meta = (ClampMin = "0.0"))
-    float MaxContactGapCm = 80.f;
-};
-
 // ============================================================
 // Metrics Targets
 // ============================================================
@@ -205,9 +172,9 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "0.0"))
     float TopPlateauDepthCm = 24000.f;
 
-    // Plateau 하부 두께. 기본값 100cm = 1m.
+    // Plateau 하부 두께. 기본값 20cm
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "10.0"))
-    float TopPlateauThicknessCm = 100.f;
+    float TopPlateauThicknessCm = 20.f;
 
     // 접합부에서 Plateau가 절벽 상단 실루엣을 따라가도록 한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
@@ -223,7 +190,7 @@ struct FMountainGenSettings
 
     // 접합부를 Y방향으로 나누는 수. 값이 높을수록 절벽 실루엣을 더 촘촘하게 따른다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "4", ClampMax = "512"))
-    int32 TopPlateauConformSegmentsY = 96;
+    int32 TopPlateauConformSegmentsY = 128;
 
     // 접합부 샘플링 시 같은 Y로 인정할 폭.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "10.0"))
@@ -241,37 +208,49 @@ struct FMountainGenSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "100.0"))
     float TopPlateauMaxConformDropCm = 2500.f;
 
-    // Plateau 전용 Seed. 최종 Cliff Seed + 이 값 + 후보 번호로 Plateau 후보를 만든다.
+    // Plateau 전용 Seed. 최종 Cliff Seed + 이 값을 사용해 자연스러운 상단 지형 노이즈를 만든다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
     int32 PlateauSeedOffset = 100000;
 
-    // Plateau 후보 수. 여러 후보를 만든 뒤 목표 점수가 가장 좋은 후보만 출력한다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "1", ClampMax = "128"))
-    int32 PlateauCandidateCount = 12;
+    // Plateau 깊이 방향 격자 분할 수. 공유 정점 기반 Heightfield로 생성된다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "1", ClampMax = "256"))
+    int32 PlateauSegmentsX = 96;
 
-    // Plateau 깊이 방향 격자 분할 수.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "1", ClampMax = "128"))
-    int32 PlateauSegmentsX = 16;
-
-    // Plateau 윗면의 약한 랜덤 지형성 강도.
+    // Plateau 윗면의 낮은 언덕 높이 강도. 노이즈는 기준 평면 아래로 내려가지 않고 위로만 솟는다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "0.0"))
-    float PlateauSurfaceNoiseStrengthCm = 150.f;
+    float PlateauSurfaceNoiseStrengthCm = 2600.f;
 
-    // Plateau 윗면 노이즈 스케일.
+    // Plateau 윗면 노이즈 스케일. 값이 클수록 넓고 완만한 언덕이 된다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "100.0"))
-    float PlateauSurfaceNoiseScaleCm = 8000.f;
+    float PlateauSurfaceNoiseScaleCm = 24000.f;
 
-    // Plateau 윗면 노이즈 옥타브 수.
+    // Plateau 윗면 노이즈 옥타브 수. 높을수록 작은 요철이 늘어난다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "1", ClampMax = "8"))
-    int32 PlateauSurfaceNoiseOctaves = 2;
+    int32 PlateauSurfaceNoiseOctaves = 5;
 
-    // 접합 우선순위. 현재 기본은 Cliff가 기준이고 Plateau가 절벽 실루엣에 맞춘다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
-    EMGStitchPriority PlateauStitchPriority = EMGStitchPriority::CliffDominant;
+    // Plateau 외곽과 절벽 접합부에서 노이즈를 서서히 줄이는 거리.
+    // 가장자리와 접합부가 과하게 들뜨거나 찢어져 보이는 것을 막는다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "0.0"))
+    float PlateauSurfaceEdgeFadeCm = 1200.f;
 
-    // Plateau 후보 평가 목표.
+    // Plateau 머티리얼 UV 타일링 기준 크기.
+    // 값이 클수록 텍스처 반복이 덜 보이지만, 너무 크면 텍스처가 늘어나 보일 수 있다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "100.0"))
+    float PlateauMaterialUVScaleCm = 18000.f;
+
+    // Plateau 머티리얼 UV를 회전시켜 지형 축과 텍스처 반복 방향이 딱 맞물리는 것을 줄인다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule")
-    FMGPlateauTargets PlateauTargets;
+    float PlateauMaterialUVRotationDeg = 17.f;
+
+    // Plateau UV에 약한 저주파 왜곡을 넣어 반복 패턴을 줄인다.
+    // 0이면 UV 왜곡 없음.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float PlateauMaterialUVWarpStrength = 0.08f;
+
+    // Plateau UV 왜곡의 스케일.
+    // 값이 클수록 넓고 느린 왜곡, 작을수록 촘촘한 왜곡이 된다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|PlateauModule", meta = (ClampMin = "100.0"))
+    float PlateauMaterialUVWarpScaleCm = 24000.f;
 
     // ========================================================
     // 7) Meshing
