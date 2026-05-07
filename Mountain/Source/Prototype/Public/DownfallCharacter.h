@@ -718,6 +718,26 @@ public:
         meta = (ClampMin = "1.0"))
     float BlizzardIntensifyDuration = 20.0f;
 
+    // ── Wind 기반 스폰 위치 계산 ─────────────────────────────────
+    // Niagara Wind Force 값과 동기화해서 입력
+    // 스폰 위치 = 캐릭터 위치 - WindDir.Normalized * BlizzardSpawnDistance
+    // → 파티클이 Wind에 밀려 캐릭터 근처를 통과하는 궤도로 배치
+
+    // Niagara Wind Force XYZ 값 (Niagara 에디터의 Wind Force 모듈 값과 동일하게 입력)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX|WindSpawn")
+    FVector BlizzardWindForce = FVector(80.f, 30.f, -300.f);
+
+    // Niagara WindSpeedScale 값 (Wind Force에 곱해지는 배율)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX|WindSpawn",
+        meta = (ClampMin = "0.1"))
+    float BlizzardWindSpeedScale = 20.f;
+
+    // Wind 방향 반대쪽으로 얼마나 멀리 스폰할지 (cm)
+    // 값이 클수록 더 멀리서 생성되어 오래 날아옴
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BlizzardVFX|WindSpawn",
+        meta = (ClampMin = "100.0"))
+    float BlizzardSpawnDistance = 15000.f;
+
     UPROPERTY(BlueprintReadOnly, Category = "VFX|BlizzardVFX")
     bool bBlizzardActive = false;
 
