@@ -33,6 +33,10 @@
 #include "TimerManager.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Engine/DirectionalLight.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include <limits>
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
@@ -308,6 +312,36 @@ void ADownfallCharacter::BeginPlay()
         UE_LOG(LogDownFall, Warning, TEXT("FrostMaterial not assigned - set in Blueprint (VFX|BlizzardVFX)"));
     }
 
+    // 레벨의 DirectionalLight, ExponentialHeightFog 캐시
+    // BloodMoon 활성화 시 색상 전환에 사용
+    {
+        TArray<AActor*> FoundLights;
+        UGameplayStatics::GetAllActorsOfClass(GetWorld(), ADirectionalLight::StaticClass(), FoundLights);
+        if (FoundLights.Num() > 0)
+        {
+            CachedMoonLight = Cast<ADirectionalLight>(FoundLights[0]);
+            UE_LOG(LogDownFall, Log, TEXT("BloodMoon: DirectionalLight cached (%s)"),
+                *FoundLights[0]->GetName());
+        }
+        else
+        {
+            UE_LOG(LogDownFall, Warning, TEXT("BloodMoon: DirectionalLight not found in level"));
+        }
+
+        TArray<AActor*> FoundFogs;
+        UGameplayStatics::GetAllActorsOfClass(GetWorld(), AExponentialHeightFog::StaticClass(), FoundFogs);
+        if (FoundFogs.Num() > 0)
+        {
+            CachedHeightFog = Cast<AExponentialHeightFog>(FoundFogs[0]);
+            UE_LOG(LogDownFall, Log, TEXT("BloodMoon: ExponentialHeightFog cached (%s)"),
+                *FoundFogs[0]->GetName());
+        }
+        else
+        {
+            UE_LOG(LogDownFall, Warning, TEXT("BloodMoon: ExponentialHeightFog not found in level"));
+        }
+    }
+
     if (LeftHandMesh)
     {
         LeftHandMaterialInstance = LeftHandMesh->CreateDynamicMaterialInstance(0);
@@ -394,6 +428,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateVignetteEffect(DeltaTime);
     UpdateRainVFX(DeltaTime);
     UpdateBlizzardVFX(DeltaTime);
+    UpdateBloodMoonVFX(DeltaTime);
     UpdateHandPositions(DeltaTime);
     UpdateHandStaminaVisuals(DeltaTime);
 
@@ -3804,6 +3839,123 @@ void ADownfallCharacter::DeactivateBlizzardVFX()
     }
 
     UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX DEACTIVATED"));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Blood Moon Event VFX (Stage 3)
+// ─────────────────────────────────────────────────────────────────
+
+void ADownfallCharacter::ActivateBloodMoonVFX()
+{
+    if (bBloodMoonActive)
+    {
+        return;
+    }
+
+    bBloodMoonActive = true;
+    BloodMoonElapsed = 0.0f;
+
+    // 시작값: 에디터에서 설정한 Normal 색상 사용 (컴포넌트 읽기 불필요)
+    BloodMoonStartLightColor = BloodMoonNormalLightColor;
+    BloodMoonStartFogColor   = BloodMoonNormalFogColor;
+    BloodMoonStartFogDensity = BloodMoonNormalFogDensity;
+
+    UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"),
+        ClimbingElapsedTime);
+}
+
+void ADownfallCharacter::DeactivateBloodMoonVFX()
+{
+    if (!bBloodMoonActive)
+    {
+        return;
+    }
+
+    bBloodMoonActive = false;
+    BloodMoonElapsed = 0.0f;
+
+    // 광원 색상 복구
+    if (CachedMoonLight.IsValid())
+    {
+        UDirectionalLightComponent* LC = CachedMoonLight->GetComponent();
+        if (LC)
+        {
+            LC->SetLightColor(BloodMoonNormalLightColor);
+        }
+    }
+
+    // 안개 색상 + 밀도 복구
+    if (CachedHeightFog.IsValid())
+    {
+        UExponentialHeightFogComponent* FC = CachedHeightFog->GetComponent();
+        if (FC)
+        {
+            FC->SetFogInscatteringColor(BloodMoonNormalFogColor);
+            FC->SetFogDensity(BloodMoonNormalFogDensity);
+        }
+    }
+
+    UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX DEACTIVATED"));
+}
+
+void ADownfallCharacter::UpdateBloodMoonVFX(float DeltaTime)
+{
+    // 1. Stage 3 이상에서만 처리
+    const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GetGameInstance());
+    const int32 StageIndex = DGI ? DGI->GetCurrentStageIndex() : 0;
+    if (StageIndex < 3)
+    {
+        return;
+    }
+
+    // 2. ClimbingElapsedTime은 UpdateRainVFX에서 공유 누적
+    if (ClimbingElapsedTime >= BloodMoonTriggerTime && !bBloodMoonActive)
+    {
+        ActivateBloodMoonVFX();
+    }
+
+    if (!bBloodMoonActive)
+    {
+        return;
+    }
+
+    // 3. Lerp Alpha 계산
+    BloodMoonElapsed += DeltaTime;
+    const float Alpha = FMath::Clamp(
+        BloodMoonElapsed / FMath::Max(BloodMoonLerpDuration, KINDA_SMALL_NUMBER),
+        0.0f, 1.0f
+    );
+
+    // 4. DirectionalLight 색상 Lerp
+    if (CachedMoonLight.IsValid())
+    {
+        UDirectionalLightComponent* LC = CachedMoonLight->GetComponent();
+        if (LC)
+        {
+            const FLinearColor NewColor = FLinearColor::LerpUsingHSV(
+                BloodMoonStartLightColor, BloodMoonLightColor, Alpha);
+            LC->SetLightColor(NewColor);
+        }
+    }
+
+    // 5. ExponentialHeightFog 색상 + 밀도 Lerp
+    // UE5.7: FogInscatteringColor 직접 접근 불가 → SetFogInscatteringColor / SetFogDensity 사용
+    if (CachedHeightFog.IsValid())
+    {
+        UExponentialHeightFogComponent* FC = CachedHeightFog->GetComponent();
+        if (FC)
+        {
+            const FLinearColor NewFogColor = FLinearColor::LerpUsingHSV(
+                BloodMoonStartFogColor, BloodMoonFogColor, Alpha);
+            FC->SetFogInscatteringColor(NewFogColor);
+            FC->SetFogDensity(FMath::Lerp(BloodMoonStartFogDensity, BloodMoonFogDensity, Alpha));
+        }
+    }
+
+    if (Alpha >= 1.0f && BloodMoonElapsed < BloodMoonLerpDuration + DeltaTime * 2.f)
+    {
+        UE_LOG(LogDownFall, Log, TEXT("BloodMoonVFX Lerp complete"));
+    }
 }
 
 void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)

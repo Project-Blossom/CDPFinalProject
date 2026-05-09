@@ -19,6 +19,8 @@ class UGripPointFinderComponent;
 class UInventoryWidget;
 class UNiagaraComponent;
 class UNiagaraSystem;
+class ADirectionalLight;
+class AExponentialHeightFog;
 class USplineComponent;
 class USplineMeshComponent;
 class UStaticMesh;
@@ -480,6 +482,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VFX|BlizzardVFX")
     void DeactivateBlizzardVFX();
 
+    UFUNCTION(BlueprintCallable, Category = "VFX|BloodMoonVFX")
+    void ActivateBloodMoonVFX();
+
+    UFUNCTION(BlueprintCallable, Category = "VFX|BloodMoonVFX")
+    void DeactivateBloodMoonVFX();
+
     // New Glitch System (Material-based)
     UPROPERTY(EditAnywhere, Category = "VFX|Glitch")
     TObjectPtr<UMaterial> GlitchMaterial;
@@ -748,6 +756,48 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "VFX|BlizzardVFX")
     float BlizzardCurrentWeight = 0.0f;
 
+    // ── Blood Moon Event VFX ─────────────────────────────────────
+    // Stage 3: DirectionalLight 색상 흰색 → 붉은색 Lerp + ExponentialHeightFog 붉은 안개
+    // 기획서: Downfall Mountain 블러드문 이벤트 VFX
+
+    // 트리거 시간 (초). ClimbingElapsedTime 기반
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX",
+        meta = (ClampMin = "0.0"))
+    float BloodMoonTriggerTime = 300.0f;
+
+    // 광원 색상 전환 Lerp 시간 (초)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX",
+        meta = (ClampMin = "0.1"))
+    float BloodMoonLerpDuration = 10.0f;
+
+    // 전환 목표 광원 색상 (붉은달 색)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
+    FLinearColor BloodMoonLightColor = FLinearColor(1.0f, 0.1f, 0.0f, 1.0f);
+
+    // 전환 목표 안개 색상
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
+    FLinearColor BloodMoonFogColor = FLinearColor(0.4f, 0.02f, 0.0f, 1.0f);
+
+    // 안개 밀도 목표값 (기존 대비 추가 밀도)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX",
+        meta = (ClampMin = "0.0"))
+    float BloodMoonFogDensity = 0.02f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "VFX|BloodMoonVFX")
+    bool bBloodMoonActive = false;
+
+    // 전환 시작 기준값 — 에디터에서 레벨의 기본 안개/광원 색상과 맞춰 입력
+    // BeginPlay 시 컴포넌트에서 읽지 않고 이 값을 Lerp 시작점으로 사용
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
+    FLinearColor BloodMoonNormalLightColor = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
+    FLinearColor BloodMoonNormalFogColor = FLinearColor(0.1f, 0.1f, 0.1f, 1.0f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX",
+        meta = (ClampMin = "0.0"))
+    float BloodMoonNormalFogDensity = 0.005f;
+
     // PP 머티리얼 블렌딩 가중치 (0.0~1.0, 에디터에서 세기 조절)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|RainVFX",
         meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -928,6 +978,7 @@ private:
     void UpdateEdgeBlurEffect();
     void UpdateRainVFX(float DeltaTime);  // ClimbingElapsedTime 누적 + 트리거 체크
     void UpdateBlizzardVFX(float DeltaTime);
+    void UpdateBloodMoonVFX(float DeltaTime); // Stage 3 분기 + 광원/안개 Lerp
     void ApplyDirtMaskParameters(bool bForce = false);
     void ApplyEdgeBlurParameters(bool bForce = false);
     void RefreshLowFrequencyUpdates();
@@ -996,4 +1047,14 @@ private:
     float BlizzardDarkenLerpElapsed    = 0.0f;
     float BlizzardDarkenLerpStartBias  = 0.0f;
     float BlizzardDarkenLerpTargetBias = 0.0f;
+
+    // BloodMoon VFX 내부 상태
+    float BloodMoonElapsed            = 0.0f;  // Lerp 경과 시간
+    FLinearColor BloodMoonStartLightColor = FLinearColor::White;  // 전환 시작 광원 색상
+    FLinearColor BloodMoonStartFogColor   = FLinearColor::Black;  // 전환 시작 안개 색상
+    float BloodMoonStartFogDensity        = 0.0f;                 // 전환 시작 안개 밀도
+
+    // 레벨에서 찾은 광원/안개 캐시 (BeginPlay에서 탐색, Null 허용)
+    TWeakObjectPtr<ADirectionalLight>      CachedMoonLight;
+    TWeakObjectPtr<AExponentialHeightFog>  CachedHeightFog;
 };
