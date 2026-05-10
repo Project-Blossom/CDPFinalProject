@@ -312,6 +312,23 @@ void ADownfallCharacter::BeginPlay()
         UE_LOG(LogDownFall, Warning, TEXT("FrostMaterial not assigned - set in Blueprint (VFX|BlizzardVFX)"));
     }
 
+    // BloodMoon Sky PP 머티리얼 초기화 (BloodMoonSkyIntensity=0 비활성 상태로 등록)
+    if (BloodMoonSkyMaterial && PostProcessComp)
+    {
+        BloodMoonSkyMaterialInstance = UMaterialInstanceDynamic::Create(BloodMoonSkyMaterial, this);
+        if (BloodMoonSkyMaterialInstance)
+        {
+            BloodMoonSkyMaterialInstance->SetScalarParameterValue(FName("BloodMoonSkyIntensity"), 0.0f);
+            PostProcessComp->Settings.WeightedBlendables.Array.Add(
+                FWeightedBlendable(1.0f, BloodMoonSkyMaterialInstance));
+            UE_LOG(LogDownFall, Log, TEXT("BloodMoonSky Material Instance created (inactive)"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("BloodMoonSkyMaterial not assigned - set in Blueprint (VFX|BloodMoonVFX)"));
+    }
+
     // 레벨의 DirectionalLight, ExponentialHeightFog 캐시
     // BloodMoon 활성화 시 색상 전환에 사용
     {
@@ -3493,9 +3510,17 @@ void ADownfallCharacter::UpdateEdgeBlurEffect()
     EdgeBlurMaterialInstance->SetScalarParameterValue(FName("BlurOffset"), BlurOffset);
 }
 
+
 // ─────────────────────────────────────────────────────────────────
-// Rain Hallucination VFX
+// Weather VFX — Rain / Blizzard / BloodMoon
+// 스테이지 분기:
+//   Stage 0 (미설정) / Stage 1 → Rain
+//   Stage 2                    → Blizzard
+//   Stage 3+                   → BloodMoon
+// 공유 변수: ClimbingElapsedTime (UpdateRainVFX에서 누적)
 // ─────────────────────────────────────────────────────────────────
+
+// ── Rain ─────────────────────────────────────────────────────────
 
 void ADownfallCharacter::ActivateRainVFX()
 {
@@ -3506,42 +3531,35 @@ void ADownfallCharacter::ActivateRainVFX()
 
     bRainActive = true;
 
-    // PP 머티리얼 Lerp 시작 (0.0 → RainDropBlendWeight, RainDropLerpDuration 초 동안)
+    // PP 머티리얼 Weight Lerp 시작 (0 → RainDropBlendWeight)
     if (RainDropMaterialInstance && PostProcessComp)
     {
-        RainDropLerpStartWeight = RainDropCurrentWeight;  // 현재 값에서 시작 (보통 0)
+        RainDropLerpStartWeight  = RainDropCurrentWeight;
         RainDropLerpTargetWeight = RainDropBlendWeight;
-        RainDropLerpElapsed = 0.0f;
-        bRainWeightLerping = true;
+        RainDropLerpElapsed      = 0.0f;
+        bRainWeightLerping       = true;
     }
     else
     {
         UE_LOG(LogDownFall, Warning, TEXT("ActivateRainVFX: RainDropMaterialInstance is null"));
     }
 
-    // Niagara: SpawnAtLocation — 월드 공간에 스폰, 카메라/캡슐 부착 없음
-    // 매 Tick에서 SetWorldLocation으로 플레이어 XY를 따라감
+    // Niagara 월드 공간 스폰
     if (RainNiagaraSystem && IsValid(RainNiagaraSystem))
     {
         if (!RainNiagaraComponent || !IsValid(RainNiagaraComponent))
         {
             const FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 300.f);
             RainNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-                GetWorld(),
-                RainNiagaraSystem,
-                SpawnLocation,
-                FRotator::ZeroRotator,
-                FVector::OneVector,
-                true,   // bAutoDestroy
-                true,   // bAutoActivate
-                ENCPoolMethod::None
+                GetWorld(), RainNiagaraSystem,
+                SpawnLocation, FRotator::ZeroRotator, FVector::OneVector,
+                true, true, ENCPoolMethod::None
             );
 
             if (RainNiagaraComponent && IsValid(RainNiagaraComponent))
             {
                 RainNiagaraComponent->SetCullDistance(0.f);
                 RainNiagaraComponent->LDMaxDrawDistance = 0.f;
-                // SpawnRate 최솟값으로 시작
                 RainNiagaraComponent->SetVariableFloat(FName("SpawnRate"), RainSpawnRateMin);
             }
         }
@@ -3550,123 +3568,20 @@ void ADownfallCharacter::ActivateRainVFX()
             RainNiagaraComponent->Activate(true);
             RainNiagaraComponent->SetVariableFloat(FName("SpawnRate"), RainSpawnRateMin);
         }
-
-        UE_LOG(LogDownFall, Log, TEXT("ActivateRainVFX: Niagara spawned at world location"));
-    }
-    else
-    {
-        UE_LOG(LogDownFall, Log, TEXT("ActivateRainVFX: RainNiagaraSystem not assigned, PP only"));
     }
 
-    // 점진 강화 타이머 초기화
-    RainElapsedSinceActivation = 0.0f;
-
-    // AutoExposureBias Lerp 시작 (현재값 → RainDarkenBias)
+    // AutoExposureBias Lerp 시작
     if (PostProcessComp)
     {
-        RainDarkenLerpStartBias = PostProcessComp->Settings.AutoExposureBias;
+        RainDarkenLerpStartBias  = PostProcessComp->Settings.AutoExposureBias;
         RainDarkenLerpTargetBias = RainDarkenBias;
-        RainDarkenLerpElapsed = 0.0f;
-        bRainDarkenLerping = true;
+        RainDarkenLerpElapsed    = 0.0f;
+        bRainDarkenLerping       = true;
         PostProcessComp->Settings.bOverride_AutoExposureBias = true;
-        UE_LOG(LogDownFall, Log, TEXT("RainDarken Lerp started (%.2f -> %.2f, %.1fs)"),
-            RainDarkenLerpStartBias, RainDarkenLerpTargetBias, RainDarkenLerpDuration);
     }
 
-    UE_LOG(LogDownFall, Warning, TEXT("RainVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"),
-        ClimbingElapsedTime);
-}
-
-void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
-{
-    // 1. 등반 중인 동안 경과 시간 누적
-    if (bIsClimbing)
-    {
-        ClimbingElapsedTime += DeltaTime;
-    }
-
-    // 2. 스테이지 인덱스 기반 분기 — Stage 1만 Rain VFX 트리거
-    //    Stage 0(미설정)은 트리거 허용, Stage 2 이상은 Blizzard 담당
-    {
-        const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GetGameInstance());
-        const int32 StageIndex = DGI ? DGI->GetCurrentStageIndex() : 0;
-        if (StageIndex <= 1 && ClimbingElapsedTime >= RainTriggerTime && !bRainActive)
-        {
-            ActivateRainVFX();
-        }
-    }
-
-    // 3. PP Weight Lerp 처리
-    if (bRainWeightLerping)
-    {
-        RainDropLerpElapsed += DeltaTime;
-        const float Alpha = FMath::Clamp(
-            RainDropLerpElapsed / FMath::Max(RainDropLerpDuration, KINDA_SMALL_NUMBER),
-            0.0f, 1.0f
-        );
-        RainDropCurrentWeight = FMath::Lerp(RainDropLerpStartWeight, RainDropLerpTargetWeight, Alpha);
-        if (RainDropMaterialInstance && PostProcessComp)
-        {
-            for (FWeightedBlendable& Blendable : PostProcessComp->Settings.WeightedBlendables.Array)
-            {
-                if (Blendable.Object == RainDropMaterialInstance)
-                {
-                    Blendable.Weight = RainDropCurrentWeight;
-                    break;
-                }
-            }
-        }
-        if (Alpha >= 1.0f)
-        {
-            bRainWeightLerping = false;
-            RainDropCurrentWeight = RainDropLerpTargetWeight;
-            UE_LOG(LogDownFall, Log, TEXT("RainVFX PP Lerp complete (Weight: %.2f)"), RainDropCurrentWeight);
-        }
-    }
-
-    // 4. AutoExposureBias Lerp 처리 (0 → RainDarkenBias, RainDarkenLerpDuration 초 동안)
-    if (bRainDarkenLerping && PostProcessComp)
-    {
-        RainDarkenLerpElapsed += DeltaTime;
-        const float DarkenAlpha = FMath::Clamp(
-            RainDarkenLerpElapsed / FMath::Max(RainDarkenLerpDuration, KINDA_SMALL_NUMBER),
-            0.0f, 1.0f
-        );
-        PostProcessComp->Settings.AutoExposureBias = FMath::Lerp(
-            RainDarkenLerpStartBias,
-            RainDarkenLerpTargetBias,
-            DarkenAlpha
-        );
-        if (DarkenAlpha >= 1.0f)
-        {
-            bRainDarkenLerping = false;
-            UE_LOG(LogDownFall, Log, TEXT("RainDarken Lerp complete (Bias: %.2f)"),
-                PostProcessComp->Settings.AutoExposureBias);
-        }
-    }
-
-    // 5. 활성 중일 때만 위치/SpawnRate 처리
-    if (!bRainActive || !RainNiagaraComponent || !IsValid(RainNiagaraComponent))
-    {
-        return;
-    }
-
-    // Niagara 위치를 플레이어 XY + Z 오프셋으로 매 틱 업데이트
-    const FVector NewLocation = FVector(
-        GetActorLocation().X,
-        GetActorLocation().Y,
-        GetActorLocation().Z + 300.0f
-    );
-    RainNiagaraComponent->SetWorldLocation(NewLocation);
-
-    // SpawnRate 점진 강화 (Min → Max, RainIntensifyDuration 초 동안)
-    RainElapsedSinceActivation += DeltaTime;
-    const float IntensityAlpha = FMath::Clamp(
-        RainElapsedSinceActivation / FMath::Max(RainIntensifyDuration, KINDA_SMALL_NUMBER),
-        0.0f, 1.0f
-    );
-    const float CurrentSpawnRate = FMath::Lerp(RainSpawnRateMin, RainSpawnRateMax, IntensityAlpha);
-    RainNiagaraComponent->SetVariableFloat(FName("SpawnRate"), CurrentSpawnRate);
+    RainElapsedSinceActivation = 0.0f;
+    UE_LOG(LogDownFall, Warning, TEXT("RainVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
 }
 
 void ADownfallCharacter::DeactivateRainVFX()
@@ -3676,11 +3591,9 @@ void ADownfallCharacter::DeactivateRainVFX()
         return;
     }
 
-    bRainActive = false;
-
-    // PP 머티리얼 Weight=0 즉시 Off + Lerp 상태 초기화
-    bRainWeightLerping = false;
-    RainDropLerpElapsed = 0.0f;
+    bRainActive           = false;
+    bRainWeightLerping    = false;
+    RainDropLerpElapsed   = 0.0f;
     RainDropCurrentWeight = 0.0f;
 
     if (RainDropMaterialInstance && PostProcessComp)
@@ -3695,14 +3608,12 @@ void ADownfallCharacter::DeactivateRainVFX()
         }
     }
 
-    // Niagara 비활성화
     if (RainNiagaraComponent && IsValid(RainNiagaraComponent))
     {
         RainNiagaraComponent->Deactivate();
     }
 
-    // AutoExposureBias 원래대로 복구 + Lerp 초기화
-    bRainDarkenLerping = false;
+    bRainDarkenLerping    = false;
     RainDarkenLerpElapsed = 0.0f;
     if (PostProcessComp)
     {
@@ -3713,7 +3624,87 @@ void ADownfallCharacter::DeactivateRainVFX()
     UE_LOG(LogDownFall, Warning, TEXT("RainVFX DEACTIVATED"));
 }
 
-// Blizzard Hallucination VFX
+void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
+{
+    // 등반 시간 누적 (모든 날씨 VFX가 공유)
+    if (bIsClimbing)
+    {
+        ClimbingElapsedTime += DeltaTime;
+    }
+
+    // Stage 0 / 1에서만 Rain 트리거
+    {
+        const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GetGameInstance());
+        const int32 StageIndex = DGI ? DGI->GetCurrentStageIndex() : 0;
+        if (StageIndex <= 1 && ClimbingElapsedTime >= RainTriggerTime && !bRainActive)
+        {
+            ActivateRainVFX();
+        }
+    }
+
+    // PP Weight Lerp
+    if (bRainWeightLerping)
+    {
+        RainDropLerpElapsed += DeltaTime;
+        const float Alpha = FMath::Clamp(
+            RainDropLerpElapsed / FMath::Max(RainDropLerpDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+        RainDropCurrentWeight = FMath::Lerp(RainDropLerpStartWeight, RainDropLerpTargetWeight, Alpha);
+
+        if (RainDropMaterialInstance && PostProcessComp)
+        {
+            for (FWeightedBlendable& Blendable : PostProcessComp->Settings.WeightedBlendables.Array)
+            {
+                if (Blendable.Object == RainDropMaterialInstance)
+                {
+                    Blendable.Weight = RainDropCurrentWeight;
+                    break;
+                }
+            }
+        }
+
+        if (Alpha >= 1.0f)
+        {
+            bRainWeightLerping    = false;
+            RainDropCurrentWeight = RainDropLerpTargetWeight;
+            UE_LOG(LogDownFall, Log, TEXT("RainVFX PP Lerp complete (Weight: %.2f)"), RainDropCurrentWeight);
+        }
+    }
+
+    // AutoExposureBias Lerp
+    if (bRainDarkenLerping && PostProcessComp)
+    {
+        RainDarkenLerpElapsed += DeltaTime;
+        const float DarkenAlpha = FMath::Clamp(
+            RainDarkenLerpElapsed / FMath::Max(RainDarkenLerpDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+        PostProcessComp->Settings.AutoExposureBias = FMath::Lerp(
+            RainDarkenLerpStartBias, RainDarkenLerpTargetBias, DarkenAlpha);
+
+        if (DarkenAlpha >= 1.0f)
+        {
+            bRainDarkenLerping = false;
+            UE_LOG(LogDownFall, Log, TEXT("RainDarken Lerp complete (Bias: %.2f)"),
+                PostProcessComp->Settings.AutoExposureBias);
+        }
+    }
+
+    // Niagara 위치 + SpawnRate 갱신 (활성 중일 때만)
+    if (!bRainActive || !RainNiagaraComponent || !IsValid(RainNiagaraComponent))
+    {
+        return;
+    }
+
+    RainNiagaraComponent->SetWorldLocation(
+        FVector(GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z + 300.0f));
+
+    RainElapsedSinceActivation += DeltaTime;
+    const float IntensityAlpha = FMath::Clamp(
+        RainElapsedSinceActivation / FMath::Max(RainIntensifyDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+    RainNiagaraComponent->SetVariableFloat(FName("SpawnRate"),
+        FMath::Lerp(RainSpawnRateMin, RainSpawnRateMax, IntensityAlpha));
+}
+
+// ── Blizzard ──────────────────────────────────────────────────────
+
 void ADownfallCharacter::ActivateBlizzardVFX()
 {
     if (bBlizzardActive)
@@ -3723,12 +3714,12 @@ void ADownfallCharacter::ActivateBlizzardVFX()
 
     bBlizzardActive = true;
 
-    // PP 서리 머티리얼 Weight Lerp 시작 (0 → BlizzardBlendWeight)
+    // PP 서리 Weight Lerp 시작
     if (FrostMaterialInstance && PostProcessComp)
     {
-        BlizzardLerpStartWeight  = BlizzardCurrentWeight;
-        BlizzardLerpElapsed      = 0.0f;
-        bBlizzardWeightLerping   = true;
+        BlizzardLerpStartWeight = BlizzardCurrentWeight;
+        BlizzardLerpElapsed     = 0.0f;
+        bBlizzardWeightLerping  = true;
         UE_LOG(LogDownFall, Log, TEXT("ActivateBlizzardVFX: Frost PP Lerp started (→ %.2f, %.1fs)"),
             BlizzardBlendWeight, BlizzardLerpDuration);
     }
@@ -3737,7 +3728,7 @@ void ADownfallCharacter::ActivateBlizzardVFX()
         UE_LOG(LogDownFall, Warning, TEXT("ActivateBlizzardVFX: FrostMaterialInstance is null"));
     }
 
-    // AutoExposureBias Lerp 시작 (현재값 → BlizzardDarkenBias)
+    // AutoExposureBias Lerp 시작
     if (PostProcessComp)
     {
         BlizzardDarkenLerpStartBias  = PostProcessComp->Settings.AutoExposureBias;
@@ -3747,21 +3738,16 @@ void ADownfallCharacter::ActivateBlizzardVFX()
         PostProcessComp->Settings.bOverride_AutoExposureBias = true;
     }
 
-    // Niagara 폭설 파티클 스폰 (SpawnAtLocation, 월드 공간)
+    // Niagara 월드 공간 스폰
     if (BlizzardNiagaraSystem && IsValid(BlizzardNiagaraSystem))
     {
         if (!BlizzardNiagaraComponent || !IsValid(BlizzardNiagaraComponent))
         {
             const FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 300.f);
             BlizzardNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-                GetWorld(),
-                BlizzardNiagaraSystem,
-                SpawnLocation,
-                FRotator::ZeroRotator,
-                FVector::OneVector,
-                true,
-                true,
-                ENCPoolMethod::None
+                GetWorld(), BlizzardNiagaraSystem,
+                SpawnLocation, FRotator::ZeroRotator, FVector::OneVector,
+                true, true, ENCPoolMethod::None
             );
 
             if (BlizzardNiagaraComponent && IsValid(BlizzardNiagaraComponent))
@@ -3769,9 +3755,6 @@ void ADownfallCharacter::ActivateBlizzardVFX()
                 BlizzardNiagaraComponent->SetCullDistance(0.f);
                 BlizzardNiagaraComponent->LDMaxDrawDistance = 0.f;
                 BlizzardNiagaraComponent->SetVariableFloat(FName("SpawnRate"), BlizzardSpawnRateMin);
-
-                // Wind Force User Parameter 설정
-                // BlizzardWindForce만 그대로 전달 — 스케일은 Niagara Random Range가 에미터별 적용
                 BlizzardNiagaraComponent->SetVariableVec3(FName("Wind Speed"), BlizzardWindForce);
                 UE_LOG(LogDownFall, Log, TEXT("BlizzardVFX: Wind Speed set to (%.0f, %.0f, %.0f)"),
                     BlizzardWindForce.X, BlizzardWindForce.Y, BlizzardWindForce.Z);
@@ -3781,20 +3764,16 @@ void ADownfallCharacter::ActivateBlizzardVFX()
         {
             BlizzardNiagaraComponent->Activate(true);
             BlizzardNiagaraComponent->SetVariableFloat(FName("SpawnRate"), BlizzardSpawnRateMin);
+            BlizzardNiagaraComponent->SetVariableVec3(FName("Wind Speed"), BlizzardWindForce);
         }
-
-        UE_LOG(LogDownFall, Log, TEXT("ActivateBlizzardVFX: Niagara spawned at world location"));
     }
     else
     {
         UE_LOG(LogDownFall, Log, TEXT("ActivateBlizzardVFX: BlizzardNiagaraSystem not assigned, PP only"));
     }
 
-    // 점진 강화 타이머 초기화
     BlizzardElapsedSinceActivation = 0.0f;
-
-    UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"),
-        ClimbingElapsedTime);
+    UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
 }
 
 void ADownfallCharacter::DeactivateBlizzardVFX()
@@ -3804,9 +3783,7 @@ void ADownfallCharacter::DeactivateBlizzardVFX()
         return;
     }
 
-    bBlizzardActive = false;
-
-    // PP Weight=0 즉시 Off + Lerp 초기화
+    bBlizzardActive        = false;
     bBlizzardWeightLerping = false;
     BlizzardLerpElapsed    = 0.0f;
     BlizzardCurrentWeight  = 0.0f;
@@ -3823,13 +3800,11 @@ void ADownfallCharacter::DeactivateBlizzardVFX()
         }
     }
 
-    // Niagara 비활성화
     if (BlizzardNiagaraComponent && IsValid(BlizzardNiagaraComponent))
     {
         BlizzardNiagaraComponent->Deactivate();
     }
 
-    // AutoExposureBias 복구 + Lerp 초기화
     bBlizzardDarkenLerping    = false;
     BlizzardDarkenLerpElapsed = 0.0f;
     if (PostProcessComp)
@@ -3841,153 +3816,29 @@ void ADownfallCharacter::DeactivateBlizzardVFX()
     UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX DEACTIVATED"));
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Blood Moon Event VFX (Stage 3)
-// ─────────────────────────────────────────────────────────────────
-
-void ADownfallCharacter::ActivateBloodMoonVFX()
-{
-    if (bBloodMoonActive)
-    {
-        return;
-    }
-
-    bBloodMoonActive = true;
-    BloodMoonElapsed = 0.0f;
-
-    // 시작값: 에디터에서 설정한 Normal 색상 사용 (컴포넌트 읽기 불필요)
-    BloodMoonStartLightColor = BloodMoonNormalLightColor;
-    BloodMoonStartFogColor   = BloodMoonNormalFogColor;
-    BloodMoonStartFogDensity = BloodMoonNormalFogDensity;
-
-    UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"),
-        ClimbingElapsedTime);
-}
-
-void ADownfallCharacter::DeactivateBloodMoonVFX()
-{
-    if (!bBloodMoonActive)
-    {
-        return;
-    }
-
-    bBloodMoonActive = false;
-    BloodMoonElapsed = 0.0f;
-
-    // 광원 색상 복구
-    if (CachedMoonLight.IsValid())
-    {
-        UDirectionalLightComponent* LC = CachedMoonLight->GetComponent();
-        if (LC)
-        {
-            LC->SetLightColor(BloodMoonNormalLightColor);
-        }
-    }
-
-    // 안개 색상 + 밀도 복구
-    if (CachedHeightFog.IsValid())
-    {
-        UExponentialHeightFogComponent* FC = CachedHeightFog->GetComponent();
-        if (FC)
-        {
-            FC->SetFogInscatteringColor(BloodMoonNormalFogColor);
-            FC->SetFogDensity(BloodMoonNormalFogDensity);
-        }
-    }
-
-    UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX DEACTIVATED"));
-}
-
-void ADownfallCharacter::UpdateBloodMoonVFX(float DeltaTime)
-{
-    // 1. Stage 3 이상에서만 처리
-    const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GetGameInstance());
-    const int32 StageIndex = DGI ? DGI->GetCurrentStageIndex() : 0;
-    if (StageIndex < 3)
-    {
-        return;
-    }
-
-    // 2. ClimbingElapsedTime은 UpdateRainVFX에서 공유 누적
-    if (ClimbingElapsedTime >= BloodMoonTriggerTime && !bBloodMoonActive)
-    {
-        ActivateBloodMoonVFX();
-    }
-
-    if (!bBloodMoonActive)
-    {
-        return;
-    }
-
-    // 3. Lerp Alpha 계산
-    BloodMoonElapsed += DeltaTime;
-    const float Alpha = FMath::Clamp(
-        BloodMoonElapsed / FMath::Max(BloodMoonLerpDuration, KINDA_SMALL_NUMBER),
-        0.0f, 1.0f
-    );
-
-    // 4. DirectionalLight 색상 Lerp
-    if (CachedMoonLight.IsValid())
-    {
-        UDirectionalLightComponent* LC = CachedMoonLight->GetComponent();
-        if (LC)
-        {
-            const FLinearColor NewColor = FLinearColor::LerpUsingHSV(
-                BloodMoonStartLightColor, BloodMoonLightColor, Alpha);
-            LC->SetLightColor(NewColor);
-        }
-    }
-
-    // 5. ExponentialHeightFog 색상 + 밀도 Lerp
-    // UE5.7: FogInscatteringColor 직접 접근 불가 → SetFogInscatteringColor / SetFogDensity 사용
-    if (CachedHeightFog.IsValid())
-    {
-        UExponentialHeightFogComponent* FC = CachedHeightFog->GetComponent();
-        if (FC)
-        {
-            const FLinearColor NewFogColor = FLinearColor::LerpUsingHSV(
-                BloodMoonStartFogColor, BloodMoonFogColor, Alpha);
-            FC->SetFogInscatteringColor(NewFogColor);
-            FC->SetFogDensity(FMath::Lerp(BloodMoonStartFogDensity, BloodMoonFogDensity, Alpha));
-        }
-    }
-
-    if (Alpha >= 1.0f && BloodMoonElapsed < BloodMoonLerpDuration + DeltaTime * 2.f)
-    {
-        UE_LOG(LogDownFall, Log, TEXT("BloodMoonVFX Lerp complete"));
-    }
-}
-
 void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)
 {
-    // 1. 스테이지 인덱스 기반 분기
-    const UGameInstance* GI = GetGameInstance();
-    const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GI);
-    if (!DGI)
+    // Stage 2에서만 Blizzard 처리
+    // Stage 0/1 → Rain, Stage 2 → Blizzard, Stage 3+ → BloodMoon
+    const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GetGameInstance());
+    const int32 StageIndex = DGI ? DGI->GetCurrentStageIndex() : 0;
+    if (StageIndex != 2)
     {
         return;
     }
 
-    const int32 StageIndex = DGI->GetCurrentStageIndex();
-    if (StageIndex < 2)
-    {
-        return; // Stage 1은 Rain, Stage 2 이상만 Blizzard
-    }
-
-    // 2. 트리거 조건: 누적 등반 시간 도달 + 아직 미활성
+    // 트리거 조건 (ClimbingElapsedTime은 UpdateRainVFX에서 공유 누적)
     if (ClimbingElapsedTime >= BlizzardTriggerTime && !bBlizzardActive)
     {
         ActivateBlizzardVFX();
     }
 
-    // 3. PP Weight Lerp 처리 (0 → BlizzardBlendWeight)
+    // PP Weight Lerp
     if (bBlizzardWeightLerping && FrostMaterialInstance && PostProcessComp)
     {
         BlizzardLerpElapsed += DeltaTime;
         const float Alpha = FMath::Clamp(
-            BlizzardLerpElapsed / FMath::Max(BlizzardLerpDuration, KINDA_SMALL_NUMBER),
-            0.0f, 1.0f
-        );
+            BlizzardLerpElapsed / FMath::Max(BlizzardLerpDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
         BlizzardCurrentWeight = FMath::Lerp(BlizzardLerpStartWeight, BlizzardBlendWeight, Alpha);
 
         for (FWeightedBlendable& Blendable : PostProcessComp->Settings.WeightedBlendables.Array)
@@ -4007,19 +3858,14 @@ void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)
         }
     }
 
-    // 4. AutoExposureBias Lerp 처리
+    // AutoExposureBias Lerp
     if (bBlizzardDarkenLerping && PostProcessComp)
     {
         BlizzardDarkenLerpElapsed += DeltaTime;
         const float DarkenAlpha = FMath::Clamp(
-            BlizzardDarkenLerpElapsed / FMath::Max(BlizzardDarkenLerpDuration, KINDA_SMALL_NUMBER),
-            0.0f, 1.0f
-        );
+            BlizzardDarkenLerpElapsed / FMath::Max(BlizzardDarkenLerpDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
         PostProcessComp->Settings.AutoExposureBias = FMath::Lerp(
-            BlizzardDarkenLerpStartBias,
-            BlizzardDarkenLerpTargetBias,
-            DarkenAlpha
-        );
+            BlizzardDarkenLerpStartBias, BlizzardDarkenLerpTargetBias, DarkenAlpha);
 
         if (DarkenAlpha >= 1.0f)
         {
@@ -4029,34 +3875,142 @@ void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)
         }
     }
 
-    // 5. 활성 중일 때만 위치/SpawnRate 처리
+    // Niagara 위치 + SpawnRate + Wind 갱신 (활성 중일 때만)
     if (!bBlizzardActive || !BlizzardNiagaraComponent || !IsValid(BlizzardNiagaraComponent))
     {
         return;
     }
 
-    // Niagara 위치 추적 — Wind 방향 역벡터 기반 스폰 위치 자동 계산
-    // 실제 Wind 속도 = BlizzardWindForce * BlizzardWindSpeedScale
-    // 스폰 위치 = 캐릭터 위치에서 Wind 반대 방향으로 BlizzardSpawnDistance만큼 이동
-    // → 파티클이 Wind에 밀려 캐릭터 근처를 통과하는 궤도
-    {
-        const FVector ActualWind  = BlizzardWindForce * BlizzardWindSpeedScale;
-        const FVector WindDirNorm = ActualWind.GetSafeNormal();
-        const FVector NewLocation = GetActorLocation()
-            - WindDirNorm * BlizzardSpawnDistance;
-        BlizzardNiagaraComponent->SetWorldLocation(NewLocation);
-    }
+    // Wind 역벡터 기반 스폰 위치 계산
+    const FVector WindDirNorm = (BlizzardWindForce * BlizzardWindSpeedScale).GetSafeNormal();
+    BlizzardNiagaraComponent->SetWorldLocation(GetActorLocation() - WindDirNorm * BlizzardSpawnDistance);
 
-    // SpawnRate 점진 강화 (Min → Max, BlizzardIntensifyDuration 초 동안)
+    // SpawnRate 점진 강화
     BlizzardElapsedSinceActivation += DeltaTime;
     const float IntensityAlpha = FMath::Clamp(
-        BlizzardElapsedSinceActivation / FMath::Max(BlizzardIntensifyDuration, KINDA_SMALL_NUMBER),
-        0.0f, 1.0f
-    );
-    const float CurrentSpawnRate = FMath::Lerp(BlizzardSpawnRateMin, BlizzardSpawnRateMax, IntensityAlpha);
-    BlizzardNiagaraComponent->SetVariableFloat(FName("SpawnRate"), CurrentSpawnRate);
+        BlizzardElapsedSinceActivation / FMath::Max(BlizzardIntensifyDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+    BlizzardNiagaraComponent->SetVariableFloat(FName("SpawnRate"),
+        FMath::Lerp(BlizzardSpawnRateMin, BlizzardSpawnRateMax, IntensityAlpha));
 
-    // Wind Force 실시간 동기화 — 에디터에서 BlizzardWindForce 변경 시 즉시 반영
-    // 스케일은 Niagara Random Range가 에미터별로 처리
+    // Wind Force 실시간 동기화
     BlizzardNiagaraComponent->SetVariableVec3(FName("Wind Speed"), BlizzardWindForce);
+}
+
+// ── Blood Moon ────────────────────────────────────────────────────
+
+void ADownfallCharacter::ActivateBloodMoonVFX()
+{
+    if (bBloodMoonActive)
+    {
+        return;
+    }
+
+    bBloodMoonActive = true;
+    BloodMoonElapsed = 0.0f;
+
+    // Lerp 시작 색상 저장 (에디터 설정값 기준)
+    BloodMoonStartLightColor = BloodMoonNormalLightColor;
+    BloodMoonStartFogColor   = BloodMoonNormalFogColor;
+    BloodMoonStartFogDensity = BloodMoonNormalFogDensity;
+
+    UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
+}
+
+void ADownfallCharacter::DeactivateBloodMoonVFX()
+{
+    if (!bBloodMoonActive)
+    {
+        return;
+    }
+
+    bBloodMoonActive = false;
+    BloodMoonElapsed = 0.0f;
+
+    if (CachedMoonLight.IsValid())
+    {
+        if (UDirectionalLightComponent* LC = CachedMoonLight->GetComponent())
+        {
+            LC->SetLightColor(BloodMoonNormalLightColor);
+        }
+    }
+
+    if (CachedHeightFog.IsValid())
+    {
+        if (UExponentialHeightFogComponent* FC = CachedHeightFog->GetComponent())
+        {
+            FC->SetFogInscatteringColor(BloodMoonNormalFogColor);
+            FC->SetFogDensity(BloodMoonNormalFogDensity);
+        }
+    }
+
+    // 하늘 오버레이 초기화
+    if (BloodMoonSkyMaterialInstance)
+    {
+        BloodMoonSkyMaterialInstance->SetScalarParameterValue(FName("BloodMoonSkyIntensity"), 0.0f);
+    }
+
+    UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX DEACTIVATED"));
+}
+
+void ADownfallCharacter::UpdateBloodMoonVFX(float DeltaTime)
+{
+    // Stage 3 이상에서만 BloodMoon 처리
+    const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GetGameInstance());
+    const int32 StageIndex = DGI ? DGI->GetCurrentStageIndex() : 0;
+    if (StageIndex < 3)
+    {
+        return;
+    }
+
+    // 트리거 조건 (ClimbingElapsedTime 공유 누적)
+    if (ClimbingElapsedTime >= BloodMoonTriggerTime && !bBloodMoonActive)
+    {
+        ActivateBloodMoonVFX();
+    }
+
+    if (!bBloodMoonActive)
+    {
+        return;
+    }
+
+    // Lerp Alpha
+    BloodMoonElapsed += DeltaTime;
+    const float Alpha = FMath::Clamp(
+        BloodMoonElapsed / FMath::Max(BloodMoonLerpDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+
+    // DirectionalLight 색상 Lerp
+    if (CachedMoonLight.IsValid())
+    {
+        if (UDirectionalLightComponent* LC = CachedMoonLight->GetComponent())
+        {
+            LC->SetLightColor(FLinearColor::LerpUsingHSV(
+                BloodMoonStartLightColor, BloodMoonLightColor, Alpha));
+        }
+    }
+
+    // ExponentialHeightFog 색상 + 밀도 Lerp
+    // UE5.7: FogInscatteringColor 직접 접근 불가 → SetFogInscatteringColor / SetFogDensity 사용
+    if (CachedHeightFog.IsValid())
+    {
+        if (UExponentialHeightFogComponent* FC = CachedHeightFog->GetComponent())
+        {
+            FC->SetFogInscatteringColor(FLinearColor::LerpUsingHSV(
+                BloodMoonStartFogColor, BloodMoonFogColor, Alpha));
+            FC->SetFogDensity(FMath::Lerp(BloodMoonStartFogDensity, BloodMoonFogDensity, Alpha));
+        }
+    }
+
+    // BloodMoonSky PP 머티리얼 — 하늘 픽셀에 붉은 오버레이 Lerp
+    if (BloodMoonSkyMaterialInstance)
+    {
+        BloodMoonSkyMaterialInstance->SetScalarParameterValue(
+            FName("BloodMoonSkyIntensity"),
+            FMath::Lerp(0.0f, BloodMoonSkyIntensity, Alpha)
+        );
+    }
+
+    if (Alpha >= 1.0f && BloodMoonElapsed < BloodMoonLerpDuration + DeltaTime * 2.f)
+    {
+        UE_LOG(LogDownFall, Log, TEXT("BloodMoonVFX Lerp complete"));
+    }
 }

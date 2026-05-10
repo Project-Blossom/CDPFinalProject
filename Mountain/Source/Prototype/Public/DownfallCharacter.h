@@ -786,6 +786,19 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "VFX|BloodMoonVFX")
     bool bBloodMoonActive = false;
 
+    // 하늘 붉게 물들이는 PostProcess 머티리얼 (M_PP_BloodMoonSky)
+    // SceneDepth로 하늘 픽셀 감지 후 붉은 오버레이 적용
+    UPROPERTY(EditAnywhere, Category = "VFX|BloodMoonVFX")
+    TObjectPtr<UMaterial> BloodMoonSkyMaterial;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> BloodMoonSkyMaterialInstance;
+
+    // 하늘 붉은 오버레이 최대 강도 (0~1)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float BloodMoonSkyIntensity = 0.4f;
+
     // 전환 시작 기준값 — 에디터에서 레벨의 기본 안개/광원 색상과 맞춰 입력
     // BeginPlay 시 컴포넌트에서 읽지 않고 이 값을 Lerp 시작점으로 사용
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
