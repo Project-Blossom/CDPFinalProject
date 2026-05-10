@@ -306,6 +306,12 @@ struct FMGCliffRimSample
     bool bValid = false;
 };
 
+struct FMGRimCandidate
+{
+    FVector Center = FVector::ZeroVector;
+    FVector Normal = FVector::UpVector;
+};
+
 static bool MG_IsPlateauRimCandidateTriangle(
     const FChunkMeshData& CliffMesh,
     int32 TriIndex,
@@ -353,10 +359,8 @@ static bool MG_IsPlateauRimCandidateTriangle(
         }
     }
 
-    // Plateau 접합선은 "상단 림"이어야 한다.
-    // 아래쪽 오버행, 동굴 안쪽, 수직 절벽 중간면까지 접합 후보로 쓰면
-    // Plateau가 등반면을 덮어버린다.
-    // 그래서 상단 근처이면서 아래를 향한 면은 제외한다.
+    // Plateau 접합선은 절벽 상단 경계 후보만 사용한다.
+    // 아래를 향하는 면은 상단 접합 기준으로 쓰지 않는다.
     if (N.Z < -0.15f)
     {
         return false;
@@ -365,6 +369,11 @@ static bool MG_IsPlateauRimCandidateTriangle(
     OutCenter = (A + B + C) / 3.f;
     OutNormal = N;
     return true;
+}
+
+static float MG_Median3(float A, float B, float C)
+{
+    return FMath::Max(FMath::Min(A, B), FMath::Min(FMath::Max(A, B), C));
 }
 
 static void MG_BuildCliffRimSamples(
@@ -379,6 +388,11 @@ static void MG_BuildCliffRimSamples(
     OutRim.Reset();
     OutRim.SetNum(SegY + 1);
 
+    if (SegY <= 0 || CliffMesh.Triangles.Num() < 3)
+    {
+        return;
+    }
+
     const float Band = FMath::Max(10.f, S.TopPlateauConformSampleBandCm);
     const float SearchDepth = FMath::Max(100.f, S.TopPlateauConformSearchDepthCm);
     const float MinZ = ZTop - SearchDepth;
@@ -387,7 +401,57 @@ static void MG_BuildCliffRimSamples(
     const float ContactOverlapDown = FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
     const float RimZBand = FMath::Max(S.VoxelSizeCm * 1.5f, SearchDepth * 0.10f);
 
+    const float YSpan = YRight - YLeft;
+    if (FMath::Abs(YSpan) <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
+
+    const float StepY = YSpan / (float)SegY;
     const int32 TriCount = CliffMesh.Triangles.Num() / 3;
+
+    // 기존 방식은 각 Y 단면마다 전체 삼각형을 반복 검사했다.
+    // 여기서는 상단 후보 삼각형을 한 번만 수집하고, Y 격자 버킷에 넣어서 필요한 단면 후보만 조회한다.
+    // 복잡도는 대략 SegY * TriCount에서 TriCount + 주변 후보 조회로 줄어든다.
+    TArray<FMGRimCandidate> Candidates;
+    Candidates.Reserve(TriCount / 4);
+
+    TArray<TArray<int32>> Bins;
+    Bins.SetNum(SegY + 1);
+
+    auto GetBinIndex = [&](float Y) -> int32
+        {
+            const float T = (Y - YLeft) / StepY;
+            return FMath::Clamp(FMath::RoundToInt(T), 0, SegY);
+        };
+
+    for (int32 t = 0; t < TriCount; ++t)
+    {
+        FVector Center;
+        FVector Normal;
+        if (!MG_IsPlateauRimCandidateTriangle(CliffMesh, t, ZTop, MinZ, MaxZ, Center, Normal))
+        {
+            continue;
+        }
+
+        if (Center.Y < YLeft - Band || Center.Y > YRight + Band)
+        {
+            continue;
+        }
+
+        FMGRimCandidate Candidate;
+        Candidate.Center = Center;
+        Candidate.Normal = Normal.GetSafeNormal();
+        const int32 CandidateIndex = Candidates.Add(Candidate);
+
+        const int32 MinBin = FMath::Clamp(FMath::FloorToInt(((Center.Y - Band) - YLeft) / StepY), 0, SegY);
+        const int32 MaxBin = FMath::Clamp(FMath::CeilToInt(((Center.Y + Band) - YLeft) / StepY), 0, SegY);
+
+        for (int32 Bin = MinBin; Bin <= MaxBin; ++Bin)
+        {
+            Bins[Bin].Add(CandidateIndex);
+        }
+    }
 
     for (int32 iy = 0; iy <= SegY; ++iy)
     {
@@ -397,30 +461,33 @@ static void MG_BuildCliffRimSamples(
         FMGCliffRimSample Sample;
         Sample.Y = QueryY;
 
-        // 1단계: 해당 Y 단면에서 가장 높은 상단 영역을 먼저 찾는다.
-        // 이 값이 있어야 아래쪽 노이즈/오버행을 접합 기준으로 잘못 잡지 않는다.
+        const TArray<int32>& Bin = Bins[iy];
+        if (Bin.Num() == 0)
+        {
+            OutRim[iy] = Sample;
+            continue;
+        }
+
         bool bHasTop = false;
         float HighestZ = -FLT_MAX;
 
-        for (int32 t = 0; t < TriCount; ++t)
+        for (const int32 CandidateIndex : Bin)
         {
-            FVector Center;
-            FVector Normal;
-            if (!MG_IsPlateauRimCandidateTriangle(CliffMesh, t, ZTop, MinZ, MaxZ, Center, Normal))
+            if (!Candidates.IsValidIndex(CandidateIndex))
             {
                 continue;
             }
 
-            const float YDist = FMath::Abs(Center.Y - QueryY);
-            if (YDist > Band)
+            const FMGRimCandidate& C = Candidates[CandidateIndex];
+            if (FMath::Abs(C.Center.Y - QueryY) > Band)
             {
                 continue;
             }
 
-            if (!bHasTop || Center.Z > HighestZ)
+            if (!bHasTop || C.Center.Z > HighestZ)
             {
                 bHasTop = true;
-                HighestZ = Center.Z;
+                HighestZ = C.Center.Z;
             }
         }
 
@@ -430,8 +497,6 @@ static void MG_BuildCliffRimSamples(
             continue;
         }
 
-        // 2단계: 가장 높은 상단 림 주변에서만, 같은 Y 단면의 가로 끝 X를 고른다.
-        // 전체 폭의 가장 먼 X를 공유하지 않고, 각 세로 단면의 림 끝점만 쓴다.
         bool bFound = false;
         float BestX = -FLT_MAX;
         float BestZ = HighestZ;
@@ -440,40 +505,32 @@ static void MG_BuildCliffRimSamples(
 
         const float RimMinZ = FMath::Max(ZTop - MaxDrop, HighestZ - RimZBand);
 
-        for (int32 t = 0; t < TriCount; ++t)
+        for (const int32 CandidateIndex : Bin)
         {
-            FVector Center;
-            FVector Normal;
-            if (!MG_IsPlateauRimCandidateTriangle(CliffMesh, t, ZTop, MinZ, MaxZ, Center, Normal))
+            if (!Candidates.IsValidIndex(CandidateIndex))
             {
                 continue;
             }
 
-            const float YDist = FMath::Abs(Center.Y - QueryY);
-            if (YDist > Band)
+            const FMGRimCandidate& C = Candidates[CandidateIndex];
+            const float YDist = FMath::Abs(C.Center.Y - QueryY);
+            if (YDist > Band || C.Center.Z < RimMinZ)
             {
                 continue;
             }
 
-            if (Center.Z < RimMinZ)
-            {
-                continue;
-            }
-
-            // 같은 Y 세로 단면에서 Plateau가 시작될 가로 끝을 고른다.
-            // X를 우선하고, 거의 같은 X라면 Y가 더 가까운 것과 더 높은 림을 선호한다.
-            const bool bBetterX = Center.X > BestX + 1.f;
-            const bool bSimilarX = FMath::Abs(Center.X - BestX) <= 1.f;
+            const bool bBetterX = C.Center.X > BestX + 1.f;
+            const bool bSimilarX = FMath::Abs(C.Center.X - BestX) <= 1.f;
             const bool bBetterY = YDist < BestYDist - 1.f;
-            const bool bBetterZ = Center.Z > BestZ + 1.f;
+            const bool bBetterZ = C.Center.Z > BestZ + 1.f;
 
             if (!bFound || bBetterX || (bSimilarX && (bBetterY || (FMath::Abs(YDist - BestYDist) <= 1.f && bBetterZ))))
             {
                 bFound = true;
-                BestX = Center.X;
-                BestZ = Center.Z;
+                BestX = C.Center.X;
+                BestZ = C.Center.Z;
                 BestYDist = YDist;
-                BestNormal = Normal;
+                BestNormal = C.Normal;
             }
         }
 
@@ -488,8 +545,48 @@ static void MG_BuildCliffRimSamples(
         OutRim[iy] = Sample;
     }
 
-    // 3단계: 단면별 림이 너무 튀면 Plateau 앞 경계가 찢어져 보인다.
-    // 단, 전체 X로 통일하지 않는다. 국소적인 튐만 3점 median으로 완화한다.
+    // 후보가 없는 일부 단면은 좌우의 유효 접합선으로 보간한다.
+    // DefaultContactX로 튀는 것보다 접합선이 연속적으로 유지된다.
+    for (int32 iy = 0; iy <= SegY; ++iy)
+    {
+        if (OutRim[iy].bValid)
+        {
+            continue;
+        }
+
+        int32 L = iy - 1;
+        while (L >= 0 && !OutRim[L].bValid)
+        {
+            --L;
+        }
+
+        int32 R = iy + 1;
+        while (R <= SegY && !OutRim[R].bValid)
+        {
+            ++R;
+        }
+
+        if (L >= 0 && R <= SegY)
+        {
+            const float Alpha = (float)(iy - L) / (float)(R - L);
+            OutRim[iy].X = FMath::Lerp(OutRim[L].X, OutRim[R].X, Alpha);
+            OutRim[iy].Z = FMath::Lerp(OutRim[L].Z, OutRim[R].Z, Alpha);
+            OutRim[iy].Normal = FMath::Lerp(OutRim[L].Normal, OutRim[R].Normal, Alpha).GetSafeNormal();
+            OutRim[iy].bValid = true;
+        }
+        else if (L >= 0)
+        {
+            OutRim[iy] = OutRim[L];
+            OutRim[iy].Y = FMath::Lerp(YLeft, YRight, (float)iy / (float)SegY);
+        }
+        else if (R <= SegY)
+        {
+            OutRim[iy] = OutRim[R];
+            OutRim[iy].Y = FMath::Lerp(YLeft, YRight, (float)iy / (float)SegY);
+        }
+    }
+
+    // 국소적인 오검출만 완화한다. 전체 X를 하나로 통일하지 않기 때문에 등반면을 판처럼 덮지 않는다.
     for (int32 Pass = 0; Pass < 2; ++Pass)
     {
         TArray<FMGCliffRimSample> Prev = OutRim;
@@ -508,20 +605,20 @@ static void MG_BuildCliffRimSamples(
             const float Z1 = Prev[iy].Z;
             const float Z2 = Prev[iy + 1].Z;
 
-            const float LocalX = (X0 + X1 + X2) / 3.f;
-            const float LocalZ = (Z0 + Z1 + Z2) / 3.f;
+            const float MedianX = MG_Median3(X0, X1, X2);
+            const float MedianZ = MG_Median3(Z0, Z1, Z2);
 
             const float SpikeLimitX = FMath::Max(S.VoxelSizeCm * 3.f, Band * 1.5f);
             const float SpikeLimitZ = FMath::Max(S.VoxelSizeCm * 2.f, S.TopPlateauMaxConformDropCm * 0.25f);
 
-            if (FMath::Abs(X1 - LocalX) > SpikeLimitX)
+            if (FMath::Abs(X1 - MedianX) > SpikeLimitX)
             {
-                OutRim[iy].X = LocalX;
+                OutRim[iy].X = MedianX;
             }
 
-            if (FMath::Abs(Z1 - LocalZ) > SpikeLimitZ)
+            if (FMath::Abs(Z1 - MedianZ) > SpikeLimitZ)
             {
-                OutRim[iy].Z = LocalZ;
+                OutRim[iy].Z = MedianZ;
             }
         }
     }
