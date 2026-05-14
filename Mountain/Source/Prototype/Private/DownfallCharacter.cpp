@@ -3989,7 +3989,7 @@ void ADownfallCharacter::UpdateBloodMoonVFX(float DeltaTime)
     }
 
     // ExponentialHeightFog 색상 + 밀도 Lerp
-    // UE5.7: FogInscatteringColor 직접 접근 불가 → SetFogInscatteringColor / SetFogDensity 사용
+    // SetFogInscatteringColor / SetFogDensity 사용
     if (CachedHeightFog.IsValid())
     {
         if (UExponentialHeightFogComponent* FC = CachedHeightFog->GetComponent())
