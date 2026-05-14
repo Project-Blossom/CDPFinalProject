@@ -13,7 +13,11 @@ AMarchingCubesTerrain::AMarchingCubesTerrain()
     ProcMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProcMesh"));
     SetRootComponent(ProcMesh);
 
-    // Ãæµ¹ ÇÊ¿ä ¾øÀ¸¸é false·Î ½ÃÀÛ (³ªÁß¿¡ Marching Cubes ´Ü°è¿¡¼­ ÄÓ ¼ö ÀÖÀ½)
+    // ê·¸ë¦¼ì ìºìŠ¤íŒ… í™œì„±í™” â€” ë¹› íˆ¬ê³¼ ë°©ì§€
+    ProcMesh->SetCastShadow(true);
+    ProcMesh->bCastDynamicShadow = true;
+
+    // ï¿½æµ¹ ï¿½Ê¿ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ falseï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ß¿ï¿½ Marching Cubes ï¿½Ü°è¿¡ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
     ProcMesh->bUseComplexAsSimpleCollision = false;
 }
 
@@ -21,7 +25,7 @@ void AMarchingCubesTerrain::BeginPlay()
 {
     Super::BeginPlay();
 
-    // CreateTestTriangle(); // Å×½ºÆ®¿ë
+    // CreateTestTriangle(); // ï¿½×½ï¿½Æ®ï¿½ï¿½
 
     AllocateDensity();
     BuildDensityField_CliffRock();
@@ -46,17 +50,57 @@ void AMarchingCubesTerrain::BeginPlay()
                 TriangulateCell(x, y, z, Verts, Tris);
             }
 
-    // ÃÖ¼Ò ±¸¼ºÀ¸·Î ¼½¼Ç »ı¼º (³ë¸»/UV´Â ´ÙÀ½ Step¿¡¼­)
+    // ï¿½Ö¼ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½ë¸»/UVï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Stepï¿½ï¿½ï¿½ï¿½)
     TArray<FVector> Normals;
     TArray<FVector2D> UV0;
     TArray<FColor> Colors;
     TArray<FProcMeshTangent> Tangents;
+
+    // íŠ¸ë¼ì´ì•µê¸€ ê¸°ë°˜ ë²„í…ìŠ¤ ë…¸ë©€ ê³„ì‚°
+    // ê° ì‚¼ê°í˜•ì˜ ë©´ ë…¸ë©€ì„ ê³„ì‚°í•˜ì—¬ ê³µìœ  ë²„í…ìŠ¤ì— ëˆ„ì  í›„ ì •ê·œí™”
     Normals.SetNumZeroed(Verts.Num());
-    for (int32 i = 0; i < Normals.Num(); ++i)
-        Normals[i] = FVector::UpVector;
     UV0.SetNumZeroed(Verts.Num());
     Colors.SetNumZeroed(Verts.Num());
     Tangents.SetNumZeroed(Verts.Num());
+
+    // ì‚¼ê°í˜•ë§ˆë‹¤ ë©´ ë…¸ë©€(Cross Product) ê³„ì‚° í›„ ë²„í…ìŠ¤ë³„ ëˆ„ì 
+    for (int32 i = 0; i < Tris.Num(); i += 3)
+    {
+        const int32 I0 = Tris[i];
+        const int32 I1 = Tris[i + 1];
+        const int32 I2 = Tris[i + 2];
+
+        const FVector& V0 = Verts[I0];
+        const FVector& V1 = Verts[I1];
+        const FVector& V2 = Verts[I2];
+
+        // ë©´ ë…¸ë©€ = (V2-V0) Ã— (V1-V0) â€” ì™€ì¸ë”© (0,2,1) ê¸°ì¤€ ì™¸ì 
+        const FVector FaceNormal = FVector::CrossProduct(V2 - V0, V1 - V0);
+
+        Normals[I0] += FaceNormal;
+        Normals[I1] += FaceNormal;
+        Normals[I2] += FaceNormal;
+    }
+
+    // ëˆ„ì  ë…¸ë©€ ì •ê·œí™” (ì‹¤íŒ¨ ì‹œ UpVector fallback)
+    for (FVector& N : Normals)
+    {
+        N = N.GetSafeNormal();
+        if (N.IsNearlyZero())
+        {
+            N = FVector::UpVector;
+        }
+    }
+
+    // ëˆ„ì  ë…¸ë©€ ì •ê·œí™” (ì‹¤íŒ¨ ì‹œ UpVector fallback)
+    for (FVector& N : Normals)
+    {
+        N = N.GetSafeNormal();
+        if (N.IsNearlyZero())
+        {
+            N = FVector::UpVector;
+        }
+    }
 
     ProcMesh->CreateMeshSection(0, Verts, Tris, Normals, UV0, Colors, Tangents, false);
 
@@ -65,43 +109,43 @@ void AMarchingCubesTerrain::BeginPlay()
 
 void AMarchingCubesTerrain::CreateTestTriangle()
 {
-    // Á¤Á¡ 3°³ (´ÜÀ§: cm)
+    // ï¿½ï¿½ï¿½ï¿½ 3ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½: cm)
     TArray<FVector> Vertices;
     Vertices.Add(FVector(0, 0, 0));
     Vertices.Add(FVector(0, 300, 0));
     Vertices.Add(FVector(0, 0, 300));
 
-    // »ï°¢Çü ÀÎµ¦½º (0-1-2)
+    // ï¿½ï°¢ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½ (0-1-2)
     TArray<int32> Triangles;
     Triangles.Add(0);
     Triangles.Add(1);
     Triangles.Add(2);
 
-    // ³ë¸»(¶óÀÌÆÃÀÌ º¸ÀÌ°Ô)
+    // ï¿½ë¸»(ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì°ï¿½)
     TArray<FVector> Normals;
     Normals.Add(FVector(1, 0, 0));
     Normals.Add(FVector(1, 0, 0));
     Normals.Add(FVector(1, 0, 0));
 
-    // UV (¸ÓÆ¼¸®¾ó Å×½ºÆ®¿ë)
+    // UV (ï¿½ï¿½Æ¼ï¿½ï¿½ï¿½ï¿½ ï¿½×½ï¿½Æ®ï¿½ï¿½)
     TArray<FVector2D> UV0;
     UV0.Add(FVector2D(0, 0));
     UV0.Add(FVector2D(1, 0));
     UV0.Add(FVector2D(0, 1));
 
-    // ¹öÅØ½º ÄÃ·¯ (¼±ÅÃ)
+    // ï¿½ï¿½ï¿½Ø½ï¿½ ï¿½Ã·ï¿½ (ï¿½ï¿½ï¿½ï¿½)
     TArray<FColor> VertexColors;
     VertexColors.Add(FColor::Red);
     VertexColors.Add(FColor::Green);
     VertexColors.Add(FColor::Blue);
 
-    // ÅºÁ¨Æ®(¼±ÅÃ)
+    // Åºï¿½ï¿½Æ®(ï¿½ï¿½ï¿½ï¿½)
     TArray<FProcMeshTangent> Tangents;
     Tangents.Add(FProcMeshTangent(0, 1, 0));
     Tangents.Add(FProcMeshTangent(0, 1, 0));
     Tangents.Add(FProcMeshTangent(0, 1, 0));
 
-    // ¼½¼Ç »ı¼º
+    // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     const int32 SectionIndex = 0;
     const bool bCreateCollision = false;
 
@@ -129,7 +173,7 @@ void AMarchingCubesTerrain::AllocateDensity()
 
 void AMarchingCubesTerrain::BuildDensityField_TestPlane()
 {
-    // ¾ÆÁÖ ´Ü¼øÇÑ Æò¸é: Density = z - Height
+    // ï¿½ï¿½ï¿½ï¿½ ï¿½Ü¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½: Density = z - Height
     const float Height = (NumZ * CellSize) * 0.4f;
 
     for (int32 z = 0; z < NumZ; ++z)
@@ -162,7 +206,7 @@ void AMarchingCubesTerrain::DebugDrawDensitySlice() const
 
     const int32 Z = FMath::Clamp(DebugSliceZ, 0, NumZ - 1);
 
-    // ¾×ÅÍ ·ÎÄÃ ±âÁØ Á¡µéÀ» ¿ùµå·Î º¯È¯ÇØ¼­ Âï±â À§ÇØ Transform »ç¿ë
+    // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯ï¿½Ø¼ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Transform ï¿½ï¿½ï¿½
     const FTransform& T = GetActorTransform();
 
     int32 DrawCount = 0;
@@ -172,13 +216,13 @@ void AMarchingCubesTerrain::DebugDrawDensitySlice() const
         {
             const float D = Density[Index(x, y, Z)];
 
-            // iso(0) ±ÙÃ³¸¸ Âï¾î¼­ ¡°Ç¥¸éÀÌ ¾îµğÂëÀÎÁö¡± º¸ÀÌ°Ô ÇÔ
+            // iso(0) ï¿½ï¿½Ã³ï¿½ï¿½ ï¿½ï¿½î¼­ ï¿½ï¿½Ç¥ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì°ï¿½ ï¿½ï¿½
             if (FMath::Abs(D - IsoLevel) <= DebugIsoEpsilon)
             {
                 const FVector LocalP = GridToWorld(x, y, Z);
                 const FVector WorldP = T.TransformPosition(LocalP);
 
-                // »öÀº ¹Ğµµ ºÎÈ£·Î ±¸ºĞ: À§(+)/¾Æ·¡(-)
+                // ï¿½ï¿½ï¿½ï¿½ ï¿½Ğµï¿½ ï¿½ï¿½È£ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½(+)/ï¿½Æ·ï¿½(-)
                 const FColor C = (D >= IsoLevel) ? FColor::Green : FColor::Red;
 
                 DrawDebugPoint(GetWorld(), WorldP, DebugPointSize, C, false, DebugLifeTime);
@@ -197,31 +241,31 @@ float AMarchingCubesTerrain::Noise2D(float X, float Y, float Freq) const
 
 float AMarchingCubesTerrain::Noise3D(float X, float Y, float Z, float Freq) const
 {
-    // UE¿¡ PerlinNoise3D°¡ ¹öÀü¿¡ µû¶ó ¾ø°Å³ª Á¦ÇÑÀûÀÌ¶ó 2D Á¶ÇÕÀ¸·Î ±Ù»ç
+    // UEï¿½ï¿½ PerlinNoise3Dï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Å³ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì¶ï¿½ 2D ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ù»ï¿½
     const float n1 = FMath::PerlinNoise2D(FVector2D(X * Freq, Y * Freq));
     const float n2 = FMath::PerlinNoise2D(FVector2D(Y * Freq, Z * Freq));
     const float n3 = FMath::PerlinNoise2D(FVector2D(Z * Freq, X * Freq));
-    return (n1 + n2 + n3) / 3.0f; // ´ë·« -1~1
+    return (n1 + n2 + n3) / 3.0f; // ï¿½ë·« -1~1
 }
 
 float AMarchingCubesTerrain::HeightFunc_Cliff(const FVector& P) const
 {
-    // "Àıº®"Àº Height°¡ ±Ş°İÈ÷ ¹Ù²î´Â °÷ÀÌ ¸¹¾Æ¾ß ÇÔ.
-    // ÇÙ½É Æ®¸¯: ³ëÀÌÁî¸¦ "Àıº®Ã³·³" ¸¸µé±â À§ÇØ abs+pow·Î °æ»ç¸¦ ¼¼°Ô ¸¸µê.
+    // "ï¿½ï¿½ï¿½ï¿½"ï¿½ï¿½ Heightï¿½ï¿½ ï¿½Ş°ï¿½ï¿½ï¿½ ï¿½Ù²ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Æ¾ï¿½ ï¿½ï¿½.
+    // ï¿½Ù½ï¿½ Æ®ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ï¿½î¸¦ "ï¿½ï¿½ï¿½ï¿½Ã³ï¿½ï¿½" ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ abs+powï¿½ï¿½ ï¿½ï¿½ç¸¦ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 
-    // Å« ÁöÇü(´É¼±/Àıº® À§Ä¡)
+    // Å« ï¿½ï¿½ï¿½ï¿½(ï¿½É¼ï¿½/ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡)
     float n = Noise2D(P.X, P.Y, CliffFreq);       // -1~1
     float a = FMath::Abs(n);                      // 0~1
-    float ridge = FMath::Pow(a, 0.25f);           // 0.25~ Àıº®Ã³·³(³·Àº Áö¼ö = ³¯Ä«·Ó°Ô)
+    float ridge = FMath::Pow(a, 0.25f);           // 0.25~ ï¿½ï¿½ï¿½ï¿½Ã³ï¿½ï¿½(ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ = ï¿½ï¿½Ä«ï¿½Ó°ï¿½)
 
-    // ridge°¡ Å¬¼ö·Ï(´É¼±/Àıº®) ³ôÀÌ¸¦ È® ¿Ã¸²
-    // CliffStrength·Î ¿µÇâ Á¶Àı
+    // ridgeï¿½ï¿½ Å¬ï¿½ï¿½ï¿½ï¿½(ï¿½É¼ï¿½/ï¿½ï¿½ï¿½ï¿½) ï¿½ï¿½ï¿½Ì¸ï¿½ È® ï¿½Ã¸ï¿½
+    // CliffStrengthï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     const float worldHeight = NumZ * CellSize;
     const float base = worldHeight * BaseHeightRatio;
 
     float h = base + ridge * (worldHeight * 0.6f) * CliffStrength;
 
-    // Ç¥¸é µğÅ×ÀÏ(¹ÙÀ§ ´À³¦)
+    // Ç¥ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½(ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
     float d = Noise2D(P.X, P.Y, DetailFreq);      // -1~1
     h += d * DetailAmp;
 
@@ -230,7 +274,7 @@ float AMarchingCubesTerrain::HeightFunc_Cliff(const FVector& P) const
 
 void AMarchingCubesTerrain::BuildDensityField_CliffRock()
 {
-    // Density = P.Z - Height(x,y) + (¼±ÅÃ) ¿À¹öÇà¿ë 3D ³ëÀÌÁî
+    // Density = P.Z - Height(x,y) + (ï¿½ï¿½ï¿½ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 3D ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     const float worldHeight = NumZ * CellSize;
 
     for (int32 z = 0; z < NumZ; ++z)
@@ -241,13 +285,13 @@ void AMarchingCubesTerrain::BuildDensityField_CliffRock()
 
                 const float H = HeightFunc_Cliff(P);
 
-                float D = P.Z - H; // iso=0ÀÌ Áö¸é
+                float D = P.Z - H; // iso=0ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 
                 if (bEnableOverhang)
                 {
-                    // ¿À¹öÇàÀº "Ç¥¸é ±ÙÃ³"¿¡¼­¸¸ ¼¼°Ô ¸ÔÀÌ´Â °Ô ¾ÈÁ¤Àû
-                    // (³Ê¹« ±íÀº ³»ºÎ±îÁö Èçµé¸é ±¸¸Û Åõ¼ºÀÌ°¡ µÊ)
-                    const float surfaceBand = worldHeight * 0.25f; // Ç¥¸é ±ÙÃ³ ¹üÀ§
+                    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ "Ç¥ï¿½ï¿½ ï¿½ï¿½Ã³"ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+                    // (ï¿½Ê¹ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Î±ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ì°ï¿½ ï¿½ï¿½)
+                    const float surfaceBand = worldHeight * 0.25f; // Ç¥ï¿½ï¿½ ï¿½ï¿½Ã³ ï¿½ï¿½ï¿½ï¿½
                     const float band = 1.0f - FMath::Clamp(FMath::Abs(D) / surfaceBand, 0.0f, 1.0f);
 
                     const float o = Noise3D(P.X, P.Y, P.Z, OverhangFreq); // -1~1
@@ -265,16 +309,16 @@ void AMarchingCubesTerrain::DebugDrawHeightPoints() const
 
     int32 DrawCount = 0;
 
-    // HeightFunc_Cliff´Â "¿ùµå ³ôÀÌ(cm)"¸¦ ¹İÈ¯ÇÏ¹Ç·Î, ·ÎÄÃ ÁÂÇ¥¿¡¼­µµ ±×´ë·Î »ç¿ë °¡´É
+    // HeightFunc_Cliffï¿½ï¿½ "ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½(cm)"ï¿½ï¿½ ï¿½ï¿½È¯ï¿½Ï¹Ç·ï¿½, ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ç¥ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½×´ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     for (int32 y = 0; y < NumY; y += FMath::Max(1, DebugHeightStep))
         for (int32 x = 0; x < NumX; x += FMath::Max(1, DebugHeightStep))
         {
             const FVector P0 = GridToWorld(x, y, 0);
 
-            // °°Àº (x,y)¿¡¼­ Ç¥¸é ³ôÀÌ
+            // ï¿½ï¿½ï¿½ï¿½ (x,y)ï¿½ï¿½ï¿½ï¿½ Ç¥ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
             const float H = HeightFunc_Cliff(P0);
 
-            // ÂïÀ» Á¡: (x,y,H)
+            // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½: (x,y,H)
             const FVector LocalP = FVector(P0.X, P0.Y, H);
             const FVector WorldP = T.TransformPosition(LocalP);
 
@@ -287,12 +331,12 @@ void AMarchingCubesTerrain::DebugDrawHeightPoints() const
 
 FVector AMarchingCubesTerrain::VertexInterp(float Iso, const FVector& P1, const FVector& P2, float V1, float V2) const
 {
-    // Iso¿Í °ÅÀÇ °°À¸¸é ¹Ù·Î ¸®ÅÏ
+    // Isoï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ù·ï¿½ ï¿½ï¿½ï¿½ï¿½
     if (FMath::Abs(Iso - V1) < KINDA_SMALL_NUMBER) return P1;
     if (FMath::Abs(Iso - V2) < KINDA_SMALL_NUMBER) return P2;
 
     const float Den = (V2 - V1);
-    if (FMath::Abs(Den) < KINDA_SMALL_NUMBER) return P1; // divide-by-zero ¹æÁö
+    if (FMath::Abs(Den) < KINDA_SMALL_NUMBER) return P1; // divide-by-zero ï¿½ï¿½ï¿½ï¿½
 
     const float T = (Iso - V1) / Den;
     return P1 + T * (P2 - P1);
@@ -302,14 +346,14 @@ bool AMarchingCubesTerrain::TriangulateCell(int32 X, int32 Y, int32 Z,
     TArray<FVector>& OutVerts,
     TArray<int32>& OutTris) const
 {
-    // 8 ÄÚ³Ê ·ÎÄÃ ÁÂÇ¥ ¿ÀÇÁ¼Â(Ç¥ÁØ MC ÄÚ³Ê ¼ø¼­)
+    // 8 ï¿½Ú³ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ç¥ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½(Ç¥ï¿½ï¿½ MC ï¿½Ú³ï¿½ ï¿½ï¿½ï¿½ï¿½)
     static const int32 CornerOffset[8][3] =
     {
         {0,0,0},{1,0,0},{1,1,0},{0,1,0},
         {0,0,1},{1,0,1},{1,1,1},{0,1,1}
     };
 
-    // edge°¡ ¿¬°áÇÏ´Â ÄÚ³Ê ÀÎµ¦½º(Ç¥ÁØ 12 edges)
+    // edgeï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½Ú³ï¿½ ï¿½Îµï¿½ï¿½ï¿½(Ç¥ï¿½ï¿½ 12 edges)
     static const int32 EdgeConnection[12][2] =
     {
         {0,1},{1,2},{2,3},{3,0},
@@ -326,7 +370,7 @@ bool AMarchingCubesTerrain::TriangulateCell(int32 X, int32 Y, int32 Z,
         const int32 cy = Y + CornerOffset[i][1];
         const int32 cz = Z + CornerOffset[i][2];
 
-        P[i] = GridToWorld(cx, cy, cz);  // ·ÎÄÃ
+        P[i] = GridToWorld(cx, cy, cz);  // ï¿½ï¿½ï¿½ï¿½
         V[i] = Sample(cx, cy, cz);
     }
 
@@ -338,11 +382,11 @@ bool AMarchingCubesTerrain::TriangulateCell(int32 X, int32 Y, int32 Z,
     }
 
     const int32 Edges = FMarchingCubesTables::EdgeTable[CubeIndex];
-    if (Edges == 0) return false; // ±³Â÷ ¾øÀ½
+    if (Edges == 0) return false; // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 
     FVector VertList[12];
 
-    // ±³Â÷ÇÏ´Â edgeµéÀÇ Á¤Á¡ º¸°£
+    // ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ edgeï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     for (int e = 0; e < 12; ++e)
     {
         if (Edges & (1 << e))
@@ -353,8 +397,8 @@ bool AMarchingCubesTerrain::TriangulateCell(int32 X, int32 Y, int32 Z,
         }
     }
 
-    // TriTable ±â¹İÀ¸·Î triangle »ı¼º
-    // TriTable[CubeIndex]´Â edge index 3°³¾¿ ¹­¾î triangleÀ» ¸¸µç´Ù.
+    // TriTable ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ triangle ï¿½ï¿½ï¿½ï¿½
+    // TriTable[CubeIndex]ï¿½ï¿½ edge index 3ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ triangleï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½.
     for (int t = 0; t < 16; t += 3)
     {
         const int32 A = FMarchingCubesTables::TriTable[CubeIndex][t];
@@ -368,10 +412,10 @@ bool AMarchingCubesTerrain::TriangulateCell(int32 X, int32 Y, int32 Z,
         OutVerts.Add(VertList[B]);
         OutVerts.Add(VertList[C]);
 
-        // winding: ±âº»Àº (0,1,2)·Î ½ÃÀÛ. ³ë¸»ÀÌ µÚÁıÈ÷¸é ¿©±â¼­ 1,2¸¦ ¹Ù²ã.
+        // winding: (0,2,1) â€” ë…¸ë©€ì´ ì•”ë²½ ë°”ê¹¥ìª½ì„ í–¥í•˜ë„ë¡ ë°˜ì „
         OutTris.Add(BaseIndex + 0);
-        OutTris.Add(BaseIndex + 1);
         OutTris.Add(BaseIndex + 2);
+        OutTris.Add(BaseIndex + 1);
     }
 
     return true;

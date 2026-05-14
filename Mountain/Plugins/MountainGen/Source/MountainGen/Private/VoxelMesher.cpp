@@ -333,14 +333,15 @@ void FVoxelMesher::BuildMarchingCubes(
                             if (iA == iB || iB == iC || iC == iA) continue;
 
                             LM.Triangles.Add(iA);
-                            LM.Triangles.Add(iC);
                             LM.Triangles.Add(iB);
+                            LM.Triangles.Add(iC);
 
                             const FVector A = LM.Vertices[iA];
                             const FVector B = LM.Vertices[iB];
                             const FVector C = LM.Vertices[iC];
 
-                            FVector FaceN = FVector::CrossProduct(C - A, B - A);
+                            // (A,B,C) 와인딩 기준 면 노멀 — 바깥쪽을 향하도록
+                            FVector FaceN = FVector::CrossProduct(B - A, C - A);
                             if (!FaceN.IsNearlyZero())
                             {
                                 FaceN.Normalize();

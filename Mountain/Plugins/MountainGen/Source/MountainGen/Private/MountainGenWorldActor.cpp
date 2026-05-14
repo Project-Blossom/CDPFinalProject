@@ -1452,7 +1452,14 @@ AMountainGenWorldActor::AMountainGenWorldActor()
     ProcMesh->bUseAsyncCooking = true;
     ProcMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
     ProcMesh->SetGenerateOverlapEvents(false);
-    ProcMesh->SetMobility(EComponentMobility::Static);
+    ProcMesh->SetMobility(EComponentMobility::Movable);
+
+    // Lumen + Distance Field 조명 수신 활성화
+    ProcMesh->bVisibleInRayTracing = true;
+    ProcMesh->SetCastShadow(true);
+    ProcMesh->bCastDynamicShadow = true;
+    ProcMesh->bAffectDynamicIndirectLighting = true;
+    ProcMesh->bAffectDistanceFieldLighting = true;
 
     TopPlateauMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("TopPlateauMesh"));
     TopPlateauMesh->SetupAttachment(ProcMesh);
