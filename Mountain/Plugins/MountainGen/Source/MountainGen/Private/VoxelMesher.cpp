@@ -297,14 +297,15 @@ void FVoxelMesher::BuildMarchingCubes(
                         V[7] = Sample(x, y + 1, z + 1);
 
                         int32 CubeIndex = 0;
-                        if (V[0] < IsoLevel) CubeIndex |= 1;
-                        if (V[1] < IsoLevel) CubeIndex |= 2;
-                        if (V[2] < IsoLevel) CubeIndex |= 4;
-                        if (V[3] < IsoLevel) CubeIndex |= 8;
-                        if (V[4] < IsoLevel) CubeIndex |= 16;
-                        if (V[5] < IsoLevel) CubeIndex |= 32;
-                        if (V[6] < IsoLevel) CubeIndex |= 64;
-                        if (V[7] < IsoLevel) CubeIndex |= 128;
+
+                        if (V[0] > IsoLevel) CubeIndex |= 1;
+                        if (V[1] > IsoLevel) CubeIndex |= 2;
+                        if (V[2] > IsoLevel) CubeIndex |= 4;
+                        if (V[3] > IsoLevel) CubeIndex |= 8;
+                        if (V[4] > IsoLevel) CubeIndex |= 16;
+                        if (V[5] > IsoLevel) CubeIndex |= 32;
+                        if (V[6] > IsoLevel) CubeIndex |= 64;
+                        if (V[7] > IsoLevel) CubeIndex |= 128;
 
                         const int32 Edges = EdgeTable[CubeIndex];
                         if (Edges == 0) continue;
