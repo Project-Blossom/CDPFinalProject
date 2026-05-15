@@ -861,6 +861,9 @@ static void MG_BuildTopPlateauMeshData(
         }
     }
 
+    const float TopConformMaxDrop = FMath::Max(100.f, S.TopPlateauMaxConformDropCm);
+    const float TopConformMaxRise = FMath::Max(100.f, S.VoxelSizeCm * 2.f);
+
     auto TopPoint = [&](int32 ix, int32 iy) -> FVector
         {
             const float AX = (float)ix / (float)SegX;
@@ -875,17 +878,15 @@ static void MG_BuildTopPlateauMeshData(
 
             const float NaturalTopZ = ZBaseTop + Uplift;
 
-            // 절벽과 맞닿는 앞쪽만 절벽 상단 높이에 부드럽게 맞춘다.
-            // 이 값은 윗면 접합용이다. 아랫면 높이로 직접 쓰면 Thickness와 무관한 큰 벽이 생긴다.
             const float RawContactTopZ = ContactZ[iy] + FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
+            const float ContactTopZ = FMath::Clamp(
+                RawContactTopZ,
+                ZBaseTop - TopConformMaxDrop,
+                ZBaseTop + TopConformMaxRise
+            );
 
-            // RimStitch 방식은 유지하되, Plateau 윗면은 시작 높이 아래로 내려가지 않는다.
-            // 즉, 절벽 림 X는 따라가지만 낮은 림 Z가 Plateau를 아래로 끌어내리지 못하게 한다.
-            const float ContactTopZ = FMath::Max(ZBaseTop, RawContactTopZ);
             const float FrontConformAlpha = MG_PlateauSmooth01((AX - 0.72f) / 0.28f);
-
-            const float BlendedZ = FMath::Lerp(NaturalTopZ, ContactTopZ, FrontConformAlpha);
-            const float FinalZ = FMath::Max(ZBaseTop, BlendedZ);
+            const float FinalZ = FMath::Lerp(NaturalTopZ, ContactTopZ, FrontConformAlpha);
 
             return FVector(X, Y, FinalZ);
         };
@@ -894,8 +895,6 @@ static void MG_BuildTopPlateauMeshData(
         {
             const FVector T = TopPoint(ix, iy);
 
-            // 아랫면은 항상 윗면 기준 Thickness만큼만 내려간다.
-            // 따라서 TopPlateauThicknessCm을 줄이면 실제 보이는 두께도 같이 줄어든다.
             return FVector(T.X, T.Y, T.Z - Thickness);
         };
 
@@ -905,7 +904,6 @@ static void MG_BuildTopPlateauMeshData(
     Out.UV0.Reserve((SegX + 1) * (SegY + 1) * 2 + SegX * 4 + SegY * 4);
     Out.Tangents.Reserve((SegX + 1) * (SegY + 1) * 2 + SegX * 4 + SegY * 4);
 
-    // 윗면: 하나의 연속된 Heightfield처럼 생성한다. 내부 수직면은 만들지 않는다.
     for (int32 ix = 0; ix < SegX; ++ix)
     {
         for (int32 iy = 0; iy < SegY; ++iy)
@@ -926,8 +924,6 @@ static void MG_BuildTopPlateauMeshData(
         }
     }
 
-    // 하부: 윗면에서 Thickness만큼만 내려간 얇은 닫힌 바닥.
-    // 접합부 ContactZ를 직접 따라가지 않으므로 두꺼운 검은 벽이 생기지 않는다.
     for (int32 ix = 0; ix < SegX; ++ix)
     {
         for (int32 iy = 0; iy < SegY; ++iy)
@@ -940,7 +936,7 @@ static void MG_BuildTopPlateauMeshData(
         }
     }
 
-    // 앞쪽 접합면: 절벽 실루엣을 따라가는 외곽 면.
+    // 앞쪽 접합면
     for (int32 iy = 0; iy < SegY; ++iy)
     {
         const FVector A = BottomPoint(SegX, iy);
@@ -999,13 +995,6 @@ static int32 MG_RemoveBadTriangles(FChunkMeshData& M, float MinAreaCm2, float Mi
 
     const int32 OriginalTriCount = I / 3;
 
-    // 주의:
-    // Marching Cubes 표면에는 매우 얇지만 실제 표면을 연결하는 삼각형이 생길 수 있다.
-    // 이전 버전처럼 VoxelSize 기준의 넓은 면적/변 길이로 삼각형을 제거하면
-    // 실제로 필요한 얇은 연결 삼각형까지 삭제되어 선택 시 노란 경계선처럼 보이는
-    // 미세 균열/구멍이 생길 수 있다.
-    // 따라서 여기서는 "보기 싫은 얇은 삼각형"을 제거하지 않고,
-    // 렌더링과 인덱스 안정성을 해치는 진짜 퇴화 삼각형만 제거한다.
     MinAreaCm2 = FMath::Max(0.000001f, MinAreaCm2);
     MinEdgeCm = FMath::Max(0.0001f, MinEdgeCm);
 
@@ -1046,15 +1035,13 @@ static int32 MG_RemoveBadTriangles(FChunkMeshData& M, float MinAreaCm2, float Mi
         const float BC2 = BC.SizeSquared();
         const float CA2 = CA.SizeSquared();
 
-        // 완전히 겹친 정점/거의 0 길이 변만 제거한다.
-        // 얇지만 정상적인 표면 연결 삼각형은 유지해야 미세 균열이 생기지 않는다.
         if (AB2 < MinEdge2 || BC2 < MinEdge2 || CA2 < MinEdge2)
         {
             continue;
         }
 
         const FVector Cross = FVector::CrossProduct(AB, C - A);
-        const float Area2 = Cross.Size(); // 실제 삼각형 면적의 2배
+        const float Area2 = Cross.Size();
 
         if (Area2 < MinAreaCm2 * 2.0f)
         {
