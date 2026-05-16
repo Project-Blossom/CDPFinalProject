@@ -297,14 +297,15 @@ void FVoxelMesher::BuildMarchingCubes(
                         V[7] = Sample(x, y + 1, z + 1);
 
                         int32 CubeIndex = 0;
-                        if (V[0] < IsoLevel) CubeIndex |= 1;
-                        if (V[1] < IsoLevel) CubeIndex |= 2;
-                        if (V[2] < IsoLevel) CubeIndex |= 4;
-                        if (V[3] < IsoLevel) CubeIndex |= 8;
-                        if (V[4] < IsoLevel) CubeIndex |= 16;
-                        if (V[5] < IsoLevel) CubeIndex |= 32;
-                        if (V[6] < IsoLevel) CubeIndex |= 64;
-                        if (V[7] < IsoLevel) CubeIndex |= 128;
+
+                        if (V[0] > IsoLevel) CubeIndex |= 1;
+                        if (V[1] > IsoLevel) CubeIndex |= 2;
+                        if (V[2] > IsoLevel) CubeIndex |= 4;
+                        if (V[3] > IsoLevel) CubeIndex |= 8;
+                        if (V[4] > IsoLevel) CubeIndex |= 16;
+                        if (V[5] > IsoLevel) CubeIndex |= 32;
+                        if (V[6] > IsoLevel) CubeIndex |= 64;
+                        if (V[7] > IsoLevel) CubeIndex |= 128;
 
                         const int32 Edges = EdgeTable[CubeIndex];
                         if (Edges == 0) continue;
@@ -340,8 +341,10 @@ void FVoxelMesher::BuildMarchingCubes(
                             const FVector B = LM.Vertices[iB];
                             const FVector C = LM.Vertices[iC];
 
-                            // (A,B,C) 와인딩 기준 면 노멀 — 바깥쪽을 향하도록
-                            FVector FaceN = FVector::CrossProduct(B - A, C - A);
+                            // 이 TriTable은 V > IsoLevel = inside (암벽 내부) 규약을 사용
+                            // CrossProduct(B-A, C-A)는 내부 방향을 가리키므로
+                            // CrossProduct(C-A, B-A)로 반전하여 외부 방향 노멀 생성
+                            FVector FaceN = FVector::CrossProduct(C - A, B - A);
                             if (!FaceN.IsNearlyZero())
                             {
                                 FaceN.Normalize();
