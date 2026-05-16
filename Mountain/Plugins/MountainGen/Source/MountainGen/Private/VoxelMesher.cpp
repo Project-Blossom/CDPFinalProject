@@ -341,8 +341,10 @@ void FVoxelMesher::BuildMarchingCubes(
                             const FVector B = LM.Vertices[iB];
                             const FVector C = LM.Vertices[iC];
 
-                            // (A,B,C) 와인딩 기준 면 노멀 — 바깥쪽을 향하도록
-                            FVector FaceN = FVector::CrossProduct(B - A, C - A);
+                            // 이 TriTable은 V > IsoLevel = inside (암벽 내부) 규약을 사용
+                            // CrossProduct(B-A, C-A)는 내부 방향을 가리키므로
+                            // CrossProduct(C-A, B-A)로 반전하여 외부 방향 노멀 생성
+                            FVector FaceN = FVector::CrossProduct(C - A, B - A);
                             if (!FaceN.IsNearlyZero())
                             {
                                 FaceN.Normalize();

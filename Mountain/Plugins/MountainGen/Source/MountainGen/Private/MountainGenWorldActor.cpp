@@ -1207,7 +1207,8 @@ static void MG_BuildTopPlateauMeshData(
             {
                 OutTopZ = ZBaseTop;
                 return false;
-    
+            }
+
             if (BestZ < ZBaseTop - MaxDrop)
             {
                 OutTopZ = BestZ;
