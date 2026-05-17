@@ -36,6 +36,9 @@ private:
 
     float FBM3D(const FVector& p, int32 Octaves, float Lacunarity, float Gain) const;
     float RidgedFBM01(const FVector& p, int32 Octaves, float Lacunarity, float Gain) const;
+    float PlateauFBM2D(const FVector2D& p, int32 Octaves, float Lacunarity, float Gain) const;
+    float ComputeTopPlateauSurfaceZ(const FVector& LocalCm) const;
+    float ApplyIntegratedTopPlateauCap(float Density, const FVector& LocalCm) const;
 
     void InitSeedDomain();
     void InitCachedConstants();

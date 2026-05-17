@@ -614,333 +614,8 @@ static void MG_BuildCliffRimSamples(
             }
         }
     }
-
 }
 
-static void MG_SmoothFloatArray1D(TArray<float>& Values, int32 Passes)
-{
-    const int32 N = Values.Num();
-    if (N < 3)
-    {
-        return;
-    }
-
-    Passes = FMath::Clamp(Passes, 0, 32);
-    for (int32 Pass = 0; Pass < Passes; ++Pass)
-    {
-        TArray<float> Prev = Values;
-        for (int32 i = 1; i < N - 1; ++i)
-        {
-            Values[i] = Prev[i - 1] * 0.25f + Prev[i] * 0.50f + Prev[i + 1] * 0.25f;
-        }
-    }
-}
-
-static void MG_LimitFloatArraySlope1D(TArray<float>& Values, float MaxDeltaPerStep)
-{
-    const int32 N = Values.Num();
-    if (N < 2)
-    {
-        return;
-    }
-
-    MaxDeltaPerStep = FMath::Max(1.f, MaxDeltaPerStep);
-
-    for (int32 i = 1; i < N; ++i)
-    {
-        Values[i] = FMath::Clamp(Values[i], Values[i - 1] - MaxDeltaPerStep, Values[i - 1] + MaxDeltaPerStep);
-    }
-
-    for (int32 i = N - 2; i >= 0; --i)
-    {
-        Values[i] = FMath::Clamp(Values[i], Values[i + 1] - MaxDeltaPerStep, Values[i + 1] + MaxDeltaPerStep);
-    }
-}
-
-static void MG_BuildDensitySafeFrontForPlateau(
-    const FMountainGenSettings& S,
-    const FVector& ActorWorld,
-    float ZTop,
-    float XBack,
-    float DefaultContactX,
-    float YLeft,
-    float YRight,
-    int32 SegY,
-    const TArray<float>& RawContactX,
-    TArray<float>& OutSafeFrontX)
-{
-    OutSafeFrontX.Reset();
-    OutSafeFrontX.SetNum(SegY + 1);
-
-    if (SegY <= 0)
-    {
-        return;
-    }
-
-    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
-    const float FrontX = FMath::Max(200.f, S.CliffThicknessCm);
-    const FVector TerrainOriginWorld = ActorWorld - FVector(FrontX, 0.f, 0.f);
-    const FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
-
-    const float MaxDrop = FMath::Max(100.f, S.TopPlateauMaxConformDropCm);
-    const float SearchDepth = FMath::Max(100.f, S.TopPlateauConformSearchDepthCm);
-    const float YSpan = YRight - YLeft;
-    const float StepY = YSpan / (float)SegY;
-
-    const float StepX = FMath::Max(Voxel * 0.75f, SearchDepth / 56.f);
-
-    const float SupportDepth = FMath::Clamp(MaxDrop * 0.85f, Voxel * 4.f, FMath::Max(Voxel * 4.f, 7000.f));
-    const int32 SupportSamples = FMath::Clamp(FMath::RoundToInt(SupportDepth / FMath::Max(Voxel * 0.75f, 1.f)), 5, 18);
-    const float StepZ = SupportDepth / (float)FMath::Max(1, SupportSamples - 1);
-
-    const float ForwardAllowance = FMath::Max(Voxel * 1.5f, S.TopPlateauFrontOverlapCm);
-    const float HardForwardLimit = DefaultContactX + ForwardAllowance;
-
-    for (int32 iy = 0; iy <= SegY; ++iy)
-    {
-        const float AY = (float)iy / (float)SegY;
-        const float Y = FMath::Lerp(YLeft, YRight, AY);
-        const float RawX = RawContactX.IsValidIndex(iy) ? RawContactX[iy] : DefaultContactX;
-
-        const float XMin = XBack + 10.f;
-        const float XMax = FMath::Min(FMath::Max(DefaultContactX + ForwardAllowance, RawX + Voxel), DefaultContactX + SearchDepth * 0.35f);
-
-        bool bFound = false;
-        float BestX = DefaultContactX;
-        float BestScore = -FLT_MAX;
-
-        for (float X = XMin; X <= XMax + KINDA_SMALL_NUMBER; X += StepX)
-        {
-            int32 SolidCount = 0;
-            float DensitySum = 0.f;
-            float DensityMin = FLT_MAX;
-
-            for (int32 iz = 0; iz < SupportSamples; ++iz)
-            {
-                const float Z = ZTop - (float)iz * StepZ;
-                const FVector WorldPos = ActorWorld + FVector(X, Y, Z);
-                const float D = Gen.SampleDensity(WorldPos) - S.IsoLevel;
-                DensitySum += D;
-                DensityMin = FMath::Min(DensityMin, D);
-
-                if (D >= 0.f)
-                {
-                    ++SolidCount;
-                }
-            }
-
-            const float SolidRatio = (float)SolidCount / (float)SupportSamples;
-
-            if (SolidRatio < 0.62f || DensitySum < -Voxel * 0.25f)
-            {
-                continue;
-            }
-
-            const float ForwardScore = X;
-            const float StabilityScore = FMath::Clamp(SolidRatio, 0.f, 1.f) * Voxel * 0.75f + FMath::Clamp(DensityMin / FMath::Max(Voxel, 1.f), -1.f, 1.f) * Voxel * 0.25f;
-            const float Score = ForwardScore + StabilityScore;
-
-            if (!bFound || Score > BestScore)
-            {
-                bFound = true;
-                BestScore = Score;
-                BestX = X;
-            }
-        }
-
-        if (!bFound)
-        {
-            BestX = DefaultContactX;
-        }
-
-        OutSafeFrontX[iy] = FMath::Clamp(BestX + FMath::Max(0.f, S.TopPlateauFrontOverlapCm), XBack + 10.f, HardForwardLimit);
-    }
-
-    MG_SmoothFloatArray1D(OutSafeFrontX, FMath::Clamp(FMath::RoundToInt((float)SegY / 20.f), 4, 10));
-    MG_LimitFloatArraySlope1D(OutSafeFrontX, FMath::Max(Voxel * 1.5f, StepY * 0.05f));
-
-    for (int32 iy = 0; iy <= SegY; ++iy)
-    {
-        OutSafeFrontX[iy] = FMath::Clamp(OutSafeFrontX[iy], XBack + 10.f, HardForwardLimit);
-    }
-}
-
-static void MG_BuildDensityTopGuideForPlateau(
-    const FMountainGenSettings& S,
-    const FVector& ActorWorld,
-    float ZTop,
-    float YLeft,
-    float YRight,
-    int32 SegY,
-    const TArray<float>& RawContactX,
-    TArray<float>& OutGuideZ)
-{
-    OutGuideZ.Reset();
-    OutGuideZ.SetNum(SegY + 1);
-
-    if (SegY <= 0)
-    {
-        return;
-    }
-
-    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
-    const float FrontX = FMath::Max(200.f, S.CliffThicknessCm);
-    const FVector TerrainOriginWorld = ActorWorld - FVector(FrontX, 0.f, 0.f);
-    const FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
-
-    const float MaxDrop = FMath::Max(100.f, S.TopPlateauMaxConformDropCm);
-    const float MaxRise = FMath::Max(100.f, Voxel * 2.f);
-    const float SearchDepth = FMath::Max(100.f, S.TopPlateauConformSearchDepthCm);
-
-    const float YSpan = YRight - YLeft;
-    const float StepY = YSpan / (float)SegY;
-
-    const float StepX = FMath::Max(Voxel * 1.5f, SearchDepth / 18.f);
-    const float StepZ = FMath::Max(Voxel * 0.75f, MaxDrop / 28.f);
-
-    for (int32 iy = 0; iy <= SegY; ++iy)
-    {
-        const float AY = (float)iy / (float)SegY;
-        const float Y = FMath::Lerp(YLeft, YRight, AY);
-        const float RawX = RawContactX.IsValidIndex(iy) ? RawContactX[iy] : 0.f;
-
-        const float XMin = FMath::Max(-SearchDepth, RawX - SearchDepth * 0.35f);
-        const float XMax = FMath::Min(Voxel * 2.f, RawX + SearchDepth * 0.20f);
-        const float ZMin = ZTop - MaxDrop;
-        const float ZMax = ZTop + MaxRise;
-
-        bool bFound = false;
-        float BestZ = ZTop;
-        float BestScore = -FLT_MAX;
-
-        for (float X = XMin; X <= XMax + KINDA_SMALL_NUMBER; X += StepX)
-        {
-            bool bColumnFound = false;
-            float ColumnZ = ZTop;
-
-            for (float Z = ZMax; Z >= ZMin - KINDA_SMALL_NUMBER; Z -= StepZ)
-            {
-                const FVector WorldPos = ActorWorld + FVector(X, Y, Z);
-                if (Gen.SampleDensity(WorldPos) >= S.IsoLevel)
-                {
-                    bColumnFound = true;
-                    ColumnZ = Z;
-                    break;
-                }
-            }
-
-            if (!bColumnFound)
-            {
-                continue;
-            }
-
-            const float XDistancePenalty = FMath::Abs(X - RawX) * 0.15f;
-            const float DropPenalty = FMath::Max(0.f, ZTop - ColumnZ) * 0.08f;
-            const float Score = ColumnZ - XDistancePenalty - DropPenalty;
-
-            if (!bFound || Score > BestScore)
-            {
-                bFound = true;
-                BestScore = Score;
-                BestZ = ColumnZ;
-            }
-        }
-
-        OutGuideZ[iy] = bFound ? FMath::Clamp(BestZ, ZTop - MaxDrop, ZTop + MaxRise) : ZTop;
-    }
-
-    const int32 SmoothPasses = FMath::Clamp(FMath::RoundToInt((float)SegY / 24.f), 3, 8);
-    MG_SmoothFloatArray1D(OutGuideZ, SmoothPasses);
-    MG_LimitFloatArraySlope1D(OutGuideZ, FMath::Max(Voxel * 1.5f, StepY * 0.08f));
-}
-
-static void MG_BuildPlateauConnectionData(
-    const FChunkMeshData& CliffMesh,
-    const FMountainGenSettings& S,
-    const FVector& ActorWorld,
-    float ZTop,
-    float XBack,
-    float DefaultContactX,
-    float YLeft,
-    float YRight,
-    int32 SegY,
-    TArray<float>& OutContactX,
-    TArray<float>& OutContactZ)
-{
-    OutContactX.SetNum(SegY + 1);
-    OutContactZ.SetNum(SegY + 1);
-
-    if (!S.bConformTopPlateauToCliff)
-    {
-        for (int32 iy = 0; iy <= SegY; ++iy)
-        {
-            OutContactX[iy] = DefaultContactX;
-            OutContactZ[iy] = ZTop;
-        }
-        return;
-    }
-
-    TArray<FMGCliffRimSample> CliffRim;
-    if (S.bConformTopPlateauToCliff)
-    {
-        MG_BuildCliffRimSamples(CliffMesh, S, ZTop, YLeft, YRight, SegY, CliffRim);
-    }
-    else
-    {
-        CliffRim.SetNum(SegY + 1);
-    }
-
-    TArray<float> RawContactX;
-    TArray<float> RawContactZ;
-    RawContactX.SetNum(SegY + 1);
-    RawContactZ.SetNum(SegY + 1);
-
-    for (int32 iy = 0; iy <= SegY; ++iy)
-    {
-        if (CliffRim.IsValidIndex(iy) && CliffRim[iy].bValid)
-        {
-            RawContactX[iy] = FMath::Max(CliffRim[iy].X, XBack + 10.f);
-            RawContactZ[iy] = CliffRim[iy].Z;
-        }
-        else
-        {
-            RawContactX[iy] = DefaultContactX;
-            RawContactZ[iy] = ZTop;
-        }
-    }
-
-    TArray<float> DensitySafeFrontX;
-    MG_BuildDensitySafeFrontForPlateau(
-        S,
-        ActorWorld,
-        ZTop,
-        XBack,
-        DefaultContactX,
-        YLeft,
-        YRight,
-        SegY,
-        RawContactX,
-        DensitySafeFrontX);
-
-    TArray<float> DensityGuideZ;
-    MG_BuildDensityTopGuideForPlateau(S, ActorWorld, ZTop, YLeft, YRight, SegY, DensitySafeFrontX, DensityGuideZ);
-
-    OutContactX = DensitySafeFrontX;
-    OutContactZ = RawContactZ;
-
-    for (int32 iy = 0; iy <= SegY; ++iy)
-    {
-        const float GuideZ = DensityGuideZ.IsValidIndex(iy) ? DensityGuideZ[iy] : ZTop;
-        OutContactZ[iy] = FMath::Lerp(RawContactZ[iy], GuideZ, 0.65f);
-        OutContactZ[iy] = FMath::Clamp(
-            OutContactZ[iy],
-            ZTop - FMath::Max(100.f, S.TopPlateauMaxConformDropCm),
-            ZTop + FMath::Max(100.f, S.VoxelSizeCm * 2.f));
-    }
-
-    MG_SmoothFloatArray1D(OutContactZ, FMath::Clamp(FMath::RoundToInt((float)SegY / 18.f), 4, 10));
-    MG_LimitFloatArraySlope1D(OutContactZ, FMath::Max(S.VoxelSizeCm * 1.25f, (YRight - YLeft) / (float)SegY * 0.06f));
-}
 
 static float MG_PlateauSmooth01(float T)
 {
@@ -1009,9 +684,9 @@ static float MG_PlateauUpliftNoiseCm(const FMountainGenSettings& S, int32 Platea
     const float Micro = MG_PlateauFBM2D(P * 4.25f + SeedShift + FVector2D(-12.6f, 44.3f), FMath::Max(1, Octaves - 2));
 
     float Hill = Macro * 0.72f + Mid * 0.23f + Micro * 0.05f;
-    Hill = (Hill + 1.f) * 0.5f;
+    Hill = (Hill + 1.f) * 0.5f;       // 0..1
     Hill = MG_PlateauSmooth01(Hill);
-    Hill = FMath::Pow(Hill, 1.35f); 
+    Hill = FMath::Pow(Hill, 1.35f);
 
     return Hill * Strength;
 }
@@ -1119,7 +794,6 @@ static void MG_AddPlateauQuad(
 static void MG_BuildTopPlateauMeshData(
     const FChunkMeshData& CliffMesh,
     const FMountainGenSettings& S,
-    const FVector& ActorWorld,
     FChunkMeshData& Out)
 {
     Out = FChunkMeshData();
@@ -1130,6 +804,7 @@ static void MG_BuildTopPlateauMeshData(
     }
 
     const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
+    const float Thickness = FMath::Max(10.f, S.TopPlateauThicknessCm);
     const float HalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
     if (Depth <= KINDA_SMALL_NUMBER)
     {
@@ -1141,249 +816,150 @@ static void MG_BuildTopPlateauMeshData(
     const int32 PlateauSeed = FMath::Max(1, S.Seed + S.PlateauSeedOffset);
 
     const float XBack = -Depth;
-    const float XFrontLimit = FMath::Max(0.f, S.TopPlateauFrontOverlapCm);
+    const float DefaultContactX = FMath::Max(0.f, S.TopPlateauFrontOverlapCm);
     const float YLeft = -HalfW;
     const float YRight = HalfW;
     const float ZBaseTop = S.BaseHeightCm + S.CliffHeightCm + S.TopPlateauHeightOffsetCm;
 
-    const float Voxel = FMath::Max(1.f, S.VoxelSizeCm);
-    const float MaxDrop = FMath::Max(100.f, S.TopPlateauMaxConformDropCm);
-    const float MaxRise = FMath::Max(100.f, Voxel * 2.f);
-    const float SearchDepth = FMath::Max(MaxDrop, S.TopPlateauConformSearchDepthCm);
-    const float DownOverlap = FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
-
-    const float FrontX = FMath::Max(200.f, S.CliffThicknessCm);
-    const FVector TerrainOriginWorld = ActorWorld - FVector(FrontX, 0.f, 0.f);
-    const FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
-
-    struct FTopSample
+    TArray<FMGCliffRimSample> CliffRim;
+    if (S.bConformTopPlateauToCliff)
     {
-        bool bSupported = false;
-        float DensityTopZ = 0.f;
-        float NaturalTopZ = 0.f;
-    };
-
-    TArray<FTopSample> Samples;
-    Samples.SetNum((SegX + 1) * (SegY + 1));
-
-    auto Idx = [&](int32 ix, int32 iy) -> int32
-        {
-            return ix * (SegY + 1) + iy;
-        };
-
-    auto GridX = [&](int32 ix) -> float
-        {
-            const float AX = (float)ix / (float)SegX;
-            return FMath::Lerp(XBack, XFrontLimit, AX);
-        };
-
-    auto GridY = [&](int32 iy) -> float
-        {
-            const float AY = (float)iy / (float)SegY;
-            return FMath::Lerp(YLeft, YRight, AY);
-        };
-
-    auto FindDensityTopZ = [&](float X, float Y, float& OutTopZ) -> bool
-        {
-            const float ZMax = ZBaseTop + MaxRise;
-            const float ZMin = ZBaseTop - SearchDepth;
-            const float StepZ = FMath::Max(Voxel * 0.50f, SearchDepth / 96.f);
-
-            bool bFound = false;
-            float BestZ = ZBaseTop;
-
-            for (float Z = ZMax; Z >= ZMin - KINDA_SMALL_NUMBER; Z -= StepZ)
-            {
-                const FVector WorldPos = ActorWorld + FVector(X, Y, Z);
-                if (Gen.SampleDensity(WorldPos) >= S.IsoLevel)
-                {
-                    bFound = true;
-                    BestZ = Z;
-                    break;
-                }
-            }
-
-            if (!bFound)
-            {
-                OutTopZ = ZBaseTop;
-                return false;
-            }
-
-            if (BestZ < ZBaseTop - MaxDrop)
-            {
-                OutTopZ = BestZ;
-                return false;
-            }
-
-            OutTopZ = BestZ;
-            return true;
-        };
-
-    auto HasBodySupportBelow = [&](float X, float Y, float TopZ) -> bool
-        {
-            const float SupportDepth = FMath::Clamp(MaxDrop * 0.85f, Voxel * 4.f, FMath::Max(Voxel * 4.f, 8000.f));
-            const int32 SupportSamples = FMath::Clamp(FMath::RoundToInt(SupportDepth / FMath::Max(Voxel * 0.75f, 1.f)), 5, 18);
-            const float StepZ = SupportDepth / (float)FMath::Max(1, SupportSamples - 1);
-
-            int32 SolidCount = 0;
-            float DensitySum = 0.f;
-
-            for (int32 iz = 0; iz < SupportSamples; ++iz)
-            {
-                const float Z = TopZ - (float)iz * StepZ;
-                const FVector WorldPos = ActorWorld + FVector(X, Y, Z);
-                const float D = Gen.SampleDensity(WorldPos) - S.IsoLevel;
-                DensitySum += D;
-
-                if (D >= 0.f)
-                {
-                    ++SolidCount;
-                }
-            }
-
-            const float SolidRatio = (float)SolidCount / (float)SupportSamples;
-
-            return SolidRatio >= 0.42f || DensitySum > 0.f;
-        };
-
-    for (int32 ix = 0; ix <= SegX; ++ix)
+        MG_BuildCliffRimSamples(CliffMesh, S, ZBaseTop, YLeft, YRight, SegY, CliffRim);
+    }
+    else
     {
-        const float X = GridX(ix);
-        for (int32 iy = 0; iy <= SegY; ++iy)
-        {
-            const float Y = GridY(iy);
-
-            FTopSample& Sample = Samples[Idx(ix, iy)];
-
-            const float EdgeFade = MG_PlateauEdgeFade(X, Y, XBack, XFrontLimit, YLeft, YRight, S);
-            const float Uplift = MG_PlateauUpliftNoiseCm(S, PlateauSeed, X, Y) * EdgeFade;
-            Sample.NaturalTopZ = ZBaseTop + Uplift;
-
-            float DensityTopZ = ZBaseTop;
-            const bool bHasDensityTop = FindDensityTopZ(X, Y, DensityTopZ);
-            Sample.DensityTopZ = DensityTopZ;
-
-            Sample.bSupported = bHasDensityTop && HasBodySupportBelow(X, Y, DensityTopZ);
-        }
+        CliffRim.SetNum(SegY + 1);
     }
 
-    {
-        TArray<FTopSample> Prev = Samples;
-        for (int32 ix = 1; ix < SegX; ++ix)
-        {
-            for (int32 iy = 1; iy < SegY; ++iy)
-            {
-                FTopSample& Sample = Samples[Idx(ix, iy)];
-                if (Sample.bSupported)
-                {
-                    continue;
-                }
-
-                int32 Count = 0;
-                Count += Prev[Idx(ix - 1, iy)].bSupported ? 1 : 0;
-                Count += Prev[Idx(ix + 1, iy)].bSupported ? 1 : 0;
-                Count += Prev[Idx(ix, iy - 1)].bSupported ? 1 : 0;
-                Count += Prev[Idx(ix, iy + 1)].bSupported ? 1 : 0;
-                Count += Prev[Idx(ix - 1, iy - 1)].bSupported ? 1 : 0;
-                Count += Prev[Idx(ix - 1, iy + 1)].bSupported ? 1 : 0;
-                Count += Prev[Idx(ix + 1, iy - 1)].bSupported ? 1 : 0;
-                Count += Prev[Idx(ix + 1, iy + 1)].bSupported ? 1 : 0;
-
-                if (Count >= 7)
-                {
-                    Sample.bSupported = true;
-                }
-            }
-        }
-    }
-
-    TArray<int32> FrontSupportedIx;
-    FrontSupportedIx.Init(-1, SegY + 1);
+    TArray<float> ContactX;
+    TArray<float> ContactZ;
+    ContactX.SetNum(SegY + 1);
+    ContactZ.SetNum(SegY + 1);
 
     for (int32 iy = 0; iy <= SegY; ++iy)
     {
-        int32 BestIx = -1;
-        for (int32 ix = 0; ix <= SegX; ++ix)
+        if (CliffRim.IsValidIndex(iy) && CliffRim[iy].bValid)
         {
-            if (Samples[Idx(ix, iy)].bSupported)
-            {
-                BestIx = ix;
-            }
+            ContactX[iy] = FMath::Max(CliffRim[iy].X, XBack + 10.f);
+            ContactZ[iy] = CliffRim[iy].Z;
         }
-        FrontSupportedIx[iy] = BestIx;
-    }
-
-    {
-        TArray<int32> Prev = FrontSupportedIx;
-        for (int32 iy = 1; iy < SegY; ++iy)
+        else
         {
-            if (Prev[iy - 1] >= 0 && Prev[iy] >= 0 && Prev[iy + 1] >= 0)
-            {
-                FrontSupportedIx[iy] = FMath::RoundToInt(MG_Median3((float)Prev[iy - 1], (float)Prev[iy], (float)Prev[iy + 1]));
-            }
+            ContactX[iy] = DefaultContactX;
+            ContactZ[iy] = ZBaseTop;
         }
     }
 
-    const int32 EdgeBlendCells = FMath::Clamp(FMath::RoundToInt((float)SegX * 0.16f), 2, 18);
-
-    auto FinalTopPoint = [&](int32 ix, int32 iy) -> FVector
+    auto TopPoint = [&](int32 ix, int32 iy) -> FVector
         {
-            const float X = GridX(ix);
-            const float Y = GridY(iy);
-            const FTopSample& Sample = Samples[Idx(ix, iy)];
+            const float AX = (float)ix / (float)SegX;
+            const float AY = (float)iy / (float)SegY;
 
-            const int32 FrontIx = FrontSupportedIx.IsValidIndex(iy) ? FrontSupportedIx[iy] : -1;
-            const int32 DistToFront = (FrontIx >= 0) ? FMath::Max(0, FrontIx - ix) : EdgeBlendCells;
-            const float FrontAlpha = MG_PlateauSmooth01(1.f - FMath::Clamp((float)DistToFront / (float)EdgeBlendCells, 0.f, 1.f));
+            const float Y = FMath::Lerp(YLeft, YRight, AY);
+            const float XFront = ContactX[iy];
+            const float X = FMath::Lerp(XBack, XFront, AX);
 
-            const float TargetEdgeZ = Sample.DensityTopZ - DownOverlap;
-            const float FinalZ = FMath::Lerp(Sample.NaturalTopZ, FMath::Min(Sample.NaturalTopZ, TargetEdgeZ), FrontAlpha);
+            const float EdgeFade = MG_PlateauEdgeFade(X, Y, XBack, XFront, YLeft, YRight, S);
+            const float Uplift = MG_PlateauUpliftNoiseCm(S, PlateauSeed, X, Y) * EdgeFade;
+
+            const float NaturalTopZ = ZBaseTop + Uplift;
+
+            const float RawContactTopZ = ContactZ[iy] + FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
+
+            const float ContactTopZ = FMath::Max(ZBaseTop, RawContactTopZ);
+            const float FrontConformAlpha = MG_PlateauSmooth01((AX - 0.72f) / 0.28f);
+
+            const float BlendedZ = FMath::Lerp(NaturalTopZ, ContactTopZ, FrontConformAlpha);
+            const float FinalZ = FMath::Max(ZBaseTop, BlendedZ);
 
             return FVector(X, Y, FinalZ);
         };
 
-    Out.Vertices.Reserve(SegX * SegY * 4);
-    Out.Triangles.Reserve(SegX * SegY * 6);
-    Out.Normals.Reserve(SegX * SegY * 4);
-    Out.UV0.Reserve(SegX * SegY * 4);
-    Out.Tangents.Reserve(SegX * SegY * 4);
+    auto BottomPoint = [&](int32 ix, int32 iy) -> FVector
+        {
+            const FVector T = TopPoint(ix, iy);
 
+            return FVector(T.X, T.Y, T.Z - Thickness);
+        };
+
+    Out.Vertices.Reserve((SegX + 1) * (SegY + 1) * 2 + SegX * 4 + SegY * 4);
+    Out.Triangles.Reserve(SegX * SegY * 12 + SegX * 12 + SegY * 12);
+    Out.Normals.Reserve((SegX + 1) * (SegY + 1) * 2 + SegX * 4 + SegY * 4);
+    Out.UV0.Reserve((SegX + 1) * (SegY + 1) * 2 + SegX * 4 + SegY * 4);
+    Out.Tangents.Reserve((SegX + 1) * (SegY + 1) * 2 + SegX * 4 + SegY * 4);
+
+    // 윗면
     for (int32 ix = 0; ix < SegX; ++ix)
     {
         for (int32 iy = 0; iy < SegY; ++iy)
         {
-            const bool bA = Samples[Idx(ix, iy)].bSupported;
-            const bool bB = Samples[Idx(ix + 1, iy)].bSupported;
-            const bool bC = Samples[Idx(ix + 1, iy + 1)].bSupported;
-            const bool bD = Samples[Idx(ix, iy + 1)].bSupported;
-
-            if (!(bA && bB && bC && bD))
-            {
-                continue;
-            }
-
-            const int32 FrontA = FMath::Max(FrontSupportedIx[iy], FrontSupportedIx[iy + 1]);
-            if (FrontA >= 0 && ix > FrontA)
-            {
-                continue;
-            }
-
-            const FVector A = FinalTopPoint(ix, iy);
-            const FVector B = FinalTopPoint(ix + 1, iy);
-            const FVector C = FinalTopPoint(ix + 1, iy + 1);
-            const FVector D = FinalTopPoint(ix, iy + 1);
-
-            const FVector FaceN = FVector::CrossProduct(B - A, C - A).GetSafeNormal();
-            const FVector DesiredN = FaceN.IsNearlyZero() ? FVector::UpVector : FaceN;
+            const FVector A = TopPoint(ix, iy);
+            const FVector B = TopPoint(ix + 1, iy);
+            const FVector C = TopPoint(ix + 1, iy + 1);
+            const FVector D = TopPoint(ix, iy + 1);
 
             MG_AddPlateauQuad(
                 Out,
                 A, B, C, D,
-                DesiredN,
+                FVector::UpVector,
                 MG_MakePlateauMaterialUV(S, A.X, A.Y),
                 MG_MakePlateauMaterialUV(S, B.X, B.Y),
                 MG_MakePlateauMaterialUV(S, C.X, C.Y),
                 MG_MakePlateauMaterialUV(S, D.X, D.Y));
+        }
+    }
+
+    // 하부
+    for (int32 ix = 0; ix < SegX; ++ix)
+    {
+        for (int32 iy = 0; iy < SegY; ++iy)
+        {
+            const FVector A = BottomPoint(ix, iy);
+            const FVector B = BottomPoint(ix, iy + 1);
+            const FVector C = BottomPoint(ix + 1, iy + 1);
+            const FVector D = BottomPoint(ix + 1, iy);
+            MG_AddPlateauQuad(Out, A, B, C, D, -FVector::UpVector);
+        }
+    }
+
+    // 앞쪽 접합면
+    for (int32 iy = 0; iy < SegY; ++iy)
+    {
+        const FVector A = BottomPoint(SegX, iy);
+        const FVector B = BottomPoint(SegX, iy + 1);
+        const FVector C = TopPoint(SegX, iy + 1);
+        const FVector D = TopPoint(SegX, iy);
+        const FVector N = FVector::CrossProduct(B - A, C - A).GetSafeNormal();
+        MG_AddPlateauQuad(Out, A, B, C, D, N.IsNearlyZero() ? FVector::ForwardVector : N);
+    }
+
+    // 뒤쪽 면.
+    for (int32 iy = 0; iy < SegY; ++iy)
+    {
+        const FVector A = BottomPoint(0, iy + 1);
+        const FVector B = BottomPoint(0, iy);
+        const FVector C = TopPoint(0, iy);
+        const FVector D = TopPoint(0, iy + 1);
+        MG_AddPlateauQuad(Out, A, B, C, D, -FVector::ForwardVector);
+    }
+
+    // 좌우 측면.
+    for (int32 ix = 0; ix < SegX; ++ix)
+    {
+        {
+            const FVector A = BottomPoint(ix, 0);
+            const FVector B = BottomPoint(ix + 1, 0);
+            const FVector C = TopPoint(ix + 1, 0);
+            const FVector D = TopPoint(ix, 0);
+            MG_AddPlateauQuad(Out, A, B, C, D, -FVector::RightVector);
+        }
+
+        {
+            const FVector A = BottomPoint(ix + 1, SegY);
+            const FVector B = BottomPoint(ix, SegY);
+            const FVector C = TopPoint(ix, SegY);
+            const FVector D = TopPoint(ix + 1, SegY);
+            MG_AddPlateauQuad(Out, A, B, C, D, FVector::RightVector);
         }
     }
 }
@@ -1405,6 +981,7 @@ static int32 MG_RemoveBadTriangles(FChunkMeshData& M, float MinAreaCm2, float Mi
 
     const int32 OriginalTriCount = I / 3;
 
+    MinAreaCm2 = FMath::Max(0.000001f, MinAreaCm2);
     MinEdgeCm = FMath::Max(0.0001f, MinEdgeCm);
 
     const float MinEdge2 = MinEdgeCm * MinEdgeCm;
@@ -1444,15 +1021,13 @@ static int32 MG_RemoveBadTriangles(FChunkMeshData& M, float MinAreaCm2, float Mi
         const float BC2 = BC.SizeSquared();
         const float CA2 = CA.SizeSquared();
 
-        // 완전히 겹친 정점/거의 0 길이 변만 제거한다.
-        // 얇지만 정상적인 표면 연결 삼각형은 유지해야 미세 균열이 생기지 않는다.
         if (AB2 < MinEdge2 || BC2 < MinEdge2 || CA2 < MinEdge2)
         {
             continue;
         }
 
         const FVector Cross = FVector::CrossProduct(AB, C - A);
-        const float Area2 = Cross.Size(); // 실제 삼각형 면적의 2배
+        const float Area2 = Cross.Size();
 
         if (Area2 < MinAreaCm2 * 2.0f)
         {
@@ -1817,8 +1392,6 @@ static void MG_RecomputeNormalsAndTangents(FChunkMeshData& M)
             }
         }
 
-        // 절벽 수직면에서도 안정적으로 동작하는 탄젠트 생성.
-        // UpVector와 거의 평행하면 RightVector를 보조축으로 사용한다.
         FVector TangentX = FVector::CrossProduct(FVector::UpVector, M.Normals[i]);
 
         if (TangentX.SizeSquared() < KINDA_SMALL_NUMBER)
@@ -2298,42 +1871,7 @@ void AMountainGenWorldActor::RebuildTopPlateauMesh(const FChunkMeshData& CliffMe
 
     TopPlateauMesh->ClearAllMeshSections();
     TopPlateauMesh->ClearCollisionConvexMeshes();
-
-    FChunkMeshData PlateauMeshData;
-    MG_BuildTopPlateauMeshData(CliffMeshData, FinalSettings, GetActorLocation(), PlateauMeshData);
-
-    MG_RecomputeNormalsAndTangents(PlateauMeshData);
-
-    if (PlateauMeshData.Vertices.Num() == 0 || PlateauMeshData.Triangles.Num() == 0)
-    {
-        TopPlateauMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        return;
-    }
-
-    // TopPlateau는 절벽 MeshData와 분리된 독립 컴포넌트다.
-    // 따라서 목표 지표, Surface Metadata, 몬스터/아이템/플랫폼 배치 후보에는 포함하지 않는다.
-    TArray<FLinearColor> PlateauColors;
-    PlateauColors.Init(FLinearColor::White, PlateauMeshData.Vertices.Num());
-
-    TopPlateauMesh->CreateMeshSection_LinearColor(
-        0,
-        PlateauMeshData.Vertices,
-        PlateauMeshData.Triangles,
-        PlateauMeshData.Normals,
-        PlateauMeshData.UV0,
-        PlateauColors,
-        PlateauMeshData.Tangents,
-        bTopPlateauCreateCollision
-    );
-
-    TopPlateauMesh->SetCollisionEnabled(
-        bTopPlateauCreateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision
-    );
-
-    if (TopPlateauMaterial)
-    {
-        TopPlateauMesh->SetMaterial(0, TopPlateauMaterial);
-    }
+    TopPlateauMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, bool bShowRuntimeSeedMessage)
@@ -2593,18 +2131,28 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
     const float HalfW = FMath::Max(1.f, S.CliffHalfWidthCm);
     const float H = FMath::Max(1.f, S.CliffHeightCm);
 
-    const float XMinLocal = FrontX - Band;
-    const float XMaxLocal = FrontX + Band;
+    const float MetricXMinLocal = FrontX - Band;
+    const float MetricXMaxLocal = FrontX + Band;
     const float YMinLocal = -HalfW;
     const float YMaxLocal = +HalfW;
     const float ZMinLocal = S.BaseHeightCm;
-    const float ZMaxLocal = S.BaseHeightCm + H;
+    const float MetricZMaxLocal = S.BaseHeightCm + H;
+
+    const FVector WorldMin = TerrainOriginWorld + FVector(MetricXMinLocal, YMinLocal, ZMinLocal);
+    const FVector WorldMax = TerrainOriginWorld + FVector(MetricXMaxLocal, YMaxLocal, MetricZMaxLocal);
+
+    const float PlateauBackDepth = S.bAddTopFlatPlateau ? FMath::Max(0.f, S.TopPlateauDepthCm) : 0.f;
+    const float MeshBackBand = FMath::Max(Band, PlateauBackDepth + Voxel * 4.f);
+    const float MeshTopExtra = S.bAddTopFlatPlateau
+        ? FMath::Max(0.f, S.TopPlateauHeightOffsetCm) + FMath::Max(0.f, S.PlateauSurfaceNoiseStrengthCm) + Voxel * 4.f
+        : 0.f;
+
+    const float XMinLocal = FrontX - MeshBackBand;
+    const float XMaxLocal = FrontX + Band;
+    const float ZMaxLocal = S.BaseHeightCm + H + MeshTopExtra;
 
     const FVector SampleOriginWorld = TerrainOriginWorld + FVector(XMinLocal, YMinLocal, ZMinLocal);
     const FVector ChunkOriginWorld = SampleOriginWorld;
-
-    const FVector WorldMin = SampleOriginWorld;
-    const FVector WorldMax = TerrainOriginWorld + FVector(XMaxLocal, YMaxLocal, ZMaxLocal);
 
     const int32 SampleX = FMath::Max(2, FMath::CeilToInt((XMaxLocal - XMinLocal) / Voxel) + 1);
     const int32 SampleY = FMath::Max(2, FMath::CeilToInt((YMaxLocal - YMinLocal) / Voxel) + 1);
@@ -2777,7 +2325,6 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
             return;
         }
 
-        // Build shared surface metadata/report for later placement/gameplay modules.
         GeneratedSurfaceSamples.Reset();
         LastGenerationReport = FMGGenerationReport();
         LastGenerationReport.FinalSeed = S.Seed;
