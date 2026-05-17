@@ -21,6 +21,7 @@ class UNiagaraComponent;
 class UNiagaraSystem;
 class ADirectionalLight;
 class AExponentialHeightFog;
+class AStaticMeshActor;
 class USplineComponent;
 class USplineMeshComponent;
 class UStaticMesh;
@@ -799,6 +800,40 @@ public:
         meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float BloodMoonSkyIntensity = 0.4f;
 
+    // ── MoonScale (MI_Sky) Lerp ──────────────────────────────────
+    // SM_Sky 액터에 태그 "BloodMoonSky" 부여 필요
+    // BeginPlay에서 자동 탐색 후 Dynamic Material Instance 생성
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
+    FName SkySphereActorTag = FName("BloodMoonSky");
+
+    // 정상 상태 달 크기 (MI_Sky MoonScale 기본값과 동일하게 설정)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX",
+        meta = (ClampMin = "0.0"))
+    float BloodMoonNormalMoonScale = 0.1f;
+
+    // 블러드문 달 크기 목표값
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX",
+        meta = (ClampMin = "0.0"))
+    float BloodMoonTargetMoonScale = 0.3f;
+
+    // ── Volumetric Cloud 색상 전환 ────────────────────────────────
+    // 레벨에 VolumetricCloud 액터 배치 필요
+    // 클라우드 머티리얼에 "CloudColor" VectorParameter 추가 필요
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
+    FLinearColor BloodMoonNormalCloudColor = FLinearColor(0.8f, 0.8f, 0.8f, 1.0f);
+
+    // 블러드문 달 색상 틴트 (M_Sky MoonTintColor 파라미터 제어)
+    // 기본값: 흰색 (원본 유지), 목표: 붉은색
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
+    FLinearColor BloodMoonNormalMoonTintColor = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
+    FLinearColor BloodMoonMoonTintColor = FLinearColor(1.0f, 0.15f, 0.05f, 1.0f);
+
+    // 블러드문 구름 색상 목표값 (청록색 계열)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
+    FLinearColor BloodMoonCloudColor = FLinearColor(0.0f, 0.3f, 0.4f, 1.0f);
+    
     // 전환 시작 기준값 — 에디터에서 레벨의 기본 안개/광원 색상과 맞춰 입력
     // BeginPlay 시 컴포넌트에서 읽지 않고 이 값을 Lerp 시작점으로 사용
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
@@ -1070,4 +1105,17 @@ private:
     // 레벨에서 찾은 광원/안개 캐시 (BeginPlay에서 탐색, Null 허용)
     TWeakObjectPtr<ADirectionalLight>      CachedMoonLight;
     TWeakObjectPtr<AExponentialHeightFog>  CachedHeightFog;
+
+    // MoonScale DMI — SM_Sky 액터에서 동적 생성
+    TWeakObjectPtr<AStaticMeshActor>       CachedSkySphere;
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic>   SkySphereMID;
+    float                                  BloodMoonStartMoonScale = 0.1f;
+    FLinearColor                           BloodMoonStartMoonTintColor = FLinearColor::White;
+
+    // Volumetric Cloud DMI — AActor로 저장, FindComponentByClass로 접근
+    TWeakObjectPtr<AActor>                 CachedVolumetricCloud;
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic>   CloudMaterialMID;
+    FLinearColor                           BloodMoonStartCloudColor = FLinearColor::White;
 };
