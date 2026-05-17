@@ -37,8 +37,6 @@
 #include "Components/DirectionalLightComponent.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Components/ExponentialHeightFogComponent.h"
-#include "Engine/StaticMeshActor.h"
-#include "Components/VolumetricCloudComponent.h"
 #include <limits>
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
@@ -358,72 +356,6 @@ void ADownfallCharacter::BeginPlay()
         else
         {
             UE_LOG(LogDownFall, Warning, TEXT("BloodMoon: ExponentialHeightFog not found in level"));
-        }
-
-        // SM_Sky — 태그 "BloodMoonSky" 부여된 StaticMeshActor에서 DMI 생성
-        // 에디터에서 SM_Sky 선택 → Details → Actor Tags → "BloodMoonSky" 추가 필요
-        {
-            TArray<AActor*> FoundSkyActors;
-            UGameplayStatics::GetAllActorsWithTag(GetWorld(), SkySphereActorTag, FoundSkyActors);
-            if (FoundSkyActors.Num() > 0)
-            {
-                CachedSkySphere = Cast<AStaticMeshActor>(FoundSkyActors[0]);
-                if (CachedSkySphere.IsValid())
-                {
-                    UStaticMeshComponent* SMC = CachedSkySphere->GetStaticMeshComponent();
-                    if (SMC)
-                    {
-                        SkySphereMID = SMC->CreateAndSetMaterialInstanceDynamic(0);
-                        if (SkySphereMID)
-                        {
-                            SkySphereMID->SetScalarParameterValue(FName("MoonScale"), BloodMoonNormalMoonScale);
-                            UE_LOG(LogDownFall, Log, TEXT("BloodMoon: SkySphere DMI created (%s, MoonScale=%.2f)"),
-                                *FoundSkyActors[0]->GetName(), BloodMoonNormalMoonScale);
-                        }
-                    }
-                }
-            }
-            else
-            {
-                UE_LOG(LogDownFall, Warning, TEXT("BloodMoon: No actor with tag '%s' found. Add tag to SM_Sky actor."),
-                    *SkySphereActorTag.ToString());
-            }
-        }
-
-        // VolumetricCloud — 모든 액터 중 UVolumetricCloudComponent를 가진 액터 탐색
-        // (AVolumetricCloud 헤더 없이 컴포넌트 기반으로 검색)
-        {
-            TArray<AActor*> AllActors;
-            UGameplayStatics::GetAllActorsOfClass(GetWorld(), AActor::StaticClass(), AllActors);
-            for (AActor* Actor : AllActors)
-            {
-                UVolumetricCloudComponent* CloudComp =
-                    Actor->FindComponentByClass<UVolumetricCloudComponent>();
-                if (CloudComp)
-                {
-                    CachedVolumetricCloud = Actor;
-                    if (CloudComp->Material.IsValid())
-                    {
-                        UMaterialInterface* CloudMat = CloudComp->Material.Get();
-                        CloudMaterialMID = UMaterialInstanceDynamic::Create(CloudMat, this);
-                        if (CloudMaterialMID)
-                        {
-                            // TSoftObjectPtr에 DMI 직접 할당
-                            CloudComp->Material = CloudMaterialMID;
-                            CloudComp->MarkRenderStateDirty();
-                            CloudMaterialMID->SetVectorParameterValue(
-                                FName("CloudColor"), BloodMoonNormalCloudColor);
-                            UE_LOG(LogDownFall, Log, TEXT("BloodMoon: VolumetricCloud DMI created (%s)"),
-                                *Actor->GetName());
-                        }
-                    }
-                    break;
-                }
-            }
-            if (!CachedVolumetricCloud.IsValid())
-            {
-                UE_LOG(LogDownFall, Log, TEXT("BloodMoon: VolumetricCloud not found in level (optional)"));
-            }
         }
     }
 
@@ -3980,9 +3912,6 @@ void ADownfallCharacter::ActivateBloodMoonVFX()
     BloodMoonStartLightColor = BloodMoonNormalLightColor;
     BloodMoonStartFogColor   = BloodMoonNormalFogColor;
     BloodMoonStartFogDensity = BloodMoonNormalFogDensity;
-    BloodMoonStartMoonScale      = BloodMoonNormalMoonScale;
-    BloodMoonStartMoonTintColor  = BloodMoonNormalMoonTintColor;
-    BloodMoonStartCloudColor = BloodMoonNormalCloudColor;
 
     UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
 }
@@ -4018,19 +3947,6 @@ void ADownfallCharacter::DeactivateBloodMoonVFX()
     if (BloodMoonSkyMaterialInstance)
     {
         BloodMoonSkyMaterialInstance->SetScalarParameterValue(FName("BloodMoonSkyIntensity"), 0.0f);
-    }
-
-    // MoonScale + MoonTintColor 복구
-    if (SkySphereMID)
-    {
-        SkySphereMID->SetScalarParameterValue(FName("MoonScale"), BloodMoonNormalMoonScale);
-        SkySphereMID->SetVectorParameterValue(FName("MoonTintColor"), BloodMoonNormalMoonTintColor);
-    }
-
-    // CloudColor 복구
-    if (CloudMaterialMID && CachedVolumetricCloud.IsValid())
-    {
-        CloudMaterialMID->SetVectorParameterValue(FName("CloudColor"), BloodMoonNormalCloudColor);
     }
 
     UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX DEACTIVATED"));
@@ -4090,30 +4006,6 @@ void ADownfallCharacter::UpdateBloodMoonVFX(float DeltaTime)
         BloodMoonSkyMaterialInstance->SetScalarParameterValue(
             FName("BloodMoonSkyIntensity"),
             FMath::Lerp(0.0f, BloodMoonSkyIntensity, Alpha)
-        );
-    }
-
-    // MoonScale Lerp (MI_Sky → DMI로 변환된 SkySphereMID 제어)
-    if (SkySphereMID)
-    {
-        SkySphereMID->SetScalarParameterValue(
-            FName("MoonScale"),
-            FMath::Lerp(BloodMoonStartMoonScale, BloodMoonTargetMoonScale, Alpha)
-        );
-
-        // MoonTintColor Lerp — 달 이미지 색상을 붉게 물들임
-        SkySphereMID->SetVectorParameterValue(
-            FName("MoonTintColor"),
-            FLinearColor::LerpUsingHSV(BloodMoonStartMoonTintColor, BloodMoonMoonTintColor, Alpha)
-        );
-    }
-
-    // Volumetric Cloud 색상 Lerp
-    if (CloudMaterialMID)
-    {
-        CloudMaterialMID->SetVectorParameterValue(
-            FName("CloudColor"),
-            FLinearColor::LerpUsingHSV(BloodMoonStartCloudColor, BloodMoonCloudColor, Alpha)
         );
     }
 
