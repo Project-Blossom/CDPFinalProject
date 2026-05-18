@@ -154,10 +154,109 @@ float FVoxelDensityGenerator::ApplyIntegratedTopPlateauCap(float Density, const 
         return Density;
     }
 
-    const float CliffTopZ = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
-    const float TopSurfaceZ = FMath::Max(CliffTopZ, ComputeTopPlateauSurfaceZ(LocalCm));
+    auto SampleBaseCliffNoTop = [this](const FVector& L) -> float
+        {
+            const FVector Domain = SeededDomain(L);
+            const float z01 = Clamp01((L.Z - S.BaseHeightCm) / C.CliffH);
 
-    const float UpperLayerDensity = FMath::Min(TopSurfaceZ - LocalCm.Z, LocalCm.Z - CliffTopZ);
+            float D = (C.FrontX - L.X);
+
+            {
+                const float insideDepth = (C.FrontX - L.X);
+                const float d = FMath::Max(0.f, insideDepth);
+                const float nearFaceMask = 1.f - SmoothStep(0.f, C.OverhangBand, d);
+
+                const float mid = 1.f - FMath::Abs(2.f * z01 - 1.f);
+                const float heightMask = FMath::Pow(FMath::Clamp(mid, 0.f, 1.f), 1.6f);
+
+                float Amp = C.OverhangAmp;
+                if (S.TerrainAlgorithm == EMGTerrainAlgorithm::DensityFBM)
+                {
+                    Amp *= 0.35f;
+                }
+                else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::LayeredNoise)
+                {
+                    Amp *= 0.70f;
+                }
+                else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::ZoneMaskedDensity)
+                {
+                    const float TopBoost = SmoothStep(0.35f, 0.90f, z01);
+                    Amp *= FMath::Lerp(0.55f, 1.25f, TopBoost);
+                }
+
+                if (Amp != 0.f && nearFaceMask != 0.f && heightMask != 0.f)
+                {
+                    const float r = RidgedFBM01(Domain / C.OverhangScale, 5, 2.0f, 0.55f);
+                    const float shaped = (r - C.OverhangBias);
+                    D += shaped * Amp * nearFaceMask * heightMask;
+                }
+            }
+
+            if (C.BaseFieldAmp != 0.f)
+            {
+                float n = FBM3D(Domain / C.Base3DScale, C.Base3DOct, 2.0f, 0.5f);
+
+                if (S.TerrainAlgorithm == EMGTerrainAlgorithm::LayeredNoise)
+                {
+                    const float Layer = FBM3D((Domain + FVector(9131.f, -2217.f, 5411.f)) / (C.Base3DScale * 0.42f), FMath::Max(1, C.Base3DOct - 1), 2.15f, 0.48f);
+                    n = n * 0.72f + Layer * 0.28f;
+                }
+                else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::ZoneMaskedDensity)
+                {
+                    const float HeightMask = FMath::Lerp(0.75f, 1.20f, SmoothStep(0.20f, 0.85f, z01));
+                    n *= HeightMask;
+                }
+
+                D += n * C.BaseFieldAmp;
+            }
+
+            if (C.DetailAmp != 0.f)
+            {
+                float n = FBM3D(Domain / C.DetailScale, C.DetailOct, 2.0f, 0.55f);
+                float DetailAmp = C.DetailAmp;
+
+                if (S.TerrainAlgorithm == EMGTerrainAlgorithm::DensityFBM)
+                {
+                    DetailAmp *= 0.55f;
+                }
+                else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::LayeredNoise)
+                {
+                    n = n * 0.70f + RidgedFBM01((Domain + FVector(-3711.f, 7187.f, 1297.f)) / (C.DetailScale * 0.75f), C.DetailOct, 2.0f, 0.50f) * 0.30f;
+                    DetailAmp *= 1.15f;
+                }
+
+                D += n * DetailAmp;
+            }
+
+            return D;
+        };
+
+    const float CliffTopZ = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
+    const float SupportZ = CliffTopZ - FMath::Max(C.Voxel * 2.f, 50.f);
+    const float SupportDensity = SampleBaseCliffNoTop(FVector(LocalCm.X, LocalCm.Y, SupportZ));
+
+    const float RequiredSupportDepth = FMath::Max(C.Voxel * 2.f, 200.f);
+    const float SupportFade = FMath::Max(C.Voxel * 2.f, S.PlateauSurfaceEdgeFadeCm * 0.35f);
+    const float SupportAlpha = SmoothStep(RequiredSupportDepth, RequiredSupportDepth + SupportFade, SupportDensity);
+
+    if (SupportAlpha <= KINDA_SMALL_NUMBER)
+    {
+        return Density;
+    }
+
+    const float BackFade = FMath::Max(C.Voxel * 2.f, S.PlateauSurfaceEdgeFadeCm);
+    const float BackAlpha = SmoothStep(-Depth, -Depth + BackFade, ActorX);
+    const float SideAlpha = 1.f - SmoothStep(HalfW - BackFade, HalfW, FMath::Abs(ActorY));
+
+    const float PlateauAlpha = FMath::Clamp(SupportAlpha * BackAlpha * SideAlpha, 0.f, 1.f);
+    if (PlateauAlpha <= KINDA_SMALL_NUMBER)
+    {
+        return Density;
+    }
+
+    const float TopSurfaceZ = FMath::Max(CliffTopZ, ComputeTopPlateauSurfaceZ(LocalCm));
+    const float EffectiveTopZ = FMath::Lerp(CliffTopZ, TopSurfaceZ, PlateauAlpha);
+    const float UpperLayerDensity = FMath::Min(EffectiveTopZ - LocalCm.Z, LocalCm.Z - CliffTopZ);
 
     return FMath::Max(Density, UpperLayerDensity);
 }
