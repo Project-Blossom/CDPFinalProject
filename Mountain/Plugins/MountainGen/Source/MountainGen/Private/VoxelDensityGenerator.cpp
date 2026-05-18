@@ -76,60 +76,73 @@ float FVoxelDensityGenerator::ComputeTopPlateauSurfaceZ(const FVector& LocalCm) 
 
     const float CliffTopZ = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
     const float TopBaseZ = S.BaseHeightCm + C.CliffH + S.TopPlateauHeightOffsetCm;
+
     const float Strength = FMath::Max(0.f, S.PlateauSurfaceNoiseStrengthCm);
+    const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
 
-    float Hill = 0.f;
+    const float FrontTransitionLen = FMath::Clamp(
+        FMath::Max(S.TopPlateauMaxConformDropCm, S.PlateauSurfaceEdgeFadeCm),
+        C.Voxel * 5.f,
+        FMath::Max(C.Voxel * 5.f, Depth));
 
-    if (Strength > KINDA_SMALL_NUMBER)
-    {
-        const float Scale = FMath::Max(1000.f, S.PlateauSurfaceNoiseScaleCm);
-        const int32 Octaves = FMath::Clamp(S.PlateauSurfaceNoiseOctaves, 1, 8);
-        const int32 PlateauSeed = FMath::Max(1, Seed + S.PlateauSeedOffset);
-        const FVector2D SeedShift((float)(PlateauSeed % 7919) * 0.017f, (float)(PlateauSeed % 3571) * 0.023f);
-
-        FVector2D P(ActorX / Scale, ActorY / Scale);
-
-        const float WarpScale = Scale * 1.85f;
-        const FVector2D WP(ActorX / WarpScale, ActorY / WarpScale);
-        const float WarpX = PlateauFBM2D(WP + SeedShift + FVector2D(17.2f, 3.1f), 3, 2.02f, 0.5f);
-        const float WarpY = PlateauFBM2D(WP + SeedShift + FVector2D(-5.4f, 11.7f), 3, 2.02f, 0.5f);
-        P += FVector2D(WarpX, WarpY) * 0.42f;
-
-        const float Macro = PlateauFBM2D(P * 0.72f + SeedShift, FMath::Max(1, Octaves - 2), 2.02f, 0.5f);
-        const float Mid = PlateauFBM2D(P * 1.55f + SeedShift + FVector2D(31.4f, -9.8f), FMath::Max(1, Octaves - 1), 2.02f, 0.5f);
-        const float Micro = PlateauFBM2D(P * 4.25f + SeedShift + FVector2D(-12.6f, 44.3f), FMath::Max(1, Octaves - 2), 2.02f, 0.5f);
-
-        Hill = Macro * 0.72f + Mid * 0.23f + Micro * 0.05f;
-        Hill = (Hill + 1.f) * 0.5f;
-        Hill = SmoothStep01(Hill);
-        Hill = FMath::Pow(Hill, 1.35f);
-    }
+    const float DistanceBehindFront = FMath::Max(0.f, -ActorX);
+    const float FrontRiseAlpha = SmoothStep01(DistanceBehindFront / FrontTransitionLen);
 
     const float FadeCm = FMath::Max(0.f, S.PlateauSurfaceEdgeFadeCm);
-    float EdgeFade = 1.f;
+    float EdgeAlpha = 1.f;
     if (FadeCm > KINDA_SMALL_NUMBER)
     {
-        const float XBack = -FMath::Max(0.f, S.TopPlateauDepthCm);
+        const float XBack = -Depth;
         const float HalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
         const float DistBack = FMath::Max(0.f, ActorX - XBack);
         const float DistLeft = FMath::Max(0.f, ActorY + HalfW);
         const float DistRight = FMath::Max(0.f, HalfW - ActorY);
         const float EdgeDist = FMath::Min(DistBack, FMath::Min(DistLeft, DistRight));
-        EdgeFade = SmoothStep01(EdgeDist / FadeCm);
+        EdgeAlpha = SmoothStep01(EdgeDist / FadeCm);
     }
 
-    const float NaturalTopZ = TopBaseZ + Hill * Strength;
-    const float EdgeLimitedTopZ = FMath::Lerp(CliffTopZ, NaturalTopZ, EdgeFade);
+    const float RiseAlpha = FMath::Clamp(FrontRiseAlpha * EdgeAlpha, 0.f, 1.f);
 
-    const float FrontTransitionLen = FMath::Clamp(
-        FMath::Max(S.TopPlateauMaxConformDropCm, S.PlateauSurfaceEdgeFadeCm),
-        C.Voxel * 4.f,
-        8000.f);
+    float ReliefCm = 0.f;
+    if (Strength > KINDA_SMALL_NUMBER)
+    {
+        const float Scale = FMath::Max(C.Voxel * 8.f, S.PlateauSurfaceNoiseScaleCm * 0.70f);
+        const int32 Octaves = FMath::Clamp(S.PlateauSurfaceNoiseOctaves, 1, 8);
+        const int32 PlateauSeed = FMath::Max(1, Seed + S.PlateauSeedOffset);
+        const FVector2D SeedShift((float)(PlateauSeed % 7919) * 0.017f, (float)(PlateauSeed % 3571) * 0.023f);
 
-    const float DistanceBehindFront = FMath::Max(0.f, -ActorX);
-    const float FrontAlpha = SmoothStep01(DistanceBehindFront / FrontTransitionLen);
+        const FVector2D BaseP(ActorX / Scale, ActorY / Scale);
+        const FVector2D WarpP(ActorX / (Scale * 1.85f), ActorY / (Scale * 1.85f));
 
-    return FMath::Lerp(CliffTopZ, EdgeLimitedTopZ, FrontAlpha);
+        const float WarpX = PlateauFBM2D(WarpP + SeedShift + FVector2D(17.2f, 3.1f), 3, 2.02f, 0.50f);
+        const float WarpY = PlateauFBM2D(WarpP + SeedShift + FVector2D(-5.4f, 11.7f), 3, 2.02f, 0.50f);
+        const FVector2D P = BaseP + FVector2D(WarpX, WarpY) * 0.40f;
+
+        const float Large = PlateauFBM2D(P * 0.45f + SeedShift + FVector2D(4.7f, -8.2f), FMath::Max(1, Octaves - 2), 2.0f, 0.55f);
+        const float Rolling = PlateauFBM2D(P * 0.90f + SeedShift + FVector2D(31.4f, -9.8f), FMath::Max(1, Octaves - 1), 2.02f, 0.52f);
+        const float Mid = PlateauFBM2D(P * 1.75f + SeedShift + FVector2D(-12.6f, 44.3f), Octaves, 2.05f, 0.48f);
+        const float Detail = PlateauFBM2D(P * 3.25f + SeedShift + FVector2D(71.0f, 19.0f), FMath::Max(1, Octaves - 2), 2.10f, 0.45f);
+
+        const float RidgeBase = PlateauFBM2D(P * 1.20f + SeedShift + FVector2D(-44.0f, 23.0f), FMath::Max(1, Octaves - 1), 2.05f, 0.50f);
+        const float Ridge = 1.f - FMath::Abs(RidgeBase);
+        const float RidgeSigned = Ridge * 2.f - 1.f;
+
+        const float SignedHill = FMath::Clamp(
+            Large * 0.48f +
+            Rolling * 0.36f +
+            Mid * 0.24f +
+            Detail * 0.08f +
+            RidgeSigned * 0.18f,
+            -1.f,
+            1.f);
+
+        ReliefCm = SignedHill * Strength * 0.75f;
+    }
+
+    const float BaseRiseCm = FMath::Max(0.f, TopBaseZ - CliffTopZ) + Strength * 0.30f;
+    const float LocalRiseCm = FMath::Max(0.f, BaseRiseCm + ReliefCm);
+
+    return CliffTopZ + LocalRiseCm * RiseAlpha;
 }
 
 float FVoxelDensityGenerator::ApplyIntegratedTopPlateauCap(float Density, const FVector& LocalCm) const
@@ -456,7 +469,7 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
             const float Scale = C.RoughScale;
             const float n = FBM3D(Domain / Scale, 3, 2.0f, 0.55f);
 
-            const float TopRoughnessScale = bInIntegratedTopDomain ? 0.15f : 1.f;
+            const float TopRoughnessScale = bInIntegratedTopDomain ? 0.35f : 1.f;
 
             const float SafeMask = FMath::Pow(surfMask, 1.0f + C.RoughMaskStrength * 2.0f);
             density += n * C.RoughAmp * SafeMask * TopRoughnessScale;
