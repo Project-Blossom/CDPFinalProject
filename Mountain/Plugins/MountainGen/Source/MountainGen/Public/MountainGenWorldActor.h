@@ -317,20 +317,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen")
     TObjectPtr<UProceduralMeshComponent> ProcMesh;
 
-    // 절벽과 분리된 상단 평지 전용 메시 컴포넌트.
-    // 목표 지표, Surface Metadata, 배치 후보에는 포함하지 않는다.
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MountainGen|TopPlateau")
-    TObjectPtr<UProceduralMeshComponent> TopPlateauMesh;
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Mesh")
     TObjectPtr<UMaterialInterface> VoxelMaterial;
-
-    // 상단 평지 전용 머티리얼. 절벽 머티리얼과 공유하지 않는다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
-    TObjectPtr<UMaterialInterface> TopPlateauMaterial;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|TopPlateau")
-    bool bTopPlateauCreateCollision = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen")
     FMountainGenSettings Settings;
@@ -426,7 +414,6 @@ private:
     void ApplyGeneratedMeshResult(FMGAsyncResult&& Result, bool bShowRuntimeSeedMessage);
     void UI_Status(const FString& Msg, float Seconds = 2.0f, FColor Color = FColor::Cyan) const;
     void ApplyVoxelMaterialParameters();
-    void RebuildTopPlateauMesh(const FChunkMeshData& CliffMeshData, const FMountainGenSettings& FinalSettings);
     void UpdateGeneratedMeshStateAndBroadcast();
 
     static FString MakeMetricsLine(

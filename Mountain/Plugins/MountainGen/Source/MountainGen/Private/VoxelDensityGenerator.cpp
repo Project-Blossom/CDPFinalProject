@@ -74,34 +74,36 @@ float FVoxelDensityGenerator::ComputeTopPlateauSurfaceZ(const FVector& LocalCm) 
     const float ActorX = LocalCm.X - C.FrontX;
     const float ActorY = LocalCm.Y;
 
+    const float CliffTopZ = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
     const float TopBaseZ = S.BaseHeightCm + C.CliffH + S.TopPlateauHeightOffsetCm;
     const float Strength = FMath::Max(0.f, S.PlateauSurfaceNoiseStrengthCm);
-    if (Strength <= KINDA_SMALL_NUMBER)
+
+    float Hill = 0.f;
+
+    if (Strength > KINDA_SMALL_NUMBER)
     {
-        return TopBaseZ;
+        const float Scale = FMath::Max(1000.f, S.PlateauSurfaceNoiseScaleCm);
+        const int32 Octaves = FMath::Clamp(S.PlateauSurfaceNoiseOctaves, 1, 8);
+        const int32 PlateauSeed = FMath::Max(1, Seed + S.PlateauSeedOffset);
+        const FVector2D SeedShift((float)(PlateauSeed % 7919) * 0.017f, (float)(PlateauSeed % 3571) * 0.023f);
+
+        FVector2D P(ActorX / Scale, ActorY / Scale);
+
+        const float WarpScale = Scale * 1.85f;
+        const FVector2D WP(ActorX / WarpScale, ActorY / WarpScale);
+        const float WarpX = PlateauFBM2D(WP + SeedShift + FVector2D(17.2f, 3.1f), 3, 2.02f, 0.5f);
+        const float WarpY = PlateauFBM2D(WP + SeedShift + FVector2D(-5.4f, 11.7f), 3, 2.02f, 0.5f);
+        P += FVector2D(WarpX, WarpY) * 0.42f;
+
+        const float Macro = PlateauFBM2D(P * 0.72f + SeedShift, FMath::Max(1, Octaves - 2), 2.02f, 0.5f);
+        const float Mid = PlateauFBM2D(P * 1.55f + SeedShift + FVector2D(31.4f, -9.8f), FMath::Max(1, Octaves - 1), 2.02f, 0.5f);
+        const float Micro = PlateauFBM2D(P * 4.25f + SeedShift + FVector2D(-12.6f, 44.3f), FMath::Max(1, Octaves - 2), 2.02f, 0.5f);
+
+        Hill = Macro * 0.72f + Mid * 0.23f + Micro * 0.05f;
+        Hill = (Hill + 1.f) * 0.5f;
+        Hill = SmoothStep01(Hill);
+        Hill = FMath::Pow(Hill, 1.35f);
     }
-
-    const float Scale = FMath::Max(1000.f, S.PlateauSurfaceNoiseScaleCm);
-    const int32 Octaves = FMath::Clamp(S.PlateauSurfaceNoiseOctaves, 1, 8);
-    const int32 PlateauSeed = FMath::Max(1, Seed + S.PlateauSeedOffset);
-    const FVector2D SeedShift((float)(PlateauSeed % 7919) * 0.017f, (float)(PlateauSeed % 3571) * 0.023f);
-
-    FVector2D P(ActorX / Scale, ActorY / Scale);
-
-    const float WarpScale = Scale * 1.85f;
-    const FVector2D WP(ActorX / WarpScale, ActorY / WarpScale);
-    const float WarpX = PlateauFBM2D(WP + SeedShift + FVector2D(17.2f, 3.1f), 3, 2.02f, 0.5f);
-    const float WarpY = PlateauFBM2D(WP + SeedShift + FVector2D(-5.4f, 11.7f), 3, 2.02f, 0.5f);
-    P += FVector2D(WarpX, WarpY) * 0.42f;
-
-    const float Macro = PlateauFBM2D(P * 0.72f + SeedShift, FMath::Max(1, Octaves - 2), 2.02f, 0.5f);
-    const float Mid = PlateauFBM2D(P * 1.55f + SeedShift + FVector2D(31.4f, -9.8f), FMath::Max(1, Octaves - 1), 2.02f, 0.5f);
-    const float Micro = PlateauFBM2D(P * 4.25f + SeedShift + FVector2D(-12.6f, 44.3f), FMath::Max(1, Octaves - 2), 2.02f, 0.5f);
-
-    float Hill = Macro * 0.72f + Mid * 0.23f + Micro * 0.05f;
-    Hill = (Hill + 1.f) * 0.5f;
-    Hill = SmoothStep01(Hill);
-    Hill = FMath::Pow(Hill, 1.35f);
 
     const float FadeCm = FMath::Max(0.f, S.PlateauSurfaceEdgeFadeCm);
     float EdgeFade = 1.f;
@@ -116,7 +118,8 @@ float FVoxelDensityGenerator::ComputeTopPlateauSurfaceZ(const FVector& LocalCm) 
         EdgeFade = SmoothStep01(EdgeDist / FadeCm);
     }
 
-    const float NaturalTopZ = TopBaseZ + Hill * Strength * EdgeFade;
+    const float NaturalTopZ = TopBaseZ + Hill * Strength;
+    const float EdgeLimitedTopZ = FMath::Lerp(CliffTopZ, NaturalTopZ, EdgeFade);
 
     const float FrontTransitionLen = FMath::Clamp(
         FMath::Max(S.TopPlateauMaxConformDropCm, S.PlateauSurfaceEdgeFadeCm),
@@ -125,9 +128,8 @@ float FVoxelDensityGenerator::ComputeTopPlateauSurfaceZ(const FVector& LocalCm) 
 
     const float DistanceBehindFront = FMath::Max(0.f, -ActorX);
     const float FrontAlpha = SmoothStep01(DistanceBehindFront / FrontTransitionLen);
-    const float CliffTopZ = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
 
-    return FMath::Lerp(CliffTopZ, NaturalTopZ, FrontAlpha);
+    return FMath::Lerp(CliffTopZ, EdgeLimitedTopZ, FrontAlpha);
 }
 
 float FVoxelDensityGenerator::ApplyIntegratedTopPlateauCap(float Density, const FVector& LocalCm) const
@@ -138,6 +140,7 @@ float FVoxelDensityGenerator::ApplyIntegratedTopPlateauCap(float Density, const 
     }
 
     const float ActorX = LocalCm.X - C.FrontX;
+    const float ActorY = LocalCm.Y;
 
     const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
     if (Depth <= KINDA_SMALL_NUMBER)
@@ -145,17 +148,18 @@ float FVoxelDensityGenerator::ApplyIntegratedTopPlateauCap(float Density, const 
         return Density;
     }
 
-    const float Voxel = C.Voxel;
-    const float FrontAllowance = FMath::Max(0.f, S.TopPlateauFrontOverlapCm);
-    if (ActorX > FrontAllowance + Voxel * 0.5f)
+    const float HalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
+    if (ActorX > 0.f || ActorX < -Depth || FMath::Abs(ActorY) > HalfW)
     {
         return Density;
     }
 
-    const float TopSurfaceZ = ComputeTopPlateauSurfaceZ(LocalCm);
-    const float TopCapDensity = TopSurfaceZ - LocalCm.Z;
+    const float CliffTopZ = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
+    const float TopSurfaceZ = FMath::Max(CliffTopZ, ComputeTopPlateauSurfaceZ(LocalCm));
 
-    return FMath::Min(Density, TopCapDensity);
+    const float UpperLayerDensity = FMath::Min(TopSurfaceZ - LocalCm.Z, LocalCm.Z - CliffTopZ);
+
+    return FMath::Max(Density, UpperLayerDensity);
 }
 
 void FVoxelDensityGenerator::InitSeedDomain()
@@ -327,12 +331,18 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     // -----------------------------
     // Integrated top terrain cap
     // -----------------------------
+    if (S.bAddTopFlatPlateau)
+    {
+        const float CliffTopZForBase = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
+        density = FMath::Min(density, CliffTopZForBase - Local.Z);
+    }
+
     density = ApplyIntegratedTopPlateauCap(density, Local);
 
     const float ActorXForTop = Local.X - C.FrontX;
     const bool bInIntegratedTopDomain =
         S.bAddTopFlatPlateau &&
-        ActorXForTop <= FMath::Max(0.f, S.TopPlateauFrontOverlapCm) + Voxel * 0.5f &&
+        ActorXForTop <= 0.f &&
         Local.Z >= S.BaseHeightCm + C.CliffH - FMath::Max(C.RoughBand, Voxel * 4.f);
 
     // -----------------------------
