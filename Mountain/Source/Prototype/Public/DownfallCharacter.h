@@ -22,6 +22,8 @@ class UNiagaraSystem;
 class ADirectionalLight;
 class AExponentialHeightFog;
 class AStaticMeshActor;
+class ASceneCapture2D;
+class UMinimapWidget;
 class USplineComponent;
 class USplineMeshComponent;
 class UStaticMesh;
@@ -902,6 +904,39 @@ public:
     UPROPERTY()
     TObjectPtr<UAltitudeWidget> AltitudeWidget;
 
+    // ── Wireframe Minimap (WBP_AltitudeIndicator 대체) ─────────
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Minimap")
+    TSubclassOf<class UMinimapWidget> MinimapWidgetClass;
+
+    UPROPERTY()
+    TObjectPtr<class UMinimapWidget> MinimapWidget;
+
+    // 미니맵 Color Tint 기본값 (정상 상태)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    FLinearColor MinimapNormalTint = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+    // Blizzard 발동 시 미니맵 Color Tint
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    FLinearColor MinimapBlizzardTint = FLinearColor(0.6f, 0.85f, 1.0f, 1.0f);
+
+    // BloodMoon 발동 시 미니맵 Color Tint
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    FLinearColor MinimapBloodMoonTint = FLinearColor(1.0f, 0.2f, 0.1f, 1.0f);
+
+    // SceneCapture2D Actor — 레벨에 배치 후 태그 "MinimapCapture" 지정
+    // BeginPlay에서 자동 탐색 → CaptureScene() 1회 호출
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    FName SceneCaptureActorTag = FName("MinimapCapture");
+
+    // 미니맵 Orthographic 캡처 범위 (cm) — SceneCapture2D OrthoWidth와 동일하게 설정
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
+        meta = (ClampMin = "100.0"))
+    float MinimapCaptureWidth = 50000.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
+        meta = (ClampMin = "100.0"))
+    float MinimapCaptureHeight = 50000.f;
+
     // Pause Menu
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Pause")
     TSubclassOf<class UPauseMenuWidget> PauseMenuWidgetClass;
@@ -1038,6 +1073,8 @@ private:
     float CalculateNextSwitchInterval() const;
     void ApplyClimbingMappingContext();
     void UpdateAltitudeUI();
+    void UpdateMinimapUI();        // 플레이어 마커 UV + Color Tint Lerp
+    void StartMinimapTintLerp(const FLinearColor& TargetTint, float Duration); // 이벤트 발동 시 호출
     class AMountainGenWorldActor* FindMountainGenActor();
     float GetGroundHeight() const;
     float InitialGroundHeight = 0.0f;
@@ -1054,6 +1091,17 @@ private:
 
     FTimerHandle LowFrequencyUpdateTimerHandle;
     TWeakObjectPtr<class AMountainGenWorldActor> CachedMountainActor;
+
+    // Minimap SceneCapture2D 캐시
+    TWeakObjectPtr<class ASceneCapture2D>  CachedSceneCapture;
+
+    // Minimap Color Tint Lerp 내부 상태
+    FLinearColor MinimapCurrentTint = FLinearColor::White;
+    FLinearColor MinimapLerpStartTint = FLinearColor::White;
+    FLinearColor MinimapLerpTargetTint = FLinearColor::White;
+    bool  bMinimapTintLerping = false;
+    float MinimapTintLerpElapsed = 0.0f;
+    float MinimapTintLerpDuration = 10.0f; // BloodMoonLerpDuration과 공유
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<USplineMeshComponent>> SafetyLineSplineMeshes;

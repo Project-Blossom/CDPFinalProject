@@ -39,6 +39,9 @@
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "Components/VolumetricCloudComponent.h"
+#include "Engine/SceneCapture2D.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "UI/MinimapWidget.h"
 #include <limits>
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
@@ -463,6 +466,53 @@ void ADownfallCharacter::BeginPlay()
         {
             AltitudeWidget->AddToViewport();
             UE_LOG(LogDownFall, Log, TEXT("Altitude Widget created and added to viewport"));
+
+    // ── WBP_Minimap 생성 및 뷰포트 추가 ──────────────────────────
+    if (MinimapWidgetClass)
+    {
+        MinimapWidget = CreateWidget<UMinimapWidget>(GetWorld(), MinimapWidgetClass);
+        if (MinimapWidget)
+        {
+            MinimapWidget->AddToViewport();
+            MinimapCurrentTint = MinimapNormalTint;
+            MinimapWidget->SetMinimapTint(MinimapNormalTint);
+            UE_LOG(LogDownFall, Log, TEXT("Minimap Widget created and added to viewport"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("MinimapWidgetClass not assigned - set in BP_DownfallCharacter (UI|Minimap)"));
+    }
+
+    // ── SceneCapture2D 탐색 + 1회 캡처 ──────────────────────────
+    // 레벨에 ASceneCapture2D 배치 후 Tags에 "MinimapCapture" 추가 필요
+    {
+        TArray<AActor*> FoundCaptures;
+        UGameplayStatics::GetAllActorsWithTag(GetWorld(), SceneCaptureActorTag, FoundCaptures);
+        if (FoundCaptures.Num() > 0)
+        {
+            CachedSceneCapture = Cast<ASceneCapture2D>(FoundCaptures[0]);
+            if (CachedSceneCapture.IsValid())
+            {
+                USceneCaptureComponent2D* CaptureComp =
+                    CachedSceneCapture->GetCaptureComponent2D();
+                if (CaptureComp)
+                {
+                    // 스테이지 로드 직후 1회 캡처 (MountainGen 메시 생성 후)
+                    // 이후 Capture Every Frame = false 유지
+                    CaptureComp->CaptureScene();
+                    UE_LOG(LogDownFall, Log, TEXT("Minimap: SceneCapture2D captured (%s)"),
+                        *FoundCaptures[0]->GetName());
+                }
+            }
+        }
+        else
+        {
+            UE_LOG(LogDownFall, Warning,
+                TEXT("Minimap: No actor with tag '%s' found. Add tag to SceneCapture2D actor."),
+                *SceneCaptureActorTag.ToString());
+        }
+    }
         }
     }
     else
@@ -514,6 +564,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
     UpdateRainVFX(DeltaTime);
     UpdateBlizzardVFX(DeltaTime);
     UpdateBloodMoonVFX(DeltaTime);
+    UpdateMinimapUI();
     UpdateHandPositions(DeltaTime);
     UpdateHandStaminaVisuals(DeltaTime);
 
@@ -3377,6 +3428,7 @@ void ADownfallCharacter::ApplyEdgeBlurParameters(bool bForce)
 
 void ADownfallCharacter::UpdateAltitudeUI()
 {
+    // ── UpdateMinimapUI는 Tick에서 직접 호출되므로 여기서는 기존 Altitude 로직만 유지 ──
     if (!AltitudeWidget)
     {
         return;
@@ -3842,6 +3894,9 @@ void ADownfallCharacter::ActivateBlizzardVFX()
 
     BlizzardElapsedSinceActivation = 0.0f;
     UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
+
+    // 미니맵 Color Tint: 차가운 파란색으로 전환
+    StartMinimapTintLerp(MinimapBlizzardTint, BlizzardLerpDuration);
 }
 
 void ADownfallCharacter::DeactivateBlizzardVFX()
@@ -3985,6 +4040,9 @@ void ADownfallCharacter::ActivateBloodMoonVFX()
     BloodMoonStartCloudColor = BloodMoonNormalCloudColor;
 
     UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
+
+    // 미니맵 Color Tint: 붉은색으로 전환 (BloodMoonLerpDuration과 동기화)
+    StartMinimapTintLerp(MinimapBloodMoonTint, BloodMoonLerpDuration);
 }
 
 void ADownfallCharacter::DeactivateBloodMoonVFX()
@@ -4121,4 +4179,60 @@ void ADownfallCharacter::UpdateBloodMoonVFX(float DeltaTime)
     {
         UE_LOG(LogDownFall, Log, TEXT("BloodMoonVFX Lerp complete"));
     }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Wireframe Minimap — Player Marker UV + Color Tint Lerp
+// ─────────────────────────────────────────────────────────────────
+
+void ADownfallCharacter::UpdateMinimapUI()
+{
+    if (!MinimapWidget || !CachedSceneCapture.IsValid())
+    {
+        return;
+    }
+
+    // 1. 플레이어 위치 → 미니맵 UV 계산
+    // SceneCapture2D Orthographic 기준: 캡처 중심 위치 + 캡처 범위(Width/Height)
+    const FVector PlayerPos   = GetActorLocation();
+    const FVector CapturePos  = CachedSceneCapture->GetActorLocation();
+
+    // Side View (X축 방향 캡처 가정):
+    // U = 플레이어 Y (좌우) / CaptureWidth
+    // V = 플레이어 Z (상하) / CaptureHeight  (0=상단이 되도록 반전)
+    const float HalfW = MinimapCaptureWidth  * 0.5f;
+    const float HalfH = MinimapCaptureHeight * 0.5f;
+
+    const float U = FMath::Clamp((PlayerPos.Y - (CapturePos.Y - HalfW)) / MinimapCaptureWidth,  0.0f, 1.0f);
+    const float V = FMath::Clamp(1.0f - (PlayerPos.Z - (CapturePos.Z - HalfH)) / MinimapCaptureHeight, 0.0f, 1.0f);
+
+    MinimapWidget->SetPlayerMarkerUV(FVector2D(U, V));
+
+    // 2. Color Tint Lerp 처리
+    if (bMinimapTintLerping)
+    {
+        MinimapTintLerpElapsed += GetWorld()->GetDeltaSeconds();
+        const float Alpha = FMath::Clamp(
+            MinimapTintLerpElapsed / FMath::Max(MinimapTintLerpDuration, KINDA_SMALL_NUMBER),
+            0.0f, 1.0f
+        );
+        MinimapCurrentTint = FLinearColor::LerpUsingHSV(
+            MinimapLerpStartTint, MinimapLerpTargetTint, Alpha);
+        MinimapWidget->SetMinimapTint(MinimapCurrentTint);
+
+        if (Alpha >= 1.0f)
+        {
+            bMinimapTintLerping = false;
+            MinimapCurrentTint  = MinimapLerpTargetTint;
+        }
+    }
+}
+
+void ADownfallCharacter::StartMinimapTintLerp(const FLinearColor& TargetTint, float Duration)
+{
+    MinimapLerpStartTint    = MinimapCurrentTint;
+    MinimapLerpTargetTint   = TargetTint;
+    MinimapTintLerpDuration = Duration;
+    MinimapTintLerpElapsed  = 0.0f;
+    bMinimapTintLerping     = true;
 }
