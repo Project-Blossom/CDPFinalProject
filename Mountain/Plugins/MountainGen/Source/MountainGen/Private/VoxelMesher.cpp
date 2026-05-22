@@ -34,6 +34,93 @@ namespace
         return FProcMeshTangent(T, false);
     }
 
+    static FORCEINLINE float SampleChunkDensityNearestSafe(
+        const FVoxelChunk& Chunk,
+        int32 X,
+        int32 Y,
+        int32 Z)
+    {
+        X = FMath::Clamp(X, 0, Chunk.SizeX - 1);
+        Y = FMath::Clamp(Y, 0, Chunk.SizeY - 1);
+        Z = FMath::Clamp(Z, 0, Chunk.SizeZ - 1);
+        return Chunk.Density[Idx3(X, Y, Z, Chunk.SizeX, Chunk.SizeY)];
+    }
+
+    static FORCEINLINE float SampleChunkDensityTrilinearSafe(
+        const FVoxelChunk& Chunk,
+        const FVector& GridPos)
+    {
+        if (Chunk.SizeX <= 0 || Chunk.SizeY <= 0 || Chunk.SizeZ <= 0 || Chunk.Density.Num() <= 0)
+        {
+            return 0.0f;
+        }
+
+        const float FX = FMath::Clamp(GridPos.X, 0.0f, static_cast<float>(Chunk.SizeX - 1));
+        const float FY = FMath::Clamp(GridPos.Y, 0.0f, static_cast<float>(Chunk.SizeY - 1));
+        const float FZ = FMath::Clamp(GridPos.Z, 0.0f, static_cast<float>(Chunk.SizeZ - 1));
+
+        const int32 X0 = FMath::FloorToInt(FX);
+        const int32 Y0 = FMath::FloorToInt(FY);
+        const int32 Z0 = FMath::FloorToInt(FZ);
+
+        const int32 X1 = FMath::Min(X0 + 1, Chunk.SizeX - 1);
+        const int32 Y1 = FMath::Min(Y0 + 1, Chunk.SizeY - 1);
+        const int32 Z1 = FMath::Min(Z0 + 1, Chunk.SizeZ - 1);
+
+        const float TX = FX - static_cast<float>(X0);
+        const float TY = FY - static_cast<float>(Y0);
+        const float TZ = FZ - static_cast<float>(Z0);
+
+        const float C000 = SampleChunkDensityNearestSafe(Chunk, X0, Y0, Z0);
+        const float C100 = SampleChunkDensityNearestSafe(Chunk, X1, Y0, Z0);
+        const float C010 = SampleChunkDensityNearestSafe(Chunk, X0, Y1, Z0);
+        const float C110 = SampleChunkDensityNearestSafe(Chunk, X1, Y1, Z0);
+        const float C001 = SampleChunkDensityNearestSafe(Chunk, X0, Y0, Z1);
+        const float C101 = SampleChunkDensityNearestSafe(Chunk, X1, Y0, Z1);
+        const float C011 = SampleChunkDensityNearestSafe(Chunk, X0, Y1, Z1);
+        const float C111 = SampleChunkDensityNearestSafe(Chunk, X1, Y1, Z1);
+
+        const float C00 = FMath::Lerp(C000, C100, TX);
+        const float C10 = FMath::Lerp(C010, C110, TX);
+        const float C01 = FMath::Lerp(C001, C101, TX);
+        const float C11 = FMath::Lerp(C011, C111, TX);
+
+        const float C0 = FMath::Lerp(C00, C10, TY);
+        const float C1 = FMath::Lerp(C01, C11, TY);
+
+        return FMath::Lerp(C0, C1, TZ);
+    }
+
+    static FORCEINLINE FVector EstimateOutwardNormalFromChunkDensity(
+        const FVoxelChunk& Chunk,
+        float VoxelSizeCm,
+        const FVector& ChunkOriginWorld,
+        const FVector& WorldPosCm)
+    {
+        if (VoxelSizeCm <= KINDA_SMALL_NUMBER)
+        {
+            return FVector::ZeroVector;
+        }
+
+        const FVector GridPos = (WorldPosCm - ChunkOriginWorld) / VoxelSizeCm;
+
+        const float E = 0.5f;
+        const float Dx = SampleChunkDensityTrilinearSafe(Chunk, GridPos + FVector(E, 0.f, 0.f))
+            - SampleChunkDensityTrilinearSafe(Chunk, GridPos - FVector(E, 0.f, 0.f));
+        const float Dy = SampleChunkDensityTrilinearSafe(Chunk, GridPos + FVector(0.f, E, 0.f))
+            - SampleChunkDensityTrilinearSafe(Chunk, GridPos - FVector(0.f, E, 0.f));
+        const float Dz = SampleChunkDensityTrilinearSafe(Chunk, GridPos + FVector(0.f, 0.f, E))
+            - SampleChunkDensityTrilinearSafe(Chunk, GridPos - FVector(0.f, 0.f, E));
+
+        FVector Gradient(Dx, Dy, Dz);
+        if (!Gradient.Normalize())
+        {
+            return FVector::ZeroVector;
+        }
+
+        return Gradient;
+    }
+
     struct FQuantKey
     {
         int32 X = 0;
@@ -130,9 +217,11 @@ void FVoxelMesher::BuildMarchingCubes(
     float IsoLevel,
     const FVector& ChunkOriginWorld,
     const FVector& ActorWorld,
-    const FVoxelDensityGenerator&,
+    const FVoxelDensityGenerator& Gen,
     FChunkMeshData& Out)
 {
+    (void)Gen;
+
     Out.Vertices.Reset();
     Out.Triangles.Reset();
     Out.Normals.Reset();
@@ -341,10 +430,7 @@ void FVoxelMesher::BuildMarchingCubes(
                             const FVector B = LM.Vertices[iB];
                             const FVector C = LM.Vertices[iC];
 
-                            // 이 TriTable은 V > IsoLevel = inside (암벽 내부) 규약을 사용
-                            // CrossProduct(B-A, C-A)는 내부 방향을 가리키므로
-                            // CrossProduct(C-A, B-A)로 반전하여 외부 방향 노멀 생성
-                            FVector FaceN = FVector::CrossProduct(C - A, B - A);
+                            FVector FaceN = FVector::CrossProduct(B - A, C - A);
                             if (!FaceN.IsNearlyZero())
                             {
                                 FaceN.Normalize();
@@ -443,8 +529,19 @@ void FVoxelMesher::BuildMarchingCubes(
 
     for (int32 i = 0; i < Out.Normals.Num(); ++i)
     {
-        FVector N = Out.Normals[i];
-        if (!N.Normalize()) N = FVector::UpVector;
+        const FVector WorldPos = ActorWorld + Out.Vertices[i];
+
+        FVector N = EstimateOutwardNormalFromChunkDensity(Chunk, VoxelSizeCm, ChunkOriginWorld, WorldPos);
+
+        if (N.IsNearlyZero())
+        {
+            N = Out.Normals[i];
+            if (!N.Normalize())
+            {
+                N = FVector::UpVector;
+            }
+        }
+
         Out.Normals[i] = N;
         Out.Tangents[i] = MakeTangentFromNormal(N);
     }
