@@ -80,13 +80,8 @@ float FVoxelDensityGenerator::ComputeTopPlateauSurfaceZ(const FVector& LocalCm) 
     const float Strength = FMath::Max(0.f, S.PlateauSurfaceNoiseStrengthCm);
     const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
 
-    const float FrontTransitionLen = FMath::Clamp(
-        FMath::Max(S.TopPlateauMaxConformDropCm, S.PlateauSurfaceEdgeFadeCm),
-        C.Voxel * 5.f,
-        FMath::Max(C.Voxel * 5.f, Depth));
-
     const float DistanceBehindFront = FMath::Max(0.f, -ActorX);
-    const float FrontRiseAlpha = SmoothStep01(DistanceBehindFront / FrontTransitionLen);
+    const float FrontRiseAlpha = SmoothStep01(DistanceBehindFront / FMath::Max(C.Voxel * 5.f, Depth));
 
     const float FadeCm = FMath::Max(0.f, S.PlateauSurfaceEdgeFadeCm);
     float EdgeAlpha = 1.f;
@@ -244,34 +239,7 @@ float FVoxelDensityGenerator::ApplyIntegratedTopPlateauCap(float Density, const 
             return D;
         };
 
-    const float CliffTopZ = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
-    const float SupportZ = CliffTopZ - FMath::Max(C.Voxel * 2.f, 50.f);
-    const float SupportDensity = SampleBaseCliffNoTop(FVector(LocalCm.X, LocalCm.Y, SupportZ));
-
-    const float RequiredSupportDepth = FMath::Max(C.Voxel * 2.f, 200.f);
-    const float SupportFade = FMath::Max(C.Voxel * 2.f, S.PlateauSurfaceEdgeFadeCm * 0.35f);
-    const float SupportAlpha = SmoothStep(RequiredSupportDepth, RequiredSupportDepth + SupportFade, SupportDensity);
-
-    if (SupportAlpha <= KINDA_SMALL_NUMBER)
-    {
-        return Density;
-    }
-
-    const float BackFade = FMath::Max(C.Voxel * 2.f, S.PlateauSurfaceEdgeFadeCm);
-    const float BackAlpha = SmoothStep(-Depth, -Depth + BackFade, ActorX);
-    const float SideAlpha = 1.f - SmoothStep(HalfW - BackFade, HalfW, FMath::Abs(ActorY));
-
-    const float PlateauAlpha = FMath::Clamp(SupportAlpha * BackAlpha * SideAlpha, 0.f, 1.f);
-    if (PlateauAlpha <= KINDA_SMALL_NUMBER)
-    {
-        return Density;
-    }
-
-    const float TopSurfaceZ = FMath::Max(CliffTopZ, ComputeTopPlateauSurfaceZ(LocalCm));
-    const float EffectiveTopZ = FMath::Lerp(CliffTopZ, TopSurfaceZ, PlateauAlpha);
-    const float UpperLayerDensity = FMath::Min(EffectiveTopZ - LocalCm.Z, LocalCm.Z - CliffTopZ);
-
-    return FMath::Max(Density, UpperLayerDensity);
+    return Density;
 }
 
 void FVoxelDensityGenerator::InitSeedDomain()
@@ -446,7 +414,22 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     if (S.bAddTopFlatPlateau)
     {
         const float CliffTopZForBase = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
-        density = FMath::Min(density, CliffTopZForBase - Local.Z);
+
+        const float ActorXForPlateau = Local.X - C.FrontX;
+        const float PlateauDepth = FMath::Max(0.f, S.TopPlateauDepthCm);
+        const float PlateauHalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
+
+        const bool bInsidePlateauDomain =
+            PlateauDepth > KINDA_SMALL_NUMBER &&
+            ActorXForPlateau <= 0.f &&
+            ActorXForPlateau >= -PlateauDepth &&
+            FMath::Abs(Local.Y) <= PlateauHalfW;
+
+        const float TopCutZ = bInsidePlateauDomain
+            ? FMath::Max(CliffTopZForBase, ComputeTopPlateauSurfaceZ(Local))
+            : CliffTopZForBase;
+
+        density = FMath::Min(density, TopCutZ - Local.Z);
     }
 
     density = ApplyIntegratedTopPlateauCap(density, Local);
