@@ -15,7 +15,7 @@ class UCanvasPanelSlot;
  * - PlayerMarker: 플레이어 위치 마커 (기존 AltitudeWidget 마커 재활용)
  * - Color Tint: 날씨 이벤트 시 Image Color Tint로 색조 전환 (방식 2)
  */
-UCLASS()
+UCLASS(Blueprintable, BlueprintType)
 class PROTOTYPE_API UMinimapWidget : public UUserWidget
 {
     GENERATED_BODY()

@@ -485,32 +485,47 @@ void ADownfallCharacter::BeginPlay()
     }
 
     // ── SceneCapture2D 탐색 + 1회 캡처 ──────────────────────────
-    // 레벨에 ASceneCapture2D 배치 후 Tags에 "MinimapCapture" 추가 필요
+    // 태그 대신 클래스로 탐색 (레벨에 SceneCapture2D가 1개라고 가정)
+    // 여러 개일 경우 SceneCaptureActorTag로 필터링
     {
         TArray<AActor*> FoundCaptures;
-        UGameplayStatics::GetAllActorsWithTag(GetWorld(), SceneCaptureActorTag, FoundCaptures);
-        if (FoundCaptures.Num() > 0)
+        UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASceneCapture2D::StaticClass(), FoundCaptures);
+
+        // 태그가 있으면 태그로 필터링, 없으면 첫 번째 사용
+        AActor* TargetCapture = nullptr;
+        for (AActor* Actor : FoundCaptures)
         {
-            CachedSceneCapture = Cast<ASceneCapture2D>(FoundCaptures[0]);
+            if (SceneCaptureActorTag.IsNone() || Actor->Tags.Contains(SceneCaptureActorTag))
+            {
+                TargetCapture = Actor;
+                break;
+            }
+        }
+        // 태그 매칭 실패 시 첫 번째 SceneCapture2D 사용
+        if (!TargetCapture && FoundCaptures.Num() > 0)
+        {
+            TargetCapture = FoundCaptures[0];
+        }
+
+        if (TargetCapture)
+        {
+            CachedSceneCapture = Cast<ASceneCapture2D>(TargetCapture);
             if (CachedSceneCapture.IsValid())
             {
                 USceneCaptureComponent2D* CaptureComp =
                     CachedSceneCapture->GetCaptureComponent2D();
                 if (CaptureComp)
                 {
-                    // 스테이지 로드 직후 1회 캡처 (MountainGen 메시 생성 후)
-                    // 이후 Capture Every Frame = false 유지
                     CaptureComp->CaptureScene();
                     UE_LOG(LogDownFall, Log, TEXT("Minimap: SceneCapture2D captured (%s)"),
-                        *FoundCaptures[0]->GetName());
+                        *TargetCapture->GetName());
                 }
             }
         }
         else
         {
             UE_LOG(LogDownFall, Warning,
-                TEXT("Minimap: No actor with tag '%s' found. Add tag to SceneCapture2D actor."),
-                *SceneCaptureActorTag.ToString());
+                TEXT("Minimap: No SceneCapture2D found in level. Place one and assign RT_Minimap."));
         }
     }
         }
