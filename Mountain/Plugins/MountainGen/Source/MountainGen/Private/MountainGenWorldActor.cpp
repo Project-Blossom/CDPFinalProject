@@ -57,12 +57,16 @@ static void MG_WeldVertices_Quantized(FChunkMeshData& M, float EpsilonCm)
     TArray<FVector> NewVerts;
     TArray<FVector> NewNormals;
     TArray<FVector2D> NewUV0;
+    TArray<FLinearColor> NewColors;
     TArray<FProcMeshTangent> NewTangents;
+    TArray<int32> NewColorCounts;
 
     NewVerts.Reserve(V);
     NewNormals.Reserve(V);
     NewUV0.Reserve(V);
+    NewColors.Reserve(V);
     NewTangents.Reserve(V);
+    NewColorCounts.Reserve(V);
 
     TMap<FMGWeldKey, int32> CellToRep;
     CellToRep.Reserve(V);
@@ -97,6 +101,10 @@ static void MG_WeldVertices_Quantized(FChunkMeshData& M, float EpsilonCm)
             const FVector2D UV = M.UV0.IsValidIndex(i) ? M.UV0[i] : FVector2D::ZeroVector;
             NewUV0.Add(UV);
 
+            const FLinearColor Color = M.Colors.IsValidIndex(i) ? M.Colors[i] : FLinearColor::White;
+            NewColors.Add(Color);
+            NewColorCounts.Add(1);
+
             const FProcMeshTangent Tng = M.Tangents.IsValidIndex(i) ? M.Tangents[i] : FProcMeshTangent();
             NewTangents.Add(Tng);
         }
@@ -107,6 +115,12 @@ static void MG_WeldVertices_Quantized(FChunkMeshData& M, float EpsilonCm)
 
             const FVector N = M.Normals.IsValidIndex(i) ? M.Normals[i] : FVector::UpVector;
             NewNormals[RepIdx] += N;
+
+            if (M.Colors.IsValidIndex(i) && NewColors.IsValidIndex(RepIdx) && NewColorCounts.IsValidIndex(RepIdx))
+            {
+                NewColors[RepIdx] += M.Colors[i];
+                NewColorCounts[RepIdx] += 1;
+            }
         }
     }
 
@@ -114,6 +128,11 @@ static void MG_WeldVertices_Quantized(FChunkMeshData& M, float EpsilonCm)
     {
         if (!NewNormals[r].Normalize())
             NewNormals[r] = FVector::UpVector;
+
+        if (NewColors.IsValidIndex(r) && NewColorCounts.IsValidIndex(r) && NewColorCounts[r] > 1)
+        {
+            NewColors[r] /= static_cast<float>(NewColorCounts[r]);
+        }
     }
 
     TArray<int32> NewTris;
@@ -155,6 +174,7 @@ static void MG_WeldVertices_Quantized(FChunkMeshData& M, float EpsilonCm)
     Out.Vertices.Reserve(NewV);
     Out.Normals.Reserve(NewV);
     Out.UV0.Reserve(NewV);
+    Out.Colors.Reserve(NewV);
     Out.Tangents.Reserve(NewV);
 
     for (int32 r = 0; r < NewV; ++r)
@@ -164,6 +184,7 @@ static void MG_WeldVertices_Quantized(FChunkMeshData& M, float EpsilonCm)
         Out.Vertices.Add(NewVerts[r]);
         Out.Normals.Add(NewNormals[r]);
         Out.UV0.Add(NewUV0[r]);
+        Out.Colors.Add(NewColors.IsValidIndex(r) ? NewColors[r] : FLinearColor::White);
         Out.Tangents.Add(NewTangents[r]);
     }
 
@@ -282,6 +303,7 @@ static void MG_CullMeshIslands(FChunkMeshData& Out, int32 MinTrisToKeep, bool bK
                 New.Vertices.Add(Out.Vertices[o[i]]);
                 New.Normals.Add(Out.Normals.IsValidIndex(o[i]) ? Out.Normals[o[i]] : FVector::UpVector);
                 New.UV0.Add(Out.UV0.IsValidIndex(o[i]) ? Out.UV0[o[i]] : FVector2D::ZeroVector);
+                New.Colors.Add(Out.Colors.IsValidIndex(o[i]) ? Out.Colors[o[i]] : FLinearColor::White);
                 New.Tangents.Add(Out.Tangents.IsValidIndex(o[i]) ? Out.Tangents[o[i]] : FProcMeshTangent());
             }
             r[i] = idx;
@@ -653,39 +675,59 @@ static FORCEINLINE void MG_MakeTerrainUVAndTangent(
 
     const FVector AbsN(FMath::Abs(N.X), FMath::Abs(N.Y), FMath::Abs(N.Z));
 
-    FVector TangentAxis = FVector::RightVector;
+    FVector TangentX = FVector::RightVector;
+    FVector DesiredTangentY = FVector::ForwardVector;
 
     if (AbsN.Z >= AbsN.X && AbsN.Z >= AbsN.Y)
     {
+        // 상단/완만한 면: 월드 XY 투영
+        // U = +X, V = +Y
         OutUV = FVector2D(PLocalCm.X * UVScale, PLocalCm.Y * UVScale);
-        TangentAxis = FVector::RightVector;
+        TangentX = FVector::RightVector;
+        DesiredTangentY = FVector::ForwardVector;
     }
     else if (AbsN.X >= AbsN.Y)
     {
+        // X 방향을 보는 절벽: YZ 투영
+        // U = +Y, V = +Z
         OutUV = FVector2D(PLocalCm.Y * UVScale, PLocalCm.Z * UVScale);
-        TangentAxis = FVector(0.f, 1.f, 0.f);
+        TangentX = FVector::ForwardVector;
+        DesiredTangentY = FVector::UpVector;
     }
     else
     {
+        // Y 방향을 보는 절벽: XZ 투영
+        // U = +X, V = +Z
         OutUV = FVector2D(PLocalCm.X * UVScale, PLocalCm.Z * UVScale);
-        TangentAxis = FVector::RightVector;
+        TangentX = FVector::RightVector;
+        DesiredTangentY = FVector::UpVector;
     }
 
-    FVector T = TangentAxis - FVector::DotProduct(TangentAxis, N) * N;
-    if (!T.Normalize())
+    TangentX = TangentX - FVector::DotProduct(TangentX, N) * N;
+    if (!TangentX.Normalize())
     {
-        T = FVector::CrossProduct(FVector::UpVector, N);
-        if (!T.Normalize())
+        TangentX = FVector::CrossProduct(FVector::UpVector, N);
+        if (!TangentX.Normalize())
         {
-            T = FVector::CrossProduct(FVector::RightVector, N);
-            if (!T.Normalize())
+            TangentX = FVector::CrossProduct(FVector::RightVector, N);
+            if (!TangentX.Normalize())
             {
-                T = FVector::ForwardVector;
+                TangentX = FVector::ForwardVector;
             }
         }
     }
 
-    OutTangent = FProcMeshTangent(T, false);
+    DesiredTangentY = DesiredTangentY - FVector::DotProduct(DesiredTangentY, N) * N;
+    DesiredTangentY.Normalize();
+
+    FVector BuiltTangentY = FVector::CrossProduct(N, TangentX);
+    bool bFlipTangentY = false;
+    if (BuiltTangentY.Normalize() && DesiredTangentY.IsNormalized())
+    {
+        bFlipTangentY = FVector::DotProduct(BuiltTangentY, DesiredTangentY) < 0.f;
+    }
+
+    OutTangent = FProcMeshTangent(TangentX, bFlipTangentY);
 }
 
 static void MG_RecomputeNormalsAndTangents(FChunkMeshData& M)
@@ -699,6 +741,7 @@ static void MG_RecomputeNormalsAndTangents(FChunkMeshData& M)
     }
 
     const TArray<FVector> ExistingNormals = M.Normals;
+    const TArray<FLinearColor> ExistingColors = M.Colors;
 
     TArray<FVector> FallbackNormals;
     FallbackNormals.SetNumZeroed(V);
@@ -744,6 +787,7 @@ static void MG_RecomputeNormalsAndTangents(FChunkMeshData& M)
 
     M.Normals.SetNum(V);
     M.UV0.SetNum(V);
+    M.Colors.SetNum(V);
     M.Tangents.SetNum(V);
 
     for (int32 i = 0; i < V; ++i)
@@ -765,6 +809,15 @@ static void MG_RecomputeNormalsAndTangents(FChunkMeshData& M)
         MG_MakeTerrainUVAndTangent(M.Vertices[i], N, UV, Tangent);
         M.UV0[i] = UV;
         M.Tangents[i] = Tangent;
+
+        if (ExistingColors.IsValidIndex(i))
+        {
+            M.Colors[i] = ExistingColors[i];
+        }
+        else
+        {
+            M.Colors[i] = FLinearColor::White;
+        }
     }
 }
 
@@ -1280,11 +1333,10 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
         LastGenerationReport.SurfaceSampleCount = GeneratedSurfaceSamples.Num();
     }
 
-    ReusableColors.SetNumUninitialized(Result.MeshData.Vertices.Num());
-
-    for (FLinearColor& C : ReusableColors)
+    ReusableColors = Result.MeshData.Colors;
+    if (ReusableColors.Num() != Result.MeshData.Vertices.Num())
     {
-        C = FLinearColor::White;
+        ReusableColors.Init(FLinearColor::White, Result.MeshData.Vertices.Num());
     }
 
     ProcMesh->CreateMeshSection_LinearColor(
@@ -1675,11 +1727,10 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         MG_BuildZoneReports(GeneratedSurfaceSamples, GenerationZones, GetActorLocation(), LastGenerationReport.ZoneReports);
         LastGenerationReport.SurfaceSampleCount = GeneratedSurfaceSamples.Num();
 
-        ReusableColors.SetNumUninitialized(MeshData.Vertices.Num());
-
-        for (FLinearColor& C : ReusableColors)
+        ReusableColors = MeshData.Colors;
+        if (ReusableColors.Num() != MeshData.Vertices.Num())
         {
-            C = FLinearColor::White;
+            ReusableColors.Init(FLinearColor::White, MeshData.Vertices.Num());
         }
 
         ProcMesh->CreateMeshSection_LinearColor(
