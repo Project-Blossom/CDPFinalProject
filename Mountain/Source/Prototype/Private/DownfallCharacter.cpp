@@ -516,9 +516,18 @@ void ADownfallCharacter::BeginPlay()
                     CachedSceneCapture->GetCaptureComponent2D();
                 if (CaptureComp)
                 {
+                    // [테스트] ShowFlags.SetWireframe 방식 vs 레벨 ViewMode 방식 비교
+                    if (bCaptureWithWireframeShowFlag)
+                    {
+                        CaptureComp->ShowFlags.SetWireframe(true);
+                        UE_LOG(LogDownFall, Log, TEXT("Minimap: ShowFlags.SetWireframe(true) 적용"));
+                    }
+
                     CaptureComp->CaptureScene();
-                    UE_LOG(LogDownFall, Log, TEXT("Minimap: SceneCapture2D captured (%s)"),
-                        *TargetCapture->GetName());
+
+                    UE_LOG(LogDownFall, Log, TEXT("Minimap: SceneCapture2D captured (%s) [Wireframe=%s]"),
+                        *TargetCapture->GetName(),
+                        bCaptureWithWireframeShowFlag ? TEXT("ShowFlag") : TEXT("LevelViewMode"));
                 }
             }
         }

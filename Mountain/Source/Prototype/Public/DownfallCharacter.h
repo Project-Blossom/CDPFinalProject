@@ -928,6 +928,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
     FName SceneCaptureActorTag = FName("MinimapCapture");
 
+    // [테스트] ShowFlags.SetWireframe(true) 후 캡처 여부
+    // FreeRunSetup 레벨 ViewMode 고정 방식과 비교 실험용
+    // true: C++에서 강제 Wireframe ShowFlag 적용
+    // false: 레벨 ViewMode 설정에 의존
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    bool bCaptureWithWireframeShowFlag = false;
+
     // 미니맵 Orthographic 캡처 범위 (cm) — SceneCapture2D OrthoWidth와 동일하게 설정
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
         meta = (ClampMin = "100.0"))
