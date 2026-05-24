@@ -643,23 +643,67 @@ static void MG_FillReportMetrics(const FMountainGenSettings& S, const FMGMetrics
 // Recompute normals / tangents after mesh topology changes
 // ============================================================
 
+static FORCEINLINE void MG_MakeTerrainUVAndTangent(
+    const FVector& PLocalCm,
+    const FVector& N,
+    FVector2D& OutUV,
+    FProcMeshTangent& OutTangent)
+{
+    constexpr float UVScale = 0.001f;
+
+    const FVector AbsN(FMath::Abs(N.X), FMath::Abs(N.Y), FMath::Abs(N.Z));
+
+    FVector TangentAxis = FVector::RightVector;
+
+    if (AbsN.Z >= AbsN.X && AbsN.Z >= AbsN.Y)
+    {
+        OutUV = FVector2D(PLocalCm.X * UVScale, PLocalCm.Y * UVScale);
+        TangentAxis = FVector::RightVector;
+    }
+    else if (AbsN.X >= AbsN.Y)
+    {
+        OutUV = FVector2D(PLocalCm.Y * UVScale, PLocalCm.Z * UVScale);
+        TangentAxis = FVector(0.f, 1.f, 0.f);
+    }
+    else
+    {
+        OutUV = FVector2D(PLocalCm.X * UVScale, PLocalCm.Z * UVScale);
+        TangentAxis = FVector::RightVector;
+    }
+
+    FVector T = TangentAxis - FVector::DotProduct(TangentAxis, N) * N;
+    if (!T.Normalize())
+    {
+        T = FVector::CrossProduct(FVector::UpVector, N);
+        if (!T.Normalize())
+        {
+            T = FVector::CrossProduct(FVector::RightVector, N);
+            if (!T.Normalize())
+            {
+                T = FVector::ForwardVector;
+            }
+        }
+    }
+
+    OutTangent = FProcMeshTangent(T, false);
+}
+
 static void MG_RecomputeNormalsAndTangents(FChunkMeshData& M)
 {
     const int32 V = M.Vertices.Num();
     const int32 I = M.Triangles.Num();
 
-    if (V <= 0 || I < 3)
+    if (V <= 0)
     {
         return;
     }
 
-    const TArray<FVector> OldNormals = M.Normals;
+    const TArray<FVector> ExistingNormals = M.Normals;
 
-    M.Normals.SetNumZeroed(V);
-    M.Tangents.SetNumZeroed(V);
+    TArray<FVector> FallbackNormals;
+    FallbackNormals.SetNumZeroed(V);
 
     const int32 NumTris = I / 3;
-
     for (int32 t = 0; t < NumTris; ++t)
     {
         const int32 IA = M.Triangles[t * 3 + 0];
@@ -677,62 +721,50 @@ static void MG_RecomputeNormalsAndTangents(FChunkMeshData& M)
         const FVector B = M.Vertices[IB];
         const FVector C = M.Vertices[IC];
 
-        const FVector AB = B - A;
-        const FVector AC = C - A;
-
-        FVector FaceNormal = FVector::CrossProduct(AB, AC);
-
+        FVector FaceNormal = FVector::CrossProduct(B - A, C - A);
         if (!FaceNormal.Normalize())
         {
             continue;
         }
 
         FVector ReferenceNormal = FVector::ZeroVector;
+        if (ExistingNormals.IsValidIndex(IA)) ReferenceNormal += ExistingNormals[IA];
+        if (ExistingNormals.IsValidIndex(IB)) ReferenceNormal += ExistingNormals[IB];
+        if (ExistingNormals.IsValidIndex(IC)) ReferenceNormal += ExistingNormals[IC];
 
-        if (OldNormals.IsValidIndex(IA)) ReferenceNormal += OldNormals[IA];
-        if (OldNormals.IsValidIndex(IB)) ReferenceNormal += OldNormals[IB];
-        if (OldNormals.IsValidIndex(IC)) ReferenceNormal += OldNormals[IC];
-
-        if (ReferenceNormal.Normalize())
+        if (ReferenceNormal.Normalize() && FVector::DotProduct(FaceNormal, ReferenceNormal) < 0.f)
         {
-            if (FVector::DotProduct(FaceNormal, ReferenceNormal) < 0.f)
-            {
-                FaceNormal *= -1.f;
-            }
+            FaceNormal *= -1.f;
         }
 
-        M.Normals[IA] += FaceNormal;
-        M.Normals[IB] += FaceNormal;
-        M.Normals[IC] += FaceNormal;
+        FallbackNormals[IA] += FaceNormal;
+        FallbackNormals[IB] += FaceNormal;
+        FallbackNormals[IC] += FaceNormal;
     }
+
+    M.Normals.SetNum(V);
+    M.UV0.SetNum(V);
+    M.Tangents.SetNum(V);
 
     for (int32 i = 0; i < V; ++i)
     {
-        if (!M.Normals[i].Normalize())
+        FVector N = ExistingNormals.IsValidIndex(i) ? ExistingNormals[i] : FVector::ZeroVector;
+        if (!N.Normalize())
         {
-            if (OldNormals.IsValidIndex(i) && OldNormals[i].SizeSquared() > KINDA_SMALL_NUMBER)
+            N = FallbackNormals.IsValidIndex(i) ? FallbackNormals[i] : FVector::ZeroVector;
+            if (!N.Normalize())
             {
-                M.Normals[i] = OldNormals[i].GetSafeNormal();
-            }
-            else
-            {
-                M.Normals[i] = FVector::UpVector;
+                N = FVector::UpVector;
             }
         }
 
-        FVector TangentX = FVector::CrossProduct(FVector::UpVector, M.Normals[i]);
+        M.Normals[i] = N;
 
-        if (TangentX.SizeSquared() < KINDA_SMALL_NUMBER)
-        {
-            TangentX = FVector::CrossProduct(FVector::RightVector, M.Normals[i]);
-        }
-
-        if (!TangentX.Normalize())
-        {
-            TangentX = FVector::ForwardVector;
-        }
-
-        M.Tangents[i] = FProcMeshTangent(TangentX, false);
+        FVector2D UV;
+        FProcMeshTangent Tangent;
+        MG_MakeTerrainUVAndTangent(M.Vertices[i], N, UV, Tangent);
+        M.UV0[i] = UV;
+        M.Tangents[i] = Tangent;
     }
 }
 

@@ -78,25 +78,21 @@ float FVoxelDensityGenerator::ComputeTopPlateauSurfaceZ(const FVector& LocalCm) 
     const float TopBaseZ = S.BaseHeightCm + C.CliffH + S.TopPlateauHeightOffsetCm;
 
     const float Strength = FMath::Max(0.f, S.PlateauSurfaceNoiseStrengthCm);
-    const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
+    const float Depth = FMath::Max(C.Voxel * 5.f, S.TopPlateauDepthCm);
 
-    const float DistanceBehindFront = FMath::Max(0.f, -ActorX);
-    const float FrontRiseAlpha = SmoothStep01(DistanceBehindFront / FMath::Max(C.Voxel * 5.f, Depth));
+    const float DistanceBehindContact = FMath::Max(0.f, -ActorX);
+    const float HillT = SmoothStep01(DistanceBehindContact / Depth);
 
     const float FadeCm = FMath::Max(0.f, S.PlateauSurfaceEdgeFadeCm);
     float EdgeAlpha = 1.f;
     if (FadeCm > KINDA_SMALL_NUMBER)
     {
-        const float XBack = -Depth;
         const float HalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
-        const float DistBack = FMath::Max(0.f, ActorX - XBack);
         const float DistLeft = FMath::Max(0.f, ActorY + HalfW);
         const float DistRight = FMath::Max(0.f, HalfW - ActorY);
-        const float EdgeDist = FMath::Min(DistBack, FMath::Min(DistLeft, DistRight));
+        const float EdgeDist = FMath::Min(DistLeft, DistRight);
         EdgeAlpha = SmoothStep01(EdgeDist / FadeCm);
     }
-
-    const float RiseAlpha = FMath::Clamp(FrontRiseAlpha * EdgeAlpha, 0.f, 1.f);
 
     float ReliefCm = 0.f;
     if (Strength > KINDA_SMALL_NUMBER)
@@ -131,114 +127,17 @@ float FVoxelDensityGenerator::ComputeTopPlateauSurfaceZ(const FVector& LocalCm) 
             -1.f,
             1.f);
 
-        ReliefCm = SignedHill * Strength * 0.75f;
+        ReliefCm = SignedHill * Strength * 0.65f * HillT;
     }
 
-    const float BaseRiseCm = FMath::Max(0.f, TopBaseZ - CliffTopZ) + Strength * 0.30f;
-    const float LocalRiseCm = FMath::Max(0.f, BaseRiseCm + ReliefCm);
+    const float BaseHillRiseCm = FMath::Max(0.f, TopBaseZ - CliffTopZ) + Strength * 0.55f;
+    const float HillRiseCm = FMath::Max(0.f, BaseHillRiseCm * HillT + ReliefCm);
 
-    return CliffTopZ + LocalRiseCm * RiseAlpha;
+    return CliffTopZ + HillRiseCm * EdgeAlpha;
 }
 
 float FVoxelDensityGenerator::ApplyIntegratedTopPlateauCap(float Density, const FVector& LocalCm) const
 {
-    if (!S.bAddTopFlatPlateau)
-    {
-        return Density;
-    }
-
-    const float ActorX = LocalCm.X - C.FrontX;
-    const float ActorY = LocalCm.Y;
-
-    const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
-    if (Depth <= KINDA_SMALL_NUMBER)
-    {
-        return Density;
-    }
-
-    const float HalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
-    if (ActorX > 0.f || ActorX < -Depth || FMath::Abs(ActorY) > HalfW)
-    {
-        return Density;
-    }
-
-    auto SampleBaseCliffNoTop = [this](const FVector& L) -> float
-        {
-            const FVector Domain = SeededDomain(L);
-            const float z01 = Clamp01((L.Z - S.BaseHeightCm) / C.CliffH);
-
-            float D = (C.FrontX - L.X);
-
-            {
-                const float insideDepth = (C.FrontX - L.X);
-                const float d = FMath::Max(0.f, insideDepth);
-                const float nearFaceMask = 1.f - SmoothStep(0.f, C.OverhangBand, d);
-
-                const float mid = 1.f - FMath::Abs(2.f * z01 - 1.f);
-                const float heightMask = FMath::Pow(FMath::Clamp(mid, 0.f, 1.f), 1.6f);
-
-                float Amp = C.OverhangAmp;
-                if (S.TerrainAlgorithm == EMGTerrainAlgorithm::DensityFBM)
-                {
-                    Amp *= 0.35f;
-                }
-                else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::LayeredNoise)
-                {
-                    Amp *= 0.70f;
-                }
-                else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::ZoneMaskedDensity)
-                {
-                    const float TopBoost = SmoothStep(0.35f, 0.90f, z01);
-                    Amp *= FMath::Lerp(0.55f, 1.25f, TopBoost);
-                }
-
-                if (Amp != 0.f && nearFaceMask != 0.f && heightMask != 0.f)
-                {
-                    const float r = RidgedFBM01(Domain / C.OverhangScale, 5, 2.0f, 0.55f);
-                    const float shaped = (r - C.OverhangBias);
-                    D += shaped * Amp * nearFaceMask * heightMask;
-                }
-            }
-
-            if (C.BaseFieldAmp != 0.f)
-            {
-                float n = FBM3D(Domain / C.Base3DScale, C.Base3DOct, 2.0f, 0.5f);
-
-                if (S.TerrainAlgorithm == EMGTerrainAlgorithm::LayeredNoise)
-                {
-                    const float Layer = FBM3D((Domain + FVector(9131.f, -2217.f, 5411.f)) / (C.Base3DScale * 0.42f), FMath::Max(1, C.Base3DOct - 1), 2.15f, 0.48f);
-                    n = n * 0.72f + Layer * 0.28f;
-                }
-                else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::ZoneMaskedDensity)
-                {
-                    const float HeightMask = FMath::Lerp(0.75f, 1.20f, SmoothStep(0.20f, 0.85f, z01));
-                    n *= HeightMask;
-                }
-
-                D += n * C.BaseFieldAmp;
-            }
-
-            if (C.DetailAmp != 0.f)
-            {
-                float n = FBM3D(Domain / C.DetailScale, C.DetailOct, 2.0f, 0.55f);
-                float DetailAmp = C.DetailAmp;
-
-                if (S.TerrainAlgorithm == EMGTerrainAlgorithm::DensityFBM)
-                {
-                    DetailAmp *= 0.55f;
-                }
-                else if (S.TerrainAlgorithm == EMGTerrainAlgorithm::LayeredNoise)
-                {
-                    n = n * 0.70f + RidgedFBM01((Domain + FVector(-3711.f, 7187.f, 1297.f)) / (C.DetailScale * 0.75f), C.DetailOct, 2.0f, 0.50f) * 0.30f;
-                    DetailAmp *= 1.15f;
-                }
-
-                D += n * DetailAmp;
-            }
-
-            return D;
-        };
-
     return Density;
 }
 
@@ -414,18 +313,18 @@ float FVoxelDensityGenerator::SampleDensity(const FVector& WorldPosCm) const
     if (S.bAddTopFlatPlateau)
     {
         const float CliffTopZForBase = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
-
         const float ActorXForPlateau = Local.X - C.FrontX;
-        const float PlateauDepth = FMath::Max(0.f, S.TopPlateauDepthCm);
-        const float PlateauHalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
+        const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
+        const float HalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
 
-        const bool bInsidePlateauDomain =
-            PlateauDepth > KINDA_SMALL_NUMBER &&
+        const float BackPaddingCm = C.Voxel * 4.f;
+        const bool bInsidePlateauHillDomain =
+            Depth > KINDA_SMALL_NUMBER &&
             ActorXForPlateau <= 0.f &&
-            ActorXForPlateau >= -PlateauDepth &&
-            FMath::Abs(Local.Y) <= PlateauHalfW;
+            ActorXForPlateau >= -(Depth + BackPaddingCm) &&
+            FMath::Abs(Local.Y) <= HalfW;
 
-        const float TopCutZ = bInsidePlateauDomain
+        const float TopCutZ = bInsidePlateauHillDomain
             ? FMath::Max(CliffTopZForBase, ComputeTopPlateauSurfaceZ(Local))
             : CliffTopZForBase;
 
