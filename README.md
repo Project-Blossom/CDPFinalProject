@@ -1,2 +1,0 @@
-# CDPFinalProject
-ComprehensiveDesignPlanning_GraduationProject

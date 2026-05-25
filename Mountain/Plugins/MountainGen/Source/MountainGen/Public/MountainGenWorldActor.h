@@ -289,10 +289,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "MountainGen|Spawn")
     float GetSignedFrontDepthCm(const FVector& WorldPoint) const
     {
-        // Actual cliff front air is on +X side.
-        // Terrain density uses (FrontX - LocalX), so solid is LocalX < FrontX
-        // and the visible/front air side is LocalX > FrontX.
-        return WorldPoint.X - GetFrontSurfaceWorldX();
+        const FVector TerrainOrigin = GetTerrainOriginWorld();
+        const float FrontX = FMath::Max(200.f, Settings.CliffThicknessCm);
+        const float LocalX = WorldPoint.X - TerrainOrigin.X;
+        return (FrontX - LocalX);
     }
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen|Query")

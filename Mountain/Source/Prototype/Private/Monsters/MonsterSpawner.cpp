@@ -172,8 +172,8 @@ bool AMonsterSpawner::GetFrontBandBounds(FBox& OutBounds) const
 
     const float FrontX = TargetMountain->GetFrontSurfaceWorldX();
 
-    const float MinX = FrontX - 50.0f;
-    const float MaxX = FrontX + AllowedDepth;
+    const float MinX = FrontX - AllowedDepth;
+    const float MaxX = FrontX + 200.0f;
 
     const FVector Min(
         MinX,
@@ -475,10 +475,8 @@ bool AMonsterSpawner::IsPointWithinFrontSpawnBand(const FVector& WorldPoint) con
         return false;
     }
 
-    // Mountain density makes the solid cliff extend toward -X.
-    // Therefore the actual front/playable air side is +X from GetFrontSurfaceWorldX().
-    const float SignedFrontDepth = WorldPoint.X - TargetMountain->GetFrontSurfaceWorldX();
-    if (SignedFrontDepth < -50.0f)
+    const float SignedFrontDepth = TargetMountain->GetSignedFrontDepthCm(WorldPoint);
+    if (SignedFrontDepth < 0.0f)
     {
         return false;
     }
@@ -491,51 +489,6 @@ bool AMonsterSpawner::IsPointWithinFrontSpawnBand(const FVector& WorldPoint) con
     return SignedFrontDepth <= AllowedDepth;
 }
 
-bool AMonsterSpawner::IsFrontFacingSurface(const FHitResult& Hit) const
-{
-    if (!TargetMountain || Hit.GetActor() != TargetMountain)
-    {
-        return false;
-    }
-
-    if (!IsPointWithinFrontSpawnBand(Hit.ImpactPoint))
-    {
-        return false;
-    }
-
-    const FVector FrontDir = FVector::ForwardVector; // +X is the actual cliff front side.
-    return FVector::DotProduct(Hit.ImpactNormal.GetSafeNormal(), FrontDir) >= FrontFacingNormalDotMin;
-}
-
-bool AMonsterSpawner::TraceFrontCliffFromAir(const FVector& AirLocation, float TraceDistance, FHitResult& OutHit) const
-{
-    if (!GetWorld() || !TargetMountain)
-    {
-        return false;
-    }
-
-    const float SafeDistance = FMath::Max(100.0f, TraceDistance);
-    const FVector FrontDir = FVector::ForwardVector;
-
-    // Start from the +X air side and trace backward into the cliff.
-    const FVector Start = AirLocation + FrontDir * 20.0f;
-    const FVector End = AirLocation - FrontDir * SafeDistance;
-
-    FHitResult Hit;
-    if (!TraceMountainOnly(Start, End, Hit))
-    {
-        return false;
-    }
-
-    if (!IsFrontFacingSurface(Hit))
-    {
-        return false;
-    }
-
-    OutHit = Hit;
-    return true;
-}
-
 bool AMonsterSpawner::SampleMountainSurface(FHitResult& OutHit, float MinAbsNormalZ, float MaxAbsNormalZ, ESpawnFailReason* OutFailReason) const
 {
     if (OutFailReason)
@@ -544,35 +497,27 @@ bool AMonsterSpawner::SampleMountainSurface(FHitResult& OutHit, float MinAbsNorm
     }
 
     FBox Bounds;
-    if (!GetMountainBounds(Bounds) || !TargetMountain)
+    if (!GetMountainBounds(Bounds))
     {
         return false;
     }
 
-    const float FrontX = TargetMountain->GetFrontSurfaceWorldX();
-    const float TraceBackDistance = FMath::Max(
-        Bounds.GetSize().X + BoundsPadding + 1000.0f,
-        FrontSpawnDepthOverrideCm + 2000.0f
-    );
-
-    const float YMin = Bounds.Min.Y - 300.0f;
-    const float YMax = Bounds.Max.Y + 300.0f;
-    const float ZMin = Bounds.Min.Z + 80.0f;
-    const float ZMax = Bounds.Max.Z + 500.0f;
+    const FVector Center = Bounds.GetCenter();
+    const FVector Extent = Bounds.GetExtent() + FVector(BoundsPadding);
 
     bool bSawFrontBandReject = false;
 
-    // Do not shoot random rays through the whole mountain.
-    // Shoot only from +X front air toward -X, so the first hit is the visible front cliff.
-    for (int32 Attempt = 0; Attempt < 128; ++Attempt)
+    for (int32 Attempt = 0; Attempt < 96; ++Attempt)
     {
-        const FVector Start(
-            FrontX + FMath::Max(800.0f, FrontSpawnDepthOverrideCm),
-            FMath::FRandRange(YMin, YMax),
-            FMath::FRandRange(ZMin, ZMax)
-        );
+        FVector Dir = FMath::VRand();
+        if (Dir.IsNearlyZero())
+        {
+            Dir = FVector::ForwardVector;
+        }
+        Dir.Normalize();
 
-        const FVector End = Start - FVector::ForwardVector * TraceBackDistance;
+        const FVector Start = Center + FVector(Dir.X * Extent.X, Dir.Y * Extent.Y, Dir.Z * Extent.Z);
+        const FVector End = Center - FVector(Dir.X * Extent.X, Dir.Y * Extent.Y, Dir.Z * Extent.Z);
 
         FHitResult Hit;
         if (!TraceMountainOnly(Start, End, Hit))
@@ -583,11 +528,6 @@ bool AMonsterSpawner::SampleMountainSurface(FHitResult& OutHit, float MinAbsNorm
         if (!IsPointWithinFrontSpawnBand(Hit.ImpactPoint))
         {
             bSawFrontBandReject = true;
-            continue;
-        }
-
-        if (!IsFrontFacingSurface(Hit))
-        {
             continue;
         }
 
@@ -783,7 +723,7 @@ bool AMonsterSpawner::FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpa
     FVector SurfaceNormal = FVector::UpVector;
     FVector SurfacePoint = FVector::ZeroVector;
 
-    if (bRequireCliffProximityForFlying || true)
+    if (bRequireCliffProximityForFlying)
     {
         FHitResult SurfaceHit;
         if (!SampleMountainSurface(SurfaceHit, 0.0f, 1.0f, &OutFailReason))
@@ -819,20 +759,6 @@ bool AMonsterSpawner::FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpa
     if (!IsPointWithinFrontSpawnBand(CandidateLocation))
     {
         OutFailReason = ESpawnFailReason::OutsideFrontBand;
-        return false;
-    }
-
-    FHitResult FrontCheckHit;
-    if (!TraceFrontCliffFromAir(CandidateLocation, PlatformMaxWallDistance + 800.0f, FrontCheckHit))
-    {
-        OutFailReason = ESpawnFailReason::FacingTraceFailed;
-        return false;
-    }
-
-    const float PlatformWallDistance = FVector::Dist(CandidateLocation, FrontCheckHit.ImpactPoint);
-    if (PlatformWallDistance < PlatformMinWallDistance || PlatformWallDistance > PlatformMaxWallDistance + PlatformPushOutStep * PlatformMaxPushOutSteps)
-    {
-        OutFailReason = ESpawnFailReason::HeightOutOfRange;
         return false;
     }
 
@@ -954,7 +880,7 @@ bool AMonsterSpawner::FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpa
 
     FVector CandidateLocation = FVector::ZeroVector;
 
-    if (bRequireCliffProximityForFlying || true)
+    if (bRequireCliffProximityForFlying)
     {
         FHitResult SurfaceHit;
         if (!SampleMountainSurface(SurfaceHit, 0.0f, 1.0f, &OutFailReason))
@@ -982,20 +908,6 @@ bool AMonsterSpawner::FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpa
     if (!IsPointWithinFrontSpawnBand(CandidateLocation))
     {
         OutFailReason = ESpawnFailReason::OutsideFrontBand;
-        return false;
-    }
-
-    FHitResult FrontCheckHit;
-    if (!TraceFrontCliffFromAir(CandidateLocation, AttackerMaxWallDistance + 800.0f, FrontCheckHit))
-    {
-        OutFailReason = ESpawnFailReason::FacingTraceFailed;
-        return false;
-    }
-
-    const float AttackerWallDistance = FVector::Dist(CandidateLocation, FrontCheckHit.ImpactPoint);
-    if (AttackerWallDistance < AttackerMinWallDistance || AttackerWallDistance > AttackerMaxWallDistance)
-    {
-        OutFailReason = ESpawnFailReason::HeightOutOfRange;
         return false;
     }
 
@@ -1084,7 +996,7 @@ void AMonsterSpawner::SpawnMonsters()
     FSpawnFailStats AttackerStats;
 
     FActorSpawnParameters SpawnParams;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
     if (WallCrawlerClass)
     {

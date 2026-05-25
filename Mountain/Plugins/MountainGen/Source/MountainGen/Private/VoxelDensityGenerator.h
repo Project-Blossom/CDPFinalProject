@@ -19,12 +19,6 @@ struct FVoxelDensityGenerator
 
     float SampleDensity(const FVector& WorldPosCm) const;
 
-    bool TryComputeTopPlateauSurfaceNormal(
-        const FVector& WorldPosCm,
-        float ToleranceCm,
-        FVector& OutNormal,
-        float& OutWeight) const;
-
 private:
     static FORCEINLINE float Clamp01(float x) { return FMath::Clamp(x, 0.f, 1.f); }
 

@@ -8,6 +8,5 @@ struct FChunkMeshData
     TArray<int32> Triangles;
     TArray<FVector> Normals;
     TArray<FVector2D> UV0;
-    TArray<FLinearColor> Colors;
     TArray<FProcMeshTangent> Tangents;
 };
