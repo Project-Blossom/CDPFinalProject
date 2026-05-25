@@ -141,6 +141,136 @@ float FVoxelDensityGenerator::ApplyIntegratedTopPlateauCap(float Density, const 
     return Density;
 }
 
+
+bool FVoxelDensityGenerator::TryComputeTopPlateauSurfaceNormal(
+    const FVector& WorldPosCm,
+    float ToleranceCm,
+    FVector& OutNormal,
+    float& OutWeight) const
+{
+    OutNormal = FVector::ZeroVector;
+    OutWeight = 0.f;
+
+    if (!S.bAddTopFlatPlateau)
+    {
+        return false;
+    }
+
+    const FVector Local = WorldPosCm - TerrainOriginWorld;
+    const float ActorX = Local.X - C.FrontX;
+    const float ActorY = Local.Y;
+
+    const float Depth = FMath::Max(0.f, S.TopPlateauDepthCm);
+    if (Depth <= KINDA_SMALL_NUMBER)
+    {
+        return false;
+    }
+
+    const float HalfW = FMath::Max(10.f, S.CliffHalfWidthCm);
+    const float BackPaddingCm = C.Voxel * 4.f;
+
+    const float ContactForwardBlendCm = FMath::Max(
+        C.Voxel * 8.f,
+        FMath::Max(S.PlateauSurfaceEdgeFadeCm * 1.50f, S.TopPlateauMaxConformDropCm * 0.35f));
+
+    const bool bInsidePlateauDomain =
+        ActorX <= ContactForwardBlendCm &&
+        ActorX >= -(Depth + BackPaddingCm) &&
+        FMath::Abs(ActorY) <= HalfW;
+
+    if (!bInsidePlateauDomain)
+    {
+        return false;
+    }
+
+    const float CliffTopZForBase = S.BaseHeightCm + C.CliffH - FMath::Max(0.f, S.TopPlateauContactOverlapDownCm);
+
+    const float TopCutZ = (ActorX <= 0.f)
+        ? FMath::Max(CliffTopZForBase, ComputeTopPlateauSurfaceZ(Local))
+        : CliffTopZForBase;
+
+    const float Tol = FMath::Max(C.Voxel * 1.25f, ToleranceCm);
+
+    const float SignedDistanceToTop = Local.Z - TopCutZ;
+    const float DistanceToTopSurface = FMath::Abs(SignedDistanceToTop);
+    const float BelowTopDepth = FMath::Max(0.f, -SignedDistanceToTop);
+
+    const float ContactDownBlendDepth = FMath::Max(
+        C.Voxel * 12.f,
+        FMath::Max(S.PlateauSurfaceEdgeFadeCm * 1.75f, S.TopPlateauMaxConformDropCm * 0.85f));
+
+    const bool bNearTopSurface = DistanceToTopSurface <= Tol;
+    const bool bInsideContactShoulderBand =
+        SignedDistanceToTop <= Tol &&
+        BelowTopDepth <= ContactDownBlendDepth;
+
+    const bool bInsideFrontLipBand =
+        ActorX > 0.f &&
+        ActorX <= ContactForwardBlendCm &&
+        SignedDistanceToTop <= Tol &&
+        BelowTopDepth <= ContactDownBlendDepth;
+
+    if (!bNearTopSurface && !bInsideContactShoulderBand && !bInsideFrontLipBand)
+    {
+        return false;
+    }
+
+    const float Step = FMath::Max(C.Voxel, 100.f);
+
+    FVector LXp = Local;
+    FVector LXm = Local;
+    FVector LYp = Local;
+    FVector LYm = Local;
+
+    LXp.X += Step;
+    LXm.X -= Step;
+    LYp.Y += Step;
+    LYm.Y -= Step;
+
+    const auto EvalTopZ = [this, CliffTopZForBase](const FVector& L) -> float
+        {
+            return FMath::Max(CliffTopZForBase, ComputeTopPlateauSurfaceZ(L));
+        };
+
+    const float DzDx = (EvalTopZ(LXp) - EvalTopZ(LXm)) / (Step * 2.f);
+    const float DzDy = (EvalTopZ(LYp) - EvalTopZ(LYm)) / (Step * 2.f);
+
+    FVector N(-DzDx, -DzDy, 1.f);
+    if (!N.Normalize())
+    {
+        N = FVector::UpVector;
+    }
+
+    if (N.Z < 0.f)
+    {
+        N *= -1.f;
+    }
+
+    const float SurfaceWeight = 1.f - SmoothStep01(DistanceToTopSurface / Tol);
+
+    const float ShoulderWeight = 1.f - SmoothStep01(BelowTopDepth / ContactDownBlendDepth);
+
+    const float ContactBlendLen = FMath::Max(C.Voxel * 8.f, S.PlateauSurfaceEdgeFadeCm * 1.25f);
+    const float ContactT = (ActorX <= 0.f)
+        ? SmoothStep01(FMath::Clamp((-ActorX) / ContactBlendLen, 0.f, 1.f))
+        : 0.f;
+
+    const float FrontLipT = (ActorX > 0.f)
+        ? (1.f - SmoothStep01(FMath::Clamp(ActorX / ContactForwardBlendCm, 0.f, 1.f)))
+        : 0.f;
+
+    const float ContactWeight = (ActorX <= 0.f)
+        ? FMath::Lerp(0.70f, 1.f, ContactT)
+        : FMath::Lerp(0.55f, 0.90f, FrontLipT);
+
+    const float RawWeight = FMath::Max(SurfaceWeight, ShoulderWeight * (ActorX > 0.f ? 0.95f : 0.75f));
+
+    OutNormal = N;
+    OutWeight = FMath::Clamp(RawWeight * ContactWeight, 0.f, 1.f);
+
+    return OutWeight > KINDA_SMALL_NUMBER;
+}
+
 void FVoxelDensityGenerator::InitSeedDomain()
 {
     FRandomStream Rng(Seed ^ 0x6C8E9CF5);

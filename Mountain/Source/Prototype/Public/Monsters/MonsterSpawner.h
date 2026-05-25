@@ -138,8 +138,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "0.0"))
     float FrontSpawnDepthOverrideCm = 6000.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float FrontFacingNormalDotMin = 0.35f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General")
-    bool bRequireCliffProximityForFlying = false;
+    bool bRequireCliffProximityForFlying = true;
 
     // =====================================================
     // Monster Classes
@@ -256,7 +259,7 @@ public:
     void ClearAllMonsters();
 
     UFUNCTION()
-    void HandleMountainGenerated(AMountainGenWorldActor* Generator);
+    void HandleMountainGenerated(AActor* Generator);
 
 private:
     bool ResolveMountain();
@@ -277,6 +280,8 @@ private:
     bool SampleMountainSurface(FHitResult& OutHit, float MinAbsNormalZ, float MaxAbsNormalZ, ESpawnFailReason* OutFailReason = nullptr) const;
     bool SampleFrontBandAirLocation(FVector& OutLocation, float HorizontalRadius, float MinZOffset, float MaxZOffset, EMonsterSpawnKind Kind) const;
     bool IsPointWithinFrontSpawnBand(const FVector& WorldPoint) const;
+    bool IsFrontFacingSurface(const FHitResult& Hit) const;
+    bool TraceFrontCliffFromAir(const FVector& AirLocation, float TraceDistance, FHitResult& OutHit) const;
 
     bool FindWallCrawlerSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
     bool FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;

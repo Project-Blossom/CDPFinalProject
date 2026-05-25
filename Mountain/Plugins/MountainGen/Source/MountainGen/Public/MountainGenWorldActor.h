@@ -206,7 +206,7 @@ struct FMGAsyncResult
     int32 RemovedBadTriangleCount = 0;
 };
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMountainGenerated, AMountainGenWorldActor*, Generator);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMountainGenerated, AActor*, Generator);
 
 UCLASS()
 class MOUNTAINGEN_API AMountainGenWorldActor : public AActor
@@ -289,10 +289,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "MountainGen|Spawn")
     float GetSignedFrontDepthCm(const FVector& WorldPoint) const
     {
-        const FVector TerrainOrigin = GetTerrainOriginWorld();
-        const float FrontX = FMath::Max(200.f, Settings.CliffThicknessCm);
-        const float LocalX = WorldPoint.X - TerrainOrigin.X;
-        return (FrontX - LocalX);
+        return WorldPoint.X - GetFrontSurfaceWorldX();
     }
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen|Query")

@@ -44,42 +44,59 @@ namespace
 
         const FVector AbsN(FMath::Abs(N.X), FMath::Abs(N.Y), FMath::Abs(N.Z));
 
-        FVector TangentAxis = FVector::RightVector;
+        FVector TangentX = FVector::RightVector;
+        FVector DesiredTangentY = FVector::ForwardVector;
 
         if (AbsN.Z >= AbsN.X && AbsN.Z >= AbsN.Y)
         {
-            // 상단/완만한 면: 위에서 내려다본 월드 XY 투영
+            // 상단/완만한 면: 월드 XY 투영
+            // U = +X, V = +Y
             OutUV = FVector2D(PLocalCm.X * UVScale, PLocalCm.Y * UVScale);
-            TangentAxis = FVector::RightVector;
+            TangentX = FVector::RightVector;
+            DesiredTangentY = FVector::ForwardVector;
         }
         else if (AbsN.X >= AbsN.Y)
         {
-            // X방향을 보는 절벽: YZ 투영
+            // X 방향을 보는 절벽: YZ 투영
+            // U = +Y, V = +Z
             OutUV = FVector2D(PLocalCm.Y * UVScale, PLocalCm.Z * UVScale);
-            TangentAxis = FVector(0.f, 1.f, 0.f);
+            TangentX = FVector::ForwardVector;
+            DesiredTangentY = FVector::UpVector;
         }
         else
         {
-            // Y방향을 보는 절벽: XZ 투영
+            // Y 방향을 보는 절벽: XZ 투영
+            // U = +X, V = +Z
             OutUV = FVector2D(PLocalCm.X * UVScale, PLocalCm.Z * UVScale);
-            TangentAxis = FVector::RightVector;
+            TangentX = FVector::RightVector;
+            DesiredTangentY = FVector::UpVector;
         }
 
-        FVector T = TangentAxis - FVector::DotProduct(TangentAxis, N) * N;
-        if (!T.Normalize())
+        TangentX = TangentX - FVector::DotProduct(TangentX, N) * N;
+        if (!TangentX.Normalize())
         {
-            T = FVector::CrossProduct(FVector::UpVector, N);
-            if (!T.Normalize())
+            TangentX = FVector::CrossProduct(FVector::UpVector, N);
+            if (!TangentX.Normalize())
             {
-                T = FVector::CrossProduct(FVector::RightVector, N);
-                if (!T.Normalize())
+                TangentX = FVector::CrossProduct(FVector::RightVector, N);
+                if (!TangentX.Normalize())
                 {
-                    T = FVector::ForwardVector;
+                    TangentX = FVector::ForwardVector;
                 }
             }
         }
 
-        OutTangent = FProcMeshTangent(T, false);
+        DesiredTangentY = DesiredTangentY - FVector::DotProduct(DesiredTangentY, N) * N;
+        DesiredTangentY.Normalize();
+
+        FVector BuiltTangentY = FVector::CrossProduct(N, TangentX);
+        bool bFlipTangentY = false;
+        if (BuiltTangentY.Normalize() && DesiredTangentY.IsNormalized())
+        {
+            bFlipTangentY = FVector::DotProduct(BuiltTangentY, DesiredTangentY) < 0.f;
+        }
+
+        OutTangent = FProcMeshTangent(TangentX, bFlipTangentY);
     }
 
     static FORCEINLINE float SampleChunkDensityNearestSafe(
@@ -166,13 +183,7 @@ namespace
             return FVector::ZeroVector;
         }
 
-        // d >= IsoLevel 이 solid인 밀도장에서는 Gradient가 내부 방향을 향한다.
-
-
-        // 따라서 실제 외부 표면 노멀은 -Gradient가 맞다.
-
-
-        return -Gradient;
+        return Gradient;
     }
 
     struct FQuantKey
@@ -211,6 +222,7 @@ namespace
         TArray<int32>             Triangles;
         TArray<FVector>           Normals;
         TArray<FVector2D>         UV0;
+        TArray<FLinearColor>      Colors;
         TArray<FProcMeshTangent>  Tangents;
 
         struct FBoundaryV
@@ -274,12 +286,11 @@ void FVoxelMesher::BuildMarchingCubes(
     const FVoxelDensityGenerator& Gen,
     FChunkMeshData& Out)
 {
-    (void)Gen;
-
     Out.Vertices.Reset();
     Out.Triangles.Reset();
     Out.Normals.Reset();
     Out.UV0.Reset();
+    Out.Colors.Reset();
     Out.Tangents.Reset();
 
     const int32 SX = Chunk.SizeX;
@@ -318,6 +329,7 @@ void FVoxelMesher::BuildMarchingCubes(
             LM.Triangles.Reset();
             LM.Normals.Reset();
             LM.UV0.Reset();
+            LM.Colors.Reset();
             LM.Tangents.Reset();
             LM.LowerBoundary.Reset();
             LM.UpperBoundary.Reset();
@@ -367,6 +379,7 @@ void FVoxelMesher::BuildMarchingCubes(
 
                     LM.Normals.Add(FVector::ZeroVector);
                     LM.UV0.Add(FVector2D::ZeroVector);
+                    LM.Colors.Add(FLinearColor::White);
                     LM.Tangents.Add(FProcMeshTangent());
 
 
@@ -484,9 +497,7 @@ void FVoxelMesher::BuildMarchingCubes(
                             const FVector B = LM.Vertices[iB];
                             const FVector C = LM.Vertices[iC];
 
-                            // V > IsoLevel = solid 규약에서는 기본 TriTable winding의 면 노멀이 내부를 향할 수 있으므로,
-                            // fallback 면 노멀도 density outward(-Gradient)와 같은 쪽이 되도록 반전 방향을 사용한다.
-                            FVector FaceN = FVector::CrossProduct(C - A, B - A);
+                            FVector FaceN = FVector::CrossProduct(B - A, C - A);
                             if (!FaceN.IsNearlyZero())
                             {
                                 FaceN.Normalize();
@@ -517,6 +528,7 @@ void FVoxelMesher::BuildMarchingCubes(
     Out.Vertices.Reserve(TotalV);
     Out.Normals.Reserve(TotalV);
     Out.UV0.Reserve(TotalV);
+    Out.Colors.Reserve(TotalV);
     Out.Tangents.Reserve(TotalV);
     Out.Triangles.Reserve(TotalT);
 
@@ -562,6 +574,7 @@ void FVoxelMesher::BuildMarchingCubes(
             Out.Vertices.Add(LM.Vertices[i]);
             Out.Normals.Add(LM.Normals.IsValidIndex(i) ? LM.Normals[i] : FVector::ZeroVector);
             Out.UV0.Add(LM.UV0.IsValidIndex(i) ? LM.UV0[i] : FVector2D::ZeroVector);
+            Out.Colors.Add(LM.Colors.IsValidIndex(i) ? LM.Colors[i] : FLinearColor::White);
             Out.Tangents.Add(FProcMeshTangent());
         }
 
@@ -583,26 +596,49 @@ void FVoxelMesher::BuildMarchingCubes(
         }
     }
 
-    for (int32 i = 0; i < Out.Normals.Num(); ++i)
+    Out.Colors.SetNum(Out.Vertices.Num());
+
+    for (int32 i = 0; i < Out.Vertices.Num(); ++i)
     {
         const FVector WorldPos = ActorWorld + Out.Vertices[i];
 
-        FVector N = EstimateOutwardNormalFromChunkDensity(Chunk, VoxelSizeCm, ChunkOriginWorld, WorldPos);
-
-        if (N.IsNearlyZero())
+        FVector LightingN = Out.Normals.IsValidIndex(i) ? Out.Normals[i] : FVector::ZeroVector;
+        if (!LightingN.Normalize())
         {
-            N = Out.Normals[i];
-            if (!N.Normalize())
-            {
-                N = FVector::UpVector;
-            }
+            LightingN = FVector::UpVector;
         }
 
-        Out.Normals[i] = N;
+        FVector SlopeN = EstimateOutwardNormalFromChunkDensity(Chunk, VoxelSizeCm, ChunkOriginWorld, WorldPos);
+        if (!SlopeN.Normalize())
+        {
+            SlopeN = LightingN;
+        }
+
+        FVector PlateauN = FVector::ZeroVector;
+        float PlateauWeight = 0.f;
+        if (Gen.TryComputeTopPlateauSurfaceNormal(WorldPos, VoxelSizeCm * 2.25f, PlateauN, PlateauWeight))
+        {
+            PlateauN.Normalize();
+
+            FVector BlendedN = FMath::Lerp(LightingN, PlateauN, FMath::Clamp(PlateauWeight, 0.f, 1.f));
+            if (BlendedN.Normalize())
+            {
+                LightingN = BlendedN;
+            }
+        }
+        else if (FVector::DotProduct(LightingN, SlopeN) < -0.15f)
+        {
+            LightingN *= -1.f;
+        }
+
+        const float EncodedSlopeZ = FMath::Clamp(SlopeN.Z * 0.5f + 0.5f, 0.f, 1.f);
+        Out.Colors[i] = FLinearColor(EncodedSlopeZ, 1.f, 1.f, 1.f);
+
+        Out.Normals[i] = LightingN;
 
         FVector2D UV;
         FProcMeshTangent Tangent;
-        MakeTerrainUVAndTangent(Out.Vertices[i], N, UV, Tangent);
+        MakeTerrainUVAndTangent(Out.Vertices[i], LightingN, UV, Tangent);
 
         if (Out.UV0.IsValidIndex(i))
         {
