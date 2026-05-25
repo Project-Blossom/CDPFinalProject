@@ -32,11 +32,17 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Consume", meta = (ClampMin = "0.0"))
     float ConsumableEffectValue = 0.f;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility", meta = (EditCondition = "UseType==EItemUseType::UtilityEquip"))
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility")
     EUtilityEffectType UtilityEffectType = EUtilityEffectType::None;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility", meta = (ClampMin = "0.0", EditCondition = "UseType==EItemUseType::UtilityEquip"))
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility", meta = (ClampMin = "0.0"))
     float UtilityEffectValue = 0.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility|Lamp")
+    bool bBlockMonsterSenseOnUtilityUse = fasle;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility|Lamp", meta = (ClampMin = "0.0"))
+    float MonsterSenseBlockDuration = 15.0f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
     TObjectPtr<UTexture2D> Icon = nullptr;
@@ -44,6 +50,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stack", meta = (ClampMin = "1"))
     int32 MaxStack = 1;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Place", meta = (EditCondition = "UseType==EItemUseType::PlaceActor || UseType==EItemUseType::AttachAnchorToBolt"))
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Place")
     TSubclassOf<AActor> PlaceActorClass;
 };

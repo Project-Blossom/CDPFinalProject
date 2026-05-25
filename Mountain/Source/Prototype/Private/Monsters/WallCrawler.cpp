@@ -20,10 +20,10 @@ AWallCrawler::AWallCrawler()
 void AWallCrawler::BeginPlay()
 {
     Super::BeginPlay();
-    
+
     // CRITICAL: 스폰 시간 기록
     SpawnTime = GetWorld()->GetTimeSeconds();
-    
+
     // CRITICAL: TargetPlayer 명시적 초기화
     TargetPlayer = nullptr;
     DetectionGauge = 0.0f;
@@ -31,30 +31,30 @@ void AWallCrawler::BeginPlay()
     bAttachedToPlayer = false;
     bIsStunned = false;
     StunTimer = 0.0f;
-    
+
     // Blackboard 초기화 (BT 사용 시)
     AAIController* AIController = Cast<AAIController>(GetController());
     if (AIController && AIController->GetBlackboardComponent())
     {
         UBlackboardComponent* Blackboard = AIController->GetBlackboardComponent();
-        
+
         // LastAttachTime을 과거로 설정 (즉시 attach 가능)
         Blackboard->SetValueAsFloat("LastAttachTime", -100.0f);
-        
+
         // bCanAttach을 true로 설정
         Blackboard->SetValueAsBool("bCanAttach", true);
-        
+
         // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s Blackboard initialized (bCanAttach: true)"), *GetName());
     }
-    
+
     // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s BeginPlay: TargetPlayer = NULL, DetectionGauge = 0, SpawnTime = %.1f"), *GetName(), SpawnTime);
-    
+
     // CRITICAL: MonsterBase의 OnPerceptionUpdated 바인딩 해제 후 WallCrawler 것으로 재바인딩
     if (PerceptionComponent)
     {
         PerceptionComponent->OnTargetPerceptionUpdated.RemoveAll(this);
         PerceptionComponent->OnTargetPerceptionUpdated.AddDynamic(this, &AWallCrawler::OnPerceptionUpdated);
-        
+
         // Hearing만 사용 (방향 무관)
         UAISenseConfig_Hearing* HearingConfig = NewObject<UAISenseConfig_Hearing>(this);
         HearingConfig->HearingRange = 1000.0f;
@@ -62,10 +62,10 @@ void AWallCrawler::BeginPlay()
         HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
         HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
         HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
-        
+
         PerceptionComponent->ConfigureSense(*HearingConfig);
         PerceptionComponent->SetDominantSense(HearingConfig->GetSenseImplementation());
-        
+
         UE_LOG(LogMonster, Warning, TEXT("%s: Perception rebound to WallCrawler version"), *GetName());
     }
 
@@ -76,26 +76,26 @@ void AWallCrawler::BeginPlay()
         WallHitLocation = HitLocation;
         bIsOnWall = true;
         PatrolCenter = GetActorLocation();
-        
+
         GeneratePatrolWaypoints();
-        
+
         CurrentSpeed = FMath::RandRange(MinSpeed, MaxSpeed);
         TargetSpeed = CurrentSpeed;
     }
-    
+
     UE_LOG(LogMonster, Log, TEXT("%s (Wall Crawler) ready to crawl"), *GetName());
 }
 
 void AWallCrawler::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-    
+
     // Carried 상태에서는 Tick 로직 스킵 (FlyingPlatform이 제어)
     if (bIsCarried)
     {
         return;
     }
-    
+
     // 낙하 중일 때는 착지 감지만 수행 (다른 로직 전부 스킵!)
     if (bIsFalling)
     {
@@ -110,7 +110,7 @@ void AWallCrawler::Tick(float DeltaTime)
         }
         return;  // 낙하 중에는 다른 로직 실행 안함!
     }
-    
+
     // Behavior Tree가 실행 중이면 기존 로직 스킵
     AAIController* AIController = Cast<AAIController>(GetController());
     if (AIController && AIController->BrainComponent && AIController->BrainComponent->IsRunning())
@@ -125,32 +125,32 @@ void AWallCrawler::Tick(float DeltaTime)
                 bIsStunned = false;
                 UE_LOG(LogMonster, Log, TEXT("%s recovered from stun"), *GetName());
             }
-            
+
             if (!bIsOnWall)
             {
                 ApplyGravity(DeltaTime);
             }
         }
-        
+
         UpdateWallAlignment();
         UpdateDetectionGauge(DeltaTime);
-        
+
         if (!bIsOnWall)
         {
             ApplyGravity(DeltaTime);
         }
-        
+
         if (bAttachedToPlayer)
         {
             DrainStamina(DeltaTime);
             UpdateShakeDetection(DeltaTime);
         }
-        
+
         return;
     }
-    
+
     // 이하 기존 로직 (BT 없을 때만 실행)
-    
+
     // Stun 처리
     if (bIsStunned)
     {
@@ -160,20 +160,20 @@ void AWallCrawler::Tick(float DeltaTime)
             bIsStunned = false;
             UE_LOG(LogMonster, Log, TEXT("%s recovered from stun"), *GetName());
         }
-        
+
         // Stun 중에는 중력 적용 (벽에 없으면)
         if (!bIsOnWall)
         {
             ApplyGravity(DeltaTime);
         }
-        
+
         // Stun 중에는 다른 행동 안 함
         return;
     }
 
     UpdateWallAlignment();
     UpdateDetectionGauge(DeltaTime);
-    
+
     // 벽에 없으면 중력 적용 (새로 추가)
     if (!bIsOnWall)
     {
@@ -190,7 +190,7 @@ void AWallCrawler::Tick(float DeltaTime)
         if (TargetPlayer)
         {
             float Distance = FVector::Dist(GetActorLocation(), TargetPlayer->GetActorLocation());
-            
+
             if (Distance > 1500.0f)
             {
                 TargetPlayer = nullptr;
@@ -198,7 +198,7 @@ void AWallCrawler::Tick(float DeltaTime)
             }
             else if (Distance <= AttachRange)
             {
-                UE_LOG(LogMonster, Error, TEXT("%s: ATTACHING! Distance: %.1fcm <= AttachRange: %.1fcm"), 
+                UE_LOG(LogMonster, Error, TEXT("%s: ATTACHING! Distance: %.1fcm <= AttachRange: %.1fcm"),
                     *GetName(), Distance, AttachRange);
                 AttachToPlayer(TargetPlayer);
             }
@@ -213,7 +213,7 @@ void AWallCrawler::Tick(float DeltaTime)
         }
     }
 
-// [DISABLED FOR DEMO] Debug visualization: AI range, status text, gauge, target info
+    // [DISABLED FOR DEMO] Debug visualization: AI range, status text, gauge, target info
 #if 0
     if (!bAttachedToPlayer)
     {
@@ -253,7 +253,7 @@ bool AWallCrawler::DetectWall(FVector& OutWallNormal, FVector& OutHitLocation)
     FVector ActorForward = GetActorForwardVector();
     FVector ActorUp = GetActorUpVector();
     FVector ActorRight = GetActorRightVector();
-    
+
     TArray<FVector> TraceDirections;
     TraceDirections.Add(ActorForward);
     TraceDirections.Add(-ActorUp);
@@ -263,19 +263,19 @@ bool AWallCrawler::DetectWall(FVector& OutWallNormal, FVector& OutHitLocation)
     TraceDirections.Add((ActorForward + ActorRight).GetSafeNormal());
     TraceDirections.Add((ActorForward - ActorUp - ActorRight).GetSafeNormal());
     TraceDirections.Add((ActorForward - ActorUp + ActorRight).GetSafeNormal());
-    
+
     FHitResult BestHit;
     float ClosestDistance = WallTraceDistance * 2.0f;
     bool bFoundWall = false;
-    
+
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(this);
-    
+
     for (const FVector& Direction : TraceDirections)
     {
         FVector TraceEnd = ActorLoc + Direction * WallTraceDistance;
         FHitResult Hit;
-        
+
         if (GetWorld()->LineTraceSingleByChannel(Hit, ActorLoc, TraceEnd, ECC_WorldStatic, Params))
         {
             if (Hit.Distance < ClosestDistance)
@@ -286,21 +286,21 @@ bool AWallCrawler::DetectWall(FVector& OutWallNormal, FVector& OutHitLocation)
             }
         }
     }
-    
+
     if (bFoundWall)
     {
         OutWallNormal = BestHit.Normal;
         OutHitLocation = BestHit.Location;
         return true;
     }
-    
+
     return false;
 }
 
 void AWallCrawler::UpdateWallAlignment()
 {
     FVector WallNormal, HitLocation;
-    
+
     if (DetectWall(WallNormal, HitLocation))
     {
         // 부드러운 Normal 변화 (급격한 변화 방지)
@@ -313,18 +313,18 @@ void AWallCrawler::UpdateWallAlignment()
                 WallNormal = FMath::VInterpTo(CurrentWallNormal, WallNormal, GetWorld()->GetDeltaSeconds(), 3.0f);
             }
         }
-        
+
         CurrentWallNormal = WallNormal;
         WallHitLocation = HitLocation;
         bIsOnWall = true;
-        
+
         // 회전 (배회 중일 때는 더 느리게)
         float RotationSpeed = TargetPlayer ? 10.0f : 3.0f;  // 배회: 3, 추격: 10
-        
-        FRotator NewRotation = FMath::RInterpTo(GetActorRotation(), (-WallNormal).Rotation(), 
+
+        FRotator NewRotation = FMath::RInterpTo(GetActorRotation(), (-WallNormal).Rotation(),
             GetWorld()->GetDeltaSeconds(), RotationSpeed);
         SetActorRotation(NewRotation);
-        
+
         // 위치 업데이트 (더 멀리)
         SetActorLocation(HitLocation + WallNormal * (WallStickDistance + 5.0f));
     }
@@ -338,7 +338,7 @@ void AWallCrawler::UpdateWallAlignment()
 void AWallCrawler::CrawlOnWall(FVector Direction, float Speed)
 {
     if (!bIsOnWall) return;
-    
+
     FVector ProjectedDir = ProjectToWallSurface(Direction);
     FVector Movement = ProjectedDir * Speed * GetWorld()->GetDeltaSeconds();
     FVector NewLocation = GetActorLocation() + Movement;
@@ -348,16 +348,16 @@ void AWallCrawler::CrawlOnWall(FVector Direction, float Speed)
 FVector AWallCrawler::ProjectToWallSurface(FVector WorldDirection)
 {
     if (!bIsOnWall) return WorldDirection.GetSafeNormal();
-    
+
     FVector ProjectedDirection = WorldDirection - CurrentWallNormal * FVector::DotProduct(WorldDirection, CurrentWallNormal);
     FVector Result = ProjectedDirection.GetSafeNormal();
-    
+
     if (Result.IsNearlyZero())
     {
         FVector Right = FVector::CrossProduct(CurrentWallNormal, FVector::UpVector).GetSafeNormal();
         Result = FVector::CrossProduct(Right, CurrentWallNormal).GetSafeNormal();
     }
-    
+
     return Result;
 }
 
@@ -366,27 +366,27 @@ void AWallCrawler::GeneratePatrolWaypoints()
 {
     PatrolWaypoints.Empty();
     int32 NumWaypoints = FMath::RandRange(6, 8);
-    
+
     FVector Up = FVector::UpVector;
     FVector Right = FVector::CrossProduct(CurrentWallNormal, Up).GetSafeNormal();
     FVector ActualUp = FVector::CrossProduct(Right, CurrentWallNormal).GetSafeNormal();
-    
+
     for (int32 i = 0; i < NumWaypoints; i++)
     {
         float Angle = (float)i / NumWaypoints * 2.0f * PI + FMath::RandRange(-0.2f, 0.2f);
         float Radius = CircleRadius * FMath::RandRange(0.7f, 1.3f);
-        
+
         FVector Offset = Right * FMath::Cos(Angle) * Radius + ActualUp * FMath::Sin(Angle) * Radius;
         FVector TargetPoint = PatrolCenter + Offset;
-        
+
         // 벽면 투영
         FHitResult Hit;
         FCollisionQueryParams Params;
         Params.AddIgnoredActor(this);
-        
+
         FVector TraceStart = TargetPoint - CurrentWallNormal * 200.0f;
         FVector TraceEnd = TargetPoint + CurrentWallNormal * 200.0f;
-        
+
         if (GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, Params))
         {
             FVector Waypoint = Hit.Location + Hit.Normal * (WallStickDistance + 10.0f);
@@ -397,22 +397,22 @@ void AWallCrawler::GeneratePatrolWaypoints()
             PatrolWaypoints.Add(PatrolCenter + Offset.GetSafeNormal() * (Radius * 0.5f));
         }
     }
-    
+
     CurrentWaypointIndex = 0;
     if (PatrolWaypoints.Num() > 0) CurrentTargetPoint = PatrolWaypoints[0];
-    
+
     UE_LOG(LogMonster, Log, TEXT("%s generated %d waypoints"), *GetName(), PatrolWaypoints.Num());
 }
 
 void AWallCrawler::OrganicPatrol(float DeltaTime)
 {
     if (PatrolWaypoints.Num() == 0) return;
-    
+
     if (bIsPaused)
     {
         PauseTimer += DeltaTime;
         CurrentSpeed = 0.0f;
-        
+
         if (PauseTimer >= NextPauseDuration)
         {
             bIsPaused = false;
@@ -421,33 +421,33 @@ void AWallCrawler::OrganicPatrol(float DeltaTime)
         }
         return;
     }
-    
+
     UpdateMovementSpeed(DeltaTime);
-    
+
     FVector ToTarget = CurrentTargetPoint - GetActorLocation();
     float DistanceToTarget = ToTarget.Size();
-    
+
     float AdjustedThreshold = WaypointReachThreshold * 2.0f;
-    
+
     if (DistanceToTarget < AdjustedThreshold)
     {
         CurrentWaypointIndex = (CurrentWaypointIndex + 1) % PatrolWaypoints.Num();
         CurrentTargetPoint = PatrolWaypoints[CurrentWaypointIndex];
-        
+
         if (FMath::FRand() < PauseChance * 0.5f)
         {
             bIsPaused = true;
             NextPauseDuration = FMath::RandRange(MinPauseDuration, MaxPauseDuration);
         }
-        
+
         TargetSpeed = FMath::RandRange(MinSpeed * 0.7f, MaxSpeed * 0.7f);
-        
+
         if (CurrentWaypointIndex == 0 && FMath::FRand() < 0.1f)
         {
             GeneratePatrolWaypoints();
         }
     }
-    
+
     FVector CurrentDirection = ToTarget.GetSafeNormal();
     CrawlOnWall(CurrentDirection, CurrentSpeed);
 }
@@ -465,7 +465,7 @@ void AWallCrawler::UpdateMovementSpeed(float DeltaTime)
 void AWallCrawler::PursuePlayer(float DeltaTime)
 {
     if (!TargetPlayer) return;
-    
+
     FVector PlayerVelocity = TargetPlayer->GetVelocity();
     FVector PredictedLocation = TargetPlayer->GetActorLocation() + PlayerVelocity * 0.3f;
     FVector ToPlayer = PredictedLocation - GetActorLocation();
@@ -476,78 +476,78 @@ void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
 {
     if (!Player || bAttachedToPlayer || bIsStunned)
         return;
-    
+
     // CRITICAL: 스폰 직후 Attach 방지
     float TimeSinceSpawn = GetWorld()->GetTimeSeconds() - SpawnTime;
     if (TimeSinceSpawn < MinTimeBeforeAttach)
     {
-        UE_LOG(LogMonster, Error, TEXT("%s ATTACH BLOCKED! Too soon after spawn (%.1fs < %.1fs)"), 
+        UE_LOG(LogMonster, Error, TEXT("%s ATTACH BLOCKED! Too soon after spawn (%.1fs < %.1fs)"),
             *GetName(), TimeSinceSpawn, MinTimeBeforeAttach);
         return;
     }
-    
+
     bAttachedToPlayer = true;
     TargetPlayer = Player;
     AccumulatedShake = 0.0f;
     DetectionGauge = 0.0f;
     PotentialTarget = nullptr;
-    
+
     // CRITICAL: Shake 감지 초기화
     LastMousePosition = FVector2D::ZeroVector;  // 리셋
-    
+
     SetActorHiddenInGame(true);
     SetActorEnableCollision(false);
     SetActorTickEnabled(true);
     SetActorLocation(Player->GetActorLocation() + FVector(0, 0, 100));
-    
+
     // Attach Desaturation VFX 표시
     Player->ShowAttachDesaturation(0.8f);
-    
+
     UE_LOG(LogMonster, Warning, TEXT("%s ATTACHED (debuff mode) - Time since spawn: %.1fs, Shake detection RESET"), *GetName(), TimeSinceSpawn);
 }
 
 void AWallCrawler::DetachFromPlayer()
 {
     if (!bAttachedToPlayer) return;
-    
+
     bAttachedToPlayer = false;
     AccumulatedShake = 0.0f;
     LastMousePosition = FVector2D::ZeroVector;  // CRITICAL: 리셋
-    
+
     // Stun 상태 시작
     bIsStunned = true;
     StunTimer = StunDuration;
-    
+
     // Attach Desaturation VFX 숨김
     if (TargetPlayer)
     {
         TargetPlayer->HideAttachDesaturation();
     }
-    
+
     SetActorHiddenInGame(false);
     SetActorEnableCollision(true);
-    
+
     if (TargetPlayer)
     {
         FVector PlayerLoc = TargetPlayer->GetActorLocation();
-        FVector RandomDir = FVector(FMath::RandRange(-1.0f, 1.0f), FMath::RandRange(-1.0f, 1.0f), 
+        FVector RandomDir = FVector(FMath::RandRange(-1.0f, 1.0f), FMath::RandRange(-1.0f, 1.0f),
             FMath::RandRange(-0.5f, 0.5f)).GetSafeNormal();
-        
+
         float SpawnDistance = FMath::RandRange(100.0f, 300.0f);  // 100~300cm 거리
         FVector TestLocation = PlayerLoc + RandomDir * SpawnDistance;
-        
+
         // 가까운 벽 찾기
-        TArray<FVector> SearchDirections = {RandomDir, -RandomDir, FVector::UpVector, 
-            -FVector::UpVector, FVector::RightVector, -FVector::RightVector};
-        
+        TArray<FVector> SearchDirections = { RandomDir, -RandomDir, FVector::UpVector,
+            -FVector::UpVector, FVector::RightVector, -FVector::RightVector };
+
         FCollisionQueryParams Params;
         Params.AddIgnoredActor(this);
         Params.AddIgnoredActor(TargetPlayer);
-        
+
         float BestDistance = 999999.0f;
         FVector BestWallLocation, BestWallNormal;
         bool bFoundWall = false;
-        
+
         for (const FVector& Dir : SearchDirections)
         {
             FHitResult Hit;
@@ -562,7 +562,7 @@ void AWallCrawler::DetachFromPlayer()
                 }
             }
         }
-        
+
         if (bFoundWall)
         {
             // Normal 방향 확인
@@ -570,16 +570,16 @@ void AWallCrawler::DetachFromPlayer()
             {
                 BestWallNormal = -BestWallNormal;
             }
-            
+
             FVector SpawnLocation = BestWallLocation + BestWallNormal * WallStickDistance;
             SetActorLocation(SpawnLocation);
             SetActorRotation((-BestWallNormal).Rotation());
-            
+
             CurrentWallNormal = BestWallNormal;
             WallHitLocation = BestWallLocation;
             bIsOnWall = true;
-            
-            UE_LOG(LogMonster, Warning, TEXT("%s DETACHED to wall, STUNNED for %.1fs at distance %.1fcm"), 
+
+            UE_LOG(LogMonster, Warning, TEXT("%s DETACHED to wall, STUNNED for %.1fs at distance %.1fcm"),
                 *GetName(), StunDuration, SpawnDistance);
         }
         else
@@ -587,8 +587,8 @@ void AWallCrawler::DetachFromPlayer()
             // 벽 못 찾음 - 허공에 스폰
             SetActorLocation(TestLocation);
             bIsOnWall = false;
-            
-            UE_LOG(LogMonster, Warning, TEXT("%s DETACHED to air (NoWall), STUNNED for %.1fs, will fall"), 
+
+            UE_LOG(LogMonster, Warning, TEXT("%s DETACHED to air (NoWall), STUNNED for %.1fs, will fall"),
                 *GetName(), StunDuration);
         }
     }
@@ -600,22 +600,22 @@ void AWallCrawler::ApplyGravity(float DeltaTime)
     FVector CurrentLocation = GetActorLocation();
     FVector Gravity = FVector(0, 0, -980.0f) * GravityScale; // 중력 가속도
     FVector NewLocation = CurrentLocation + Gravity * DeltaTime;
-    
+
     // 지면 체크
     FHitResult Hit;
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(this);
-    
+
     if (GetWorld()->LineTraceSingleByChannel(Hit, CurrentLocation, NewLocation, ECC_WorldStatic, Params))
     {
         // 지면 도달
         SetActorLocation(Hit.Location + Hit.Normal * WallStickDistance);
-        
+
         // 벽으로 간주
         CurrentWallNormal = Hit.Normal;
         WallHitLocation = Hit.Location;
         bIsOnWall = true;
-        
+
         UE_LOG(LogMonster, Log, TEXT("%s hit ground, now on wall"), *GetName());
     }
     else
@@ -628,9 +628,9 @@ void AWallCrawler::ApplyGravity(float DeltaTime)
 void AWallCrawler::DrainStamina(float DeltaTime)
 {
     if (!TargetPlayer || !bAttachedToPlayer) return;
-    
+
     float DrainAmount = StaminaDrainRate * DeltaTime;
-    
+
     if (TargetPlayer->LeftHand.State == EHandState::Gripping)
     {
         TargetPlayer->LeftHand.Stamina = FMath::Max(0.0f, TargetPlayer->LeftHand.Stamina - DrainAmount);
@@ -644,45 +644,45 @@ void AWallCrawler::DrainStamina(float DeltaTime)
 void AWallCrawler::UpdateShakeDetection(float DeltaTime)
 {
     if (!TargetPlayer || !bAttachedToPlayer) return;
-    
+
     APlayerController* PC = Cast<APlayerController>(TargetPlayer->GetController());
     if (!PC) return;
-    
+
     FRotator CurrentRotation = PC->GetControlRotation();
     FVector2D CurrentRotation2D(CurrentRotation.Pitch, CurrentRotation.Yaw);
-    
+
     // 첫 프레임: 현재 회전 저장
     if (LastMousePosition.IsZero())
     {
         LastMousePosition = CurrentRotation2D;
-        UE_LOG(LogMonster, Log, TEXT("%s Shake detection initialized: Pitch=%.1f, Yaw=%.1f"), 
+        UE_LOG(LogMonster, Log, TEXT("%s Shake detection initialized: Pitch=%.1f, Yaw=%.1f"),
             *GetName(), CurrentRotation.Pitch, CurrentRotation.Yaw);
         return;
     }
-    
+
     // 회전 변화량 계산
     FVector2D RotationDelta = CurrentRotation2D - LastMousePosition;
-    
+
     // Yaw wrap 처리 (360도 경계)
     if (RotationDelta.Y > 180.0f) RotationDelta.Y -= 360.0f;
     if (RotationDelta.Y < -180.0f) RotationDelta.Y += 360.0f;
-    
+
     // 절대값 합산 (양방향 흔들기 모두 카운트)
     float FrameShake = (FMath::Abs(RotationDelta.X) + FMath::Abs(RotationDelta.Y)) * 5.0f;
     AccumulatedShake += FrameShake;
-    
+
     // 현재 위치 저장
     LastMousePosition = CurrentRotation2D;
-    
+
     // Detach 체크
     if (AccumulatedShake >= ShakeThreshold)
     {
-        UE_LOG(LogMonster, Warning, TEXT("%s shaken off! (Accumulated: %.1f >= Threshold: %.1f)"), 
+        UE_LOG(LogMonster, Warning, TEXT("%s shaken off! (Accumulated: %.1f >= Threshold: %.1f)"),
             *GetName(), AccumulatedShake, ShakeThreshold);
         DetachFromPlayer();
         return;
     }
-    
+
     // [DISABLED FOR DEMO] Debug shake visualization
 #if 0
     if (GEngine && FrameShake > 0.1f)
@@ -699,6 +699,12 @@ void AWallCrawler::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 
     ADownfallCharacter* Player = Cast<ADownfallCharacter>(Actor);
     if (!Player) return;
+
+    if (Player->IsMonsterSenseBlocked())
+    {
+        ForceForgetPlayer(Player);
+        return;
+    }
 
     if (Stimulus.WasSuccessfullySensed())
     {
@@ -717,15 +723,33 @@ void AWallCrawler::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 
 void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
 {
+    if (ADownfallCharacter* BlockedPlayer = Cast<ADownfallCharacter>(TargetPlayer))
+    {
+        if (BlockedPlayer->IsMonsterSenseBlocked())
+        {
+            ForceForgetPlayer(BlockedPlayer);
+            return;
+        }
+    }
+
+    if (ADownfallCharacter* BlockedPotential = Cast<ADownfallCharacter>(PotentialTarget))
+    {
+        if (BlockedPotential->IsMonsterSenseBlocked())
+        {
+            ForceForgetPlayer(BlockedPotential);
+            return;
+        }
+    }
+
     if (PotentialTarget)
     {
         DetectionGauge += DetectionGainRate * DeltaTime;
         DetectionGauge = FMath::Min(DetectionGauge, DetectionGaugeMax);
-        
+
         if (DetectionGauge >= DetectionGaugeMax && !TargetPlayer)
         {
             TargetPlayer = Cast<ADownfallCharacter>(PotentialTarget);
-            UE_LOG(LogMonster, Error, TEXT("%s DETECTED player via GAUGE (Gauge: %.1f) - TargetPlayer SET!"), 
+            UE_LOG(LogMonster, Error, TEXT("%s DETECTED player via GAUGE (Gauge: %.1f) - TargetPlayer SET!"),
                 *GetName(), DetectionGauge);
         }
     }
@@ -735,7 +759,7 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
         {
             DetectionGauge -= DetectionDecayRate * DeltaTime;
             DetectionGauge = FMath::Max(DetectionGauge, 0.0f);
-            
+
             if (DetectionGauge <= 0.0f && TargetPlayer)
             {
                 TargetPlayer = nullptr;
@@ -743,7 +767,7 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
             }
         }
     }
-    
+
     if (TargetPlayer)
     {
         float Distance = FVector::Dist(GetActorLocation(), TargetPlayer->GetActorLocation());
@@ -755,6 +779,35 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
             UE_LOG(LogMonster, Warning, TEXT("%s: Distance check in UpdateDetectionGauge - too far (%.1f)"), *GetName(), Distance);
         }
     }
+}
+
+void AWallCrawler::ForceForgetPlayer(ADownfallCharacter* PlayerToForget)
+{
+    if (bAttachedToPlayer && (!PlayerToForget || TargetPlayer == PlayerToForget || PotentialTarget == PlayerToForget))
+    {
+        DetachFromPlayer();
+    }
+
+    Super::ForceForgetPlayer(PlayerToForget);
+
+    TargetPlayer = nullptr;
+    PotentialTarget = nullptr;
+    DetectionGauge = 0.0f;
+    bIsPaused = false;
+    PauseTimer = 0.0f;
+
+    if (PatrolWaypoints.Num() == 0 && bIsOnWall)
+    {
+        GeneratePatrolWaypoints();
+    }
+
+    if (PatrolWaypoints.Num() > 0)
+    {
+        CurrentWaypointIndex = FMath::Clamp(CurrentWaypointIndex, 0, PatrolWaypoints.Num() - 1);
+        CurrentTargetPoint = PatrolWaypoints[CurrentWaypointIndex];
+    }
+
+    UE_LOG(LogMonster, Warning, TEXT("%s forgot player and returned to patrol due to lamp"), *GetName());
 }
 
 // ========================================
@@ -797,7 +850,7 @@ void AWallCrawler::AttachToCarrier(AFlyingPlatform* Platform)
     USceneComponent* GrabPoint = nullptr;
     TArray<USceneComponent*> Components;
     Platform->GetComponents<USceneComponent>(Components);
-    
+
     for (USceneComponent* Comp : Components)
     {
         if (Comp && Comp->GetName().Contains(TEXT("GrabPoint")))
@@ -885,7 +938,7 @@ void AWallCrawler::HandleLanding()
         bIsOnWall = true;
         CurrentWallNormal = WallNormal;
         WallHitLocation = HitLocation;
-        
+
         // 위치 조정
         SetActorLocation(HitLocation + WallNormal * WallStickDistance);
         SetActorRotation((-WallNormal).Rotation());

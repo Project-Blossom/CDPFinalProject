@@ -14,6 +14,7 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
+#include "EngineUtils.h"
 #include "Monsters/FlyingPlatform.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISense_Sight.h"
@@ -467,76 +468,76 @@ void ADownfallCharacter::BeginPlay()
             AltitudeWidget->AddToViewport();
             UE_LOG(LogDownFall, Log, TEXT("Altitude Widget created and added to viewport"));
 
-    // ── WBP_Minimap 생성 및 뷰포트 추가 ──────────────────────────
-    if (MinimapWidgetClass)
-    {
-        MinimapWidget = CreateWidget<UMinimapWidget>(GetWorld(), MinimapWidgetClass);
-        if (MinimapWidget)
-        {
-            MinimapWidget->AddToViewport();
-            MinimapCurrentTint = MinimapNormalTint;
-            MinimapWidget->SetMinimapTint(MinimapNormalTint);
-            UE_LOG(LogDownFall, Log, TEXT("Minimap Widget created and added to viewport"));
-        }
-    }
-    else
-    {
-        UE_LOG(LogDownFall, Warning, TEXT("MinimapWidgetClass not assigned - set in BP_DownfallCharacter (UI|Minimap)"));
-    }
-
-    // ── SceneCapture2D 탐색 + 1회 캡처 ──────────────────────────
-    // 태그 대신 클래스로 탐색 (레벨에 SceneCapture2D가 1개라고 가정)
-    // 여러 개일 경우 SceneCaptureActorTag로 필터링
-    {
-        TArray<AActor*> FoundCaptures;
-        UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASceneCapture2D::StaticClass(), FoundCaptures);
-
-        // 태그가 있으면 태그로 필터링, 없으면 첫 번째 사용
-        AActor* TargetCapture = nullptr;
-        for (AActor* Actor : FoundCaptures)
-        {
-            if (SceneCaptureActorTag.IsNone() || Actor->Tags.Contains(SceneCaptureActorTag))
+            // ── WBP_Minimap 생성 및 뷰포트 추가 ──────────────────────────
+            if (MinimapWidgetClass)
             {
-                TargetCapture = Actor;
-                break;
-            }
-        }
-        // 태그 매칭 실패 시 첫 번째 SceneCapture2D 사용
-        if (!TargetCapture && FoundCaptures.Num() > 0)
-        {
-            TargetCapture = FoundCaptures[0];
-        }
-
-        if (TargetCapture)
-        {
-            CachedSceneCapture = Cast<ASceneCapture2D>(TargetCapture);
-            if (CachedSceneCapture.IsValid())
-            {
-                USceneCaptureComponent2D* CaptureComp =
-                    CachedSceneCapture->GetCaptureComponent2D();
-                if (CaptureComp)
+                MinimapWidget = CreateWidget<UMinimapWidget>(GetWorld(), MinimapWidgetClass);
+                if (MinimapWidget)
                 {
-                    // [테스트] ShowFlags.SetWireframe 방식 vs 레벨 ViewMode 방식 비교
-                    if (bCaptureWithWireframeShowFlag)
-                    {
-                        CaptureComp->ShowFlags.SetWireframe(true);
-                        UE_LOG(LogDownFall, Log, TEXT("Minimap: ShowFlags.SetWireframe(true) 적용"));
-                    }
-
-                    CaptureComp->CaptureScene();
-
-                    UE_LOG(LogDownFall, Log, TEXT("Minimap: SceneCapture2D captured (%s) [Wireframe=%s]"),
-                        *TargetCapture->GetName(),
-                        bCaptureWithWireframeShowFlag ? TEXT("ShowFlag") : TEXT("LevelViewMode"));
+                    MinimapWidget->AddToViewport();
+                    MinimapCurrentTint = MinimapNormalTint;
+                    MinimapWidget->SetMinimapTint(MinimapNormalTint);
+                    UE_LOG(LogDownFall, Log, TEXT("Minimap Widget created and added to viewport"));
                 }
             }
-        }
-        else
-        {
-            UE_LOG(LogDownFall, Warning,
-                TEXT("Minimap: No SceneCapture2D found in level. Place one and assign RT_Minimap."));
-        }
-    }
+            else
+            {
+                UE_LOG(LogDownFall, Warning, TEXT("MinimapWidgetClass not assigned - set in BP_DownfallCharacter (UI|Minimap)"));
+            }
+
+            // ── SceneCapture2D 탐색 + 1회 캡처 ──────────────────────────
+            // 태그 대신 클래스로 탐색 (레벨에 SceneCapture2D가 1개라고 가정)
+            // 여러 개일 경우 SceneCaptureActorTag로 필터링
+            {
+                TArray<AActor*> FoundCaptures;
+                UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASceneCapture2D::StaticClass(), FoundCaptures);
+
+                // 태그가 있으면 태그로 필터링, 없으면 첫 번째 사용
+                AActor* TargetCapture = nullptr;
+                for (AActor* Actor : FoundCaptures)
+                {
+                    if (SceneCaptureActorTag.IsNone() || Actor->Tags.Contains(SceneCaptureActorTag))
+                    {
+                        TargetCapture = Actor;
+                        break;
+                    }
+                }
+                // 태그 매칭 실패 시 첫 번째 SceneCapture2D 사용
+                if (!TargetCapture && FoundCaptures.Num() > 0)
+                {
+                    TargetCapture = FoundCaptures[0];
+                }
+
+                if (TargetCapture)
+                {
+                    CachedSceneCapture = Cast<ASceneCapture2D>(TargetCapture);
+                    if (CachedSceneCapture.IsValid())
+                    {
+                        USceneCaptureComponent2D* CaptureComp =
+                            CachedSceneCapture->GetCaptureComponent2D();
+                        if (CaptureComp)
+                        {
+                            // [테스트] ShowFlags.SetWireframe 방식 vs 레벨 ViewMode 방식 비교
+                            if (bCaptureWithWireframeShowFlag)
+                            {
+                                CaptureComp->ShowFlags.SetWireframe(true);
+                                UE_LOG(LogDownFall, Log, TEXT("Minimap: ShowFlags.SetWireframe(true) 적용"));
+                            }
+
+                            CaptureComp->CaptureScene();
+
+                            UE_LOG(LogDownFall, Log, TEXT("Minimap: SceneCapture2D captured (%s) [Wireframe=%s]"),
+                                *TargetCapture->GetName(),
+                                bCaptureWithWireframeShowFlag ? TEXT("ShowFlag") : TEXT("LevelViewMode"));
+                        }
+                    }
+                }
+                else
+                {
+                    UE_LOG(LogDownFall, Warning,
+                        TEXT("Minimap: No SceneCapture2D found in level. Place one and assign RT_Minimap."));
+                }
+            }
         }
     }
     else
@@ -554,7 +555,7 @@ void ADownfallCharacter::BeginPlay()
     UE_LOG(LogDownFall, Log, TEXT("Initial ground height: %.2f"), InitialGroundHeight);
 
     StartLowFrequencyUpdatesIfNeeded();
-    
+
     // PostProcessComp에서 Motion Blur Override
     // PostProcessVolume보다 우선순위가 높아 플레이어 시점의 Motion Blur를 차단
     // 현재는 임시로 주석처리 차후 PostProcess 관리에 사용될 여지있음.
@@ -2220,6 +2221,49 @@ bool ADownfallCharacter::RestoreStamina(float Amount)
     return true;
 }
 
+void ADownfallCharacter::ActivateMonsterSenseBlock(float DurationSeconds)
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    const float FinalDuration = DurationSeconds > 0.0f ? DurationSeconds : 15.0f;
+    bMonsterSenseBlocked = true;
+
+    World->GetTimerManager().ClearTimer(MonsterSenseBlockTimerHandle);
+    World->GetTimerManager().SetTimer(
+        MonsterSenseBlockTimerHandle,
+        this,
+        &ADownfallCharacter::EndMonsterSenseBlock,
+        FinalDuration,
+        false
+    );
+
+    for (TActorIterator<AMonsterBase> It(World); It; ++It)
+    {
+        if (AMonsterBase* Monster = *It)
+        {
+            Monster->ForceForgetPlayer(this);
+        }
+    }
+
+    UE_LOG(LogDownFall, Warning, TEXT("Lamp used: monsters cannot detect player for %.1f seconds"), FinalDuration);
+}
+
+void ADownfallCharacter::EndMonsterSenseBlock()
+{
+    bMonsterSenseBlocked = false;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(MonsterSenseBlockTimerHandle);
+    }
+
+    UE_LOG(LogDownFall, Log, TEXT("Lamp effect ended: monsters can detect player again"));
+}
+
 void ADownfallCharacter::AddInsanity(float Amount)
 {
     Insanity = FMath::Clamp(Insanity + Amount, 0.0f, MaxInsanity);
@@ -3678,10 +3722,10 @@ void ADownfallCharacter::ActivateRainVFX()
     // PP 머티리얼 Weight Lerp 시작 (0 → RainDropBlendWeight)
     if (RainDropMaterialInstance && PostProcessComp)
     {
-        RainDropLerpStartWeight  = RainDropCurrentWeight;
+        RainDropLerpStartWeight = RainDropCurrentWeight;
         RainDropLerpTargetWeight = RainDropBlendWeight;
-        RainDropLerpElapsed      = 0.0f;
-        bRainWeightLerping       = true;
+        RainDropLerpElapsed = 0.0f;
+        bRainWeightLerping = true;
     }
     else
     {
@@ -3717,10 +3761,10 @@ void ADownfallCharacter::ActivateRainVFX()
     // AutoExposureBias Lerp 시작
     if (PostProcessComp)
     {
-        RainDarkenLerpStartBias  = PostProcessComp->Settings.AutoExposureBias;
+        RainDarkenLerpStartBias = PostProcessComp->Settings.AutoExposureBias;
         RainDarkenLerpTargetBias = RainDarkenBias;
-        RainDarkenLerpElapsed    = 0.0f;
-        bRainDarkenLerping       = true;
+        RainDarkenLerpElapsed = 0.0f;
+        bRainDarkenLerping = true;
         PostProcessComp->Settings.bOverride_AutoExposureBias = true;
     }
 
@@ -3735,9 +3779,9 @@ void ADownfallCharacter::DeactivateRainVFX()
         return;
     }
 
-    bRainActive           = false;
-    bRainWeightLerping    = false;
-    RainDropLerpElapsed   = 0.0f;
+    bRainActive = false;
+    bRainWeightLerping = false;
+    RainDropLerpElapsed = 0.0f;
     RainDropCurrentWeight = 0.0f;
 
     if (RainDropMaterialInstance && PostProcessComp)
@@ -3757,7 +3801,7 @@ void ADownfallCharacter::DeactivateRainVFX()
         RainNiagaraComponent->Deactivate();
     }
 
-    bRainDarkenLerping    = false;
+    bRainDarkenLerping = false;
     RainDarkenLerpElapsed = 0.0f;
     if (PostProcessComp)
     {
@@ -3808,7 +3852,7 @@ void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
 
         if (Alpha >= 1.0f)
         {
-            bRainWeightLerping    = false;
+            bRainWeightLerping = false;
             RainDropCurrentWeight = RainDropLerpTargetWeight;
             UE_LOG(LogDownFall, Log, TEXT("RainVFX PP Lerp complete (Weight: %.2f)"), RainDropCurrentWeight);
         }
@@ -3862,8 +3906,8 @@ void ADownfallCharacter::ActivateBlizzardVFX()
     if (FrostMaterialInstance && PostProcessComp)
     {
         BlizzardLerpStartWeight = BlizzardCurrentWeight;
-        BlizzardLerpElapsed     = 0.0f;
-        bBlizzardWeightLerping  = true;
+        BlizzardLerpElapsed = 0.0f;
+        bBlizzardWeightLerping = true;
         UE_LOG(LogDownFall, Log, TEXT("ActivateBlizzardVFX: Frost PP Lerp started (→ %.2f, %.1fs)"),
             BlizzardBlendWeight, BlizzardLerpDuration);
     }
@@ -3875,10 +3919,10 @@ void ADownfallCharacter::ActivateBlizzardVFX()
     // AutoExposureBias Lerp 시작
     if (PostProcessComp)
     {
-        BlizzardDarkenLerpStartBias  = PostProcessComp->Settings.AutoExposureBias;
+        BlizzardDarkenLerpStartBias = PostProcessComp->Settings.AutoExposureBias;
         BlizzardDarkenLerpTargetBias = BlizzardDarkenBias;
-        BlizzardDarkenLerpElapsed    = 0.0f;
-        bBlizzardDarkenLerping       = true;
+        BlizzardDarkenLerpElapsed = 0.0f;
+        bBlizzardDarkenLerping = true;
         PostProcessComp->Settings.bOverride_AutoExposureBias = true;
     }
 
@@ -3930,10 +3974,10 @@ void ADownfallCharacter::DeactivateBlizzardVFX()
         return;
     }
 
-    bBlizzardActive        = false;
+    bBlizzardActive = false;
     bBlizzardWeightLerping = false;
-    BlizzardLerpElapsed    = 0.0f;
-    BlizzardCurrentWeight  = 0.0f;
+    BlizzardLerpElapsed = 0.0f;
+    BlizzardCurrentWeight = 0.0f;
 
     if (FrostMaterialInstance && PostProcessComp)
     {
@@ -3952,7 +3996,7 @@ void ADownfallCharacter::DeactivateBlizzardVFX()
         BlizzardNiagaraComponent->Deactivate();
     }
 
-    bBlizzardDarkenLerping    = false;
+    bBlizzardDarkenLerping = false;
     BlizzardDarkenLerpElapsed = 0.0f;
     if (PostProcessComp)
     {
@@ -4000,7 +4044,7 @@ void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)
         if (Alpha >= 1.0f)
         {
             bBlizzardWeightLerping = false;
-            BlizzardCurrentWeight  = BlizzardBlendWeight;
+            BlizzardCurrentWeight = BlizzardBlendWeight;
             UE_LOG(LogDownFall, Log, TEXT("BlizzardVFX PP Lerp complete (Weight: %.2f)"), BlizzardCurrentWeight);
         }
     }
@@ -4057,10 +4101,10 @@ void ADownfallCharacter::ActivateBloodMoonVFX()
 
     // Lerp 시작 색상 저장 (에디터 설정값 기준)
     BloodMoonStartLightColor = BloodMoonNormalLightColor;
-    BloodMoonStartFogColor   = BloodMoonNormalFogColor;
+    BloodMoonStartFogColor = BloodMoonNormalFogColor;
     BloodMoonStartFogDensity = BloodMoonNormalFogDensity;
-    BloodMoonStartMoonScale      = BloodMoonNormalMoonScale;
-    BloodMoonStartMoonTintColor  = BloodMoonNormalMoonTintColor;
+    BloodMoonStartMoonScale = BloodMoonNormalMoonScale;
+    BloodMoonStartMoonTintColor = BloodMoonNormalMoonTintColor;
     BloodMoonStartCloudColor = BloodMoonNormalCloudColor;
 
     UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
@@ -4218,16 +4262,16 @@ void ADownfallCharacter::UpdateMinimapUI()
 
     // 1. 플레이어 위치 → 미니맵 UV 계산
     // SceneCapture2D Orthographic 기준: 캡처 중심 위치 + 캡처 범위(Width/Height)
-    const FVector PlayerPos   = GetActorLocation();
-    const FVector CapturePos  = CachedSceneCapture->GetActorLocation();
+    const FVector PlayerPos = GetActorLocation();
+    const FVector CapturePos = CachedSceneCapture->GetActorLocation();
 
     // Side View (X축 방향 캡처 가정):
     // U = 플레이어 Y (좌우) / CaptureWidth
     // V = 플레이어 Z (상하) / CaptureHeight  (0=상단이 되도록 반전)
-    const float HalfW = MinimapCaptureWidth  * 0.5f;
+    const float HalfW = MinimapCaptureWidth * 0.5f;
     const float HalfH = MinimapCaptureHeight * 0.5f;
 
-    const float U = FMath::Clamp((PlayerPos.Y - (CapturePos.Y - HalfW)) / MinimapCaptureWidth,  0.0f, 1.0f);
+    const float U = FMath::Clamp((PlayerPos.Y - (CapturePos.Y - HalfW)) / MinimapCaptureWidth, 0.0f, 1.0f);
     const float V = FMath::Clamp(1.0f - (PlayerPos.Z - (CapturePos.Z - HalfH)) / MinimapCaptureHeight, 0.0f, 1.0f);
 
     MinimapWidget->SetPlayerMarkerUV(FVector2D(U, V));
@@ -4247,16 +4291,16 @@ void ADownfallCharacter::UpdateMinimapUI()
         if (Alpha >= 1.0f)
         {
             bMinimapTintLerping = false;
-            MinimapCurrentTint  = MinimapLerpTargetTint;
+            MinimapCurrentTint = MinimapLerpTargetTint;
         }
     }
 }
 
 void ADownfallCharacter::StartMinimapTintLerp(const FLinearColor& TargetTint, float Duration)
 {
-    MinimapLerpStartTint    = MinimapCurrentTint;
-    MinimapLerpTargetTint   = TargetTint;
+    MinimapLerpStartTint = MinimapCurrentTint;
+    MinimapLerpTargetTint = TargetTint;
     MinimapTintLerpDuration = Duration;
-    MinimapTintLerpElapsed  = 0.0f;
-    bMinimapTintLerping     = true;
+    MinimapTintLerpElapsed = 0.0f;
+    bMinimapTintLerping = true;
 }

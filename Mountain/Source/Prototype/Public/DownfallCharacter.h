@@ -457,6 +457,15 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Insanity")
     void AddInsanity(float Amount);
 
+    UFUNCTION(BlueprintCallable, Category = "AI|Stealth")
+    void ActivateMonsterSenseBlock(float DurationSeconds = 15.0f);
+
+    UFUNCTION(BlueprintCallable, Category = "AI|Stealth")
+    void EndMonsterSenseBlock();
+
+    UFUNCTION(BlueprintPure, Category = "AI|Stealth")
+    bool IsMonsterSenseBlocked() const { return bMonsterSenseBlocked; }
+
     UFUNCTION(BlueprintCallable, Category = "Insanity")
     void UpdateInsanity(float DeltaTime);
 
@@ -835,7 +844,7 @@ public:
     // 블러드문 구름 색상 목표값 (청록색 계열)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
     FLinearColor BloodMoonCloudColor = FLinearColor(0.0f, 0.3f, 0.4f, 1.0f);
-    
+
     // 전환 시작 기준값 — 에디터에서 레벨의 기본 안개/광원 색상과 맞춰 입력
     // BeginPlay 시 컴포넌트에서 읽지 않고 이 값을 Lerp 시작점으로 사용
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX|BloodMoonVFX")
@@ -1052,6 +1061,12 @@ protected:
     bool IsValidInventorySlotIndex(int32 Index) const;
     bool IsPlaceableSlot(int32 Index) const;
 
+    UPROPERTY()
+    FTimerHandle MonsterSenseBlockTimerHandle;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Stealth", meta = (AllowPrivateAccess = "true"))
+    bool bMonsterSenseBlocked = false;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     TObjectPtr<UInventoryComponent> Inventory;
 
@@ -1140,22 +1155,22 @@ private:
     float RainDarkenLerpElapsed = 0.0f;
     float RainDarkenLerpStartBias = 0.0f;
     float RainDarkenLerpTargetBias = 0.0f;
-    
+
     // Blizzard VFX 내부 상태
-    bool  bBlizzardWeightLerping       = false;
-    float BlizzardLerpElapsed          = 0.0f;
-    float BlizzardLerpStartWeight      = 0.0f;
+    bool  bBlizzardWeightLerping = false;
+    float BlizzardLerpElapsed = 0.0f;
+    float BlizzardLerpStartWeight = 0.0f;
     float BlizzardElapsedSinceActivation = 0.0f;
-    bool  bBlizzardDarkenLerping       = false;
-    float BlizzardDarkenLerpElapsed    = 0.0f;
-    float BlizzardDarkenLerpStartBias  = 0.0f;
+    bool  bBlizzardDarkenLerping = false;
+    float BlizzardDarkenLerpElapsed = 0.0f;
+    float BlizzardDarkenLerpStartBias = 0.0f;
     float BlizzardDarkenLerpTargetBias = 0.0f;
 
     // BloodMoon VFX 내부 상태
-    float BloodMoonElapsed            = 0.0f;  // Lerp 경과 시간
+    float BloodMoonElapsed = 0.0f;  // Lerp 경과 시간
     FLinearColor BloodMoonStartLightColor = FLinearColor::White;  // 전환 시작 광원 색상
-    FLinearColor BloodMoonStartFogColor   = FLinearColor::Black;  // 전환 시작 안개 색상
-    float BloodMoonStartFogDensity        = 0.0f;                 // 전환 시작 안개 밀도
+    FLinearColor BloodMoonStartFogColor = FLinearColor::Black;  // 전환 시작 안개 색상
+    float BloodMoonStartFogDensity = 0.0f;                 // 전환 시작 안개 밀도
 
     // 레벨에서 찾은 광원/안개 캐시 (BeginPlay에서 탐색, Null 허용)
     TWeakObjectPtr<ADirectionalLight>      CachedMoonLight;

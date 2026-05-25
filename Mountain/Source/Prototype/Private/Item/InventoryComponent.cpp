@@ -748,6 +748,16 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             return false;
         }
 
+        // 램프 전용 추가 효과.
+        // UtilityEffectType은 기존처럼 ReduceInsanity로 두고, 이 옵션만 켜면
+        // F 사용 한 번으로 광기 감소 + 몬스터 인식 차단이 동시에 실행된다.
+        if (Def->bBlockMonsterSenseOnUtilityUse)
+        {
+            DownfallChar->ActivateMonsterSenseBlock(
+                Def->MonsterSenseBlockDuration > 0.0f ? Def->MonsterSenseBlockDuration : 15.0f
+            );
+        }
+
         SanitizeReservedCenterSlot();
         BP_OnEquip(User, Def, S.Instance);
         return true;

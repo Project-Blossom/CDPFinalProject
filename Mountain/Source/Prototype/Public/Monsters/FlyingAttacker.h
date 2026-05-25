@@ -28,11 +28,11 @@ protected:
 
 public:
     virtual void Tick(float DeltaTime) override;
-    
+
     // Attack State
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
     EAttackState AttackState = EAttackState::Idle;
-    
+
     // Attack Settings
     UPROPERTY(EditAnywhere, Category = "Attack")
     float AttackSpeed = 600.0f;              // 돌진 속도 (cm/s)
@@ -54,7 +54,7 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Attack")
     float SafeDistance = 500.0f;             // 안전 거리 (공격 후 유지)
-    
+
     // Attack State Tracking
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
     float LastAttackTime = 0.0f;
@@ -67,10 +67,11 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
     bool bHasHitPlayer = false;              // 이번 공격에서 플레이어 타격 여부
-    
+
     // Functions
     // Attack override
     virtual void Attack() override;
+    virtual void ForceForgetPlayer(class ADownfallCharacter* PlayerToForget) override;
 
     UFUNCTION(BlueprintCallable, Category = "Attack")
     void StartCharging();                    // 돌진 준비 시작
@@ -91,33 +92,33 @@ public:
     void UpdateAttackBehavior(float DeltaTime);
     void UpdateIdlePatrol(float DeltaTime);  // Idle 배회
     void SetAttackState(EAttackState NewState);
-    
+
     // Patrol State (FlyingPlatform과 동일)
     FVector CurrentPatrolTarget;
     bool bHasPatrolTarget = false;
     float PatrolArrivalThreshold = 100.0f;
     float PatrolIdleTimer = 0.0f;
     float PatrolIdleWaitTime = 2.0f;
-    
+
     // Territory System (영역 기반 배회)
     UPROPERTY(BlueprintReadOnly, Category = "AI|Territory")
     FVector TerritoryCenter;  // 스폰 위치 (영역 중심)
-    
+
     UPROPERTY(EditAnywhere, Category = "AI|Territory")
     float TerritoryRadius = 1000.0f;  // 10m (WallCrawler SightRadius와 동일)
-    
+
     UPROPERTY(EditAnywhere, Category = "AI|Territory")
     int32 TerritorySectors = 8;  // 섹터 수 (8방향)
-    
+
     UPROPERTY(BlueprintReadOnly, Category = "AI|Territory")
     TArray<float> SectorMaxDistances;  // 각 섹터별 최대 거리
-    
+
     UPROPERTY(BlueprintReadOnly, Category = "AI|Territory")
     TArray<FVector> SectorDirections;  // 각 섹터 방향 벡터
-    
+
     UPROPERTY(BlueprintReadOnly, Category = "AI|Territory")
     int32 CurrentSector = -1;  // 현재 위치한 섹터
-    
+
     // Territory Functions
     void InitializeTerritory();  // BeginPlay에서 호출
     int32 GetCurrentSector() const;  // 현재 섹터 계산

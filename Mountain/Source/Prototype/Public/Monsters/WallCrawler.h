@@ -17,7 +17,7 @@ protected:
 
 public:
     virtual void Tick(float DeltaTime) override;
-    
+
     // Wall Movement
     UPROPERTY(EditAnywhere, Category = "Movement")
     float CrawlSpeed = 200.0f;
@@ -30,7 +30,7 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Movement")
     float WallStickDistance = 20.0f;
-    
+
     // Wall State
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
     FVector CurrentWallNormal;
@@ -40,7 +40,7 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
     FVector WallHitLocation;
-    
+
     // Patrol State
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
     FVector PatrolCenter;
@@ -96,10 +96,10 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Movement")
     float PauseChance = 0.1f;
-    
+
     // Attack State
     // DetectionGaugeMax, DetectionGainRate, DetectionDecayRate, DetectionGauge, PotentialTarget는 MonsterBase로 이동
-    
+
     UPROPERTY(EditAnywhere, Category = "Attack")
     float AttachRange = 150.0f;
 
@@ -120,20 +120,20 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
     FVector2D LastMousePosition;
-    
+
     // Detach & Stun System
     UPROPERTY(EditAnywhere, Category = "Attack")
     float StunDuration = 3.0f;
-    
+
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
     bool bIsStunned = false;
-    
+
     UPROPERTY(BlueprintReadOnly, Category = "Attack")
     float StunTimer = 0.0f;
-    
+
     UPROPERTY(EditAnywhere, Category = "Movement")
     float GravityScale = 1.0f;
-    
+
     // 스폰 직후 Attach 방지
     float SpawnTime = 0.0f;
     float MinTimeBeforeAttach = 2.0f;
@@ -158,7 +158,7 @@ public:
 
     // Gravity
     void ApplyGravity(float DeltaTime);
-    
+
     // Attack
     UFUNCTION(BlueprintCallable, Category = "Attack")
     void PursuePlayer(float DeltaTime);
@@ -174,7 +174,7 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Attack")
     void UpdateShakeDetection(float DeltaTime);
-    
+
     UFUNCTION(BlueprintCallable, Category = "Attack")
     void UpdateDetectionGauge(float DeltaTime);
 
@@ -184,7 +184,7 @@ public:
     // Carrier System (FlyingPlatform)
     UPROPERTY(BlueprintReadOnly, Category = "Carrier")
     bool bIsCarried = false;
-    
+
     UPROPERTY(BlueprintReadOnly, Category = "Carrier")
     bool bIsFalling = false;
 
@@ -202,4 +202,5 @@ public:
     // Override
     virtual void Attack() override {}
     virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus) override;
+    virtual void ForceForgetPlayer(class ADownfallCharacter* PlayerToForget) override;
 };

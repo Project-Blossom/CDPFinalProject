@@ -4,6 +4,8 @@
 #include "Perception/AISenseConfig_Hearing.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "DrawDebugHelpers.h"
+#include "AIController.h"
+#include "BehaviorTree/BlackboardComponent.h"
 
 DEFINE_LOG_CATEGORY(LogMonster);
 
@@ -16,7 +18,7 @@ AMonsterBase::AMonsterBase()
 
     // AI Perception Setup
     PerceptionComponent = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("PerceptionComponent"));
-    
+
     // Hearing Config (기본값 - 모든 몬스터가 사용)
     UAISenseConfig_Hearing* HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("HearingConfig"));
     HearingConfig->HearingRange = 1000.0f;
@@ -24,9 +26,9 @@ AMonsterBase::AMonsterBase()
     HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
     HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
     HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
-    
+
     PerceptionComponent->ConfigureSense(*HearingConfig);
-    
+
     // Sight Config (시야 감지 활성화)
     UAISenseConfig_Sight* SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
     SightConfig->SightRadius = SightRadius;
@@ -36,10 +38,10 @@ AMonsterBase::AMonsterBase()
     SightConfig->DetectionByAffiliation.bDetectEnemies = true;
     SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
     SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
-    
+
     PerceptionComponent->ConfigureSense(*SightConfig);
     PerceptionComponent->SetDominantSense(SightConfig->GetSenseImplementation());
-    
+
     // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("MonsterBase constructor - Perception configured (Sight DOMINANT + Hearing)"));
 }
 
@@ -53,10 +55,10 @@ void AMonsterBase::BeginPlay()
     if (PerceptionComponent)
     {
         PerceptionComponent->OnTargetPerceptionUpdated.AddDynamic(this, &AMonsterBase::OnPerceptionUpdated);
-        
+
         // CRITICAL: Perception 활성화
         PerceptionComponent->Activate(true);
-        
+
         // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s Perception activated! SightRadius: %.1f"), *GetName(), SightRadius);
     }
     else
@@ -94,6 +96,12 @@ void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
         return;
     }
 
+    if (Player->IsMonsterSenseBlocked())
+    {
+        ForceForgetPlayer(Player);
+        return;
+    }
+
     if (Stimulus.WasSuccessfullySensed())
     {
         // 플레이어 인식
@@ -105,7 +113,7 @@ void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
     {
         // 플레이어 놓침 - 하지만 실제 거리로 재확인
         float Distance = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
-        
+
         // LoseSightRadius 밖으로 나갔을 때만 null 설정
         if (Distance > LoseSightRadius)
         {
@@ -122,11 +130,41 @@ void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
     }
 }
 
+void AMonsterBase::ForceForgetPlayer(ADownfallCharacter* PlayerToForget)
+{
+    if (!PlayerToForget || TargetPlayer == PlayerToForget)
+    {
+        TargetPlayer = nullptr;
+    }
+
+    if (!PlayerToForget || PotentialTarget == PlayerToForget)
+    {
+        PotentialTarget = nullptr;
+    }
+
+    DetectionGauge = 0.0f;
+
+    if (AAIController* AIController = Cast<AAIController>(GetController()))
+    {
+        if (UBlackboardComponent* Blackboard = AIController->GetBlackboardComponent())
+        {
+            Blackboard->ClearValue(TEXT("TargetActor"));
+            Blackboard->ClearValue(TEXT("TargetPlayer"));
+            Blackboard->ClearValue(TEXT("Player"));
+            Blackboard->ClearValue(TEXT("PotentialTarget"));
+            Blackboard->SetValueAsBool(TEXT("bHasTarget"), false);
+            Blackboard->SetValueAsBool(TEXT("bCanAttack"), false);
+            Blackboard->SetValueAsBool(TEXT("bPlayerNearby"), false);
+            Blackboard->SetValueAsFloat(TEXT("DetectionGauge"), 0.0f);
+        }
+    }
+}
+
 void AMonsterBase::TakeDamageCustom(float Damage)
 {
     CurrentHealth -= Damage;
     CurrentHealth = FMath::Max(0.0f, CurrentHealth);
-    
+
     // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s took %.1f damage, remaining HP: %.1f"), 
         // *GetName(), Damage, CurrentHealth);
 
@@ -139,9 +177,9 @@ void AMonsterBase::TakeDamageCustom(float Damage)
 void AMonsterBase::Die()
 {
     // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s died"), *GetName());
-    
+
     // TODO: Death animation, effects, rewards
-    
+
     // 일단 파괴
     Destroy();
 }

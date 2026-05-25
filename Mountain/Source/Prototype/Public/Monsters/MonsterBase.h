@@ -30,7 +30,7 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "AI")
     AActor* PotentialTarget = nullptr;
-    
+
     // Perception Settings
     UPROPERTY(EditAnywhere, Category = "AI|Perception")
     float SightRadius = 1000.0f;
@@ -53,14 +53,14 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "AI|Detection")
     float DetectionDecayRate = 10.0f;
-    
+
     // Health
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
     float MaxHealth = 100.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Stats")
     float CurrentHealth;
-    
+
     // Debug
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
     bool bShowDebug = false;
@@ -75,9 +75,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Monster")
     virtual void Die();
 
+    UFUNCTION(BlueprintCallable, Category = "Monster")
+    virtual void ForceForgetPlayer(class ADownfallCharacter* PlayerToForget);
+
     UFUNCTION(BlueprintPure, Category = "Monster")
     bool IsPlayerDetected() const { return TargetPlayer != nullptr; }
-    
+
     UFUNCTION(BlueprintPure, Category = "Monster")
     float GetDetectionGauge() const { return DetectionGauge; }
 
