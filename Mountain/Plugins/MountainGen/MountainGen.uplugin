@@ -29,5 +29,5 @@
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
 		}
-	],
+	]
 }
