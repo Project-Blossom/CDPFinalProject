@@ -1055,6 +1055,224 @@ bool AMonsterSpawner::FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpa
     return true;
 }
 
+
+static bool MG_IsFarEnoughFromPreparedResults(const TArray<FSpawnProbeResult>& PreparedResults, const FVector& Location, float RequiredDistance)
+{
+    if (RequiredDistance <= 0.0f)
+    {
+        return true;
+    }
+
+    for (const FSpawnProbeResult& Prepared : PreparedResults)
+    {
+        if (!Prepared.bSuccess)
+        {
+            continue;
+        }
+
+        if (FVector::Dist(Prepared.Location, Location) < RequiredDistance)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool AMonsterSpawner::PrepareSpawnResults(
+    TArray<FSpawnProbeResult>& OutWallResults,
+    TArray<FSpawnProbeResult>& OutPlatformResults,
+    TArray<FSpawnProbeResult>& OutAttackerResults,
+    FSpawnFailStats& OutWallStats,
+    FSpawnFailStats& OutPlatformStats,
+    FSpawnFailStats& OutAttackerStats) const
+{
+    OutWallResults.Reset();
+    OutPlatformResults.Reset();
+    OutAttackerResults.Reset();
+
+    OutWallStats = FSpawnFailStats();
+    OutPlatformStats = FSpawnFailStats();
+    OutAttackerStats = FSpawnFailStats();
+
+    if (WallCrawlerCount > 0 && !WallCrawlerClass)
+    {
+        OutWallStats.Add(ESpawnFailReason::NoClass);
+    }
+    else if (WallCrawlerClass)
+    {
+        for (int32 Attempt = 0; Attempt < MaxAttemptsPerWallCrawler && OutWallResults.Num() < WallCrawlerCount; ++Attempt)
+        {
+            FSpawnProbeResult Result;
+            ESpawnFailReason FailReason = ESpawnFailReason::None;
+
+            if (!FindWallCrawlerSpawn(Result, FailReason))
+            {
+                OutWallStats.Add(FailReason);
+                continue;
+            }
+
+            if (!MG_IsFarEnoughFromPreparedResults(OutWallResults, Result.Location, WallCrawlerMinDistance))
+            {
+                OutWallStats.Add(ESpawnFailReason::SameTypeDistance);
+                continue;
+            }
+
+            Result.bSuccess = true;
+            OutWallResults.Add(Result);
+        }
+    }
+
+    if (FlyingPlatformCount > 0 && !FlyingPlatformClass)
+    {
+        OutPlatformStats.Add(ESpawnFailReason::NoClass);
+    }
+    else if (FlyingPlatformClass)
+    {
+        for (int32 Attempt = 0; Attempt < MaxAttemptsPerFlyingPlatform && OutPlatformResults.Num() < FlyingPlatformCount; ++Attempt)
+        {
+            FSpawnProbeResult Result;
+            ESpawnFailReason FailReason = ESpawnFailReason::None;
+
+            if (!FindFlyingPlatformSpawn(Result, FailReason))
+            {
+                OutPlatformStats.Add(FailReason);
+                continue;
+            }
+
+            if (!MG_IsFarEnoughFromPreparedResults(OutPlatformResults, Result.Location, FlyingPlatformMinDistance))
+            {
+                OutPlatformStats.Add(ESpawnFailReason::SameTypeDistance);
+                continue;
+            }
+
+            Result.bSuccess = true;
+            OutPlatformResults.Add(Result);
+        }
+    }
+
+    if (FlyingAttackerCount > 0 && !FlyingAttackerClass)
+    {
+        OutAttackerStats.Add(ESpawnFailReason::NoClass);
+    }
+    else if (FlyingAttackerClass)
+    {
+        for (int32 Attempt = 0; Attempt < MaxAttemptsPerFlyingAttacker && OutAttackerResults.Num() < FlyingAttackerCount; ++Attempt)
+        {
+            FSpawnProbeResult Result;
+            ESpawnFailReason FailReason = ESpawnFailReason::None;
+
+            if (!FindFlyingAttackerSpawn(Result, FailReason))
+            {
+                OutAttackerStats.Add(FailReason);
+                continue;
+            }
+
+            if (!MG_IsFarEnoughFromPreparedResults(OutAttackerResults, Result.Location, FlyingAttackerMinDistance))
+            {
+                OutAttackerStats.Add(ESpawnFailReason::SameTypeDistance);
+                continue;
+            }
+
+            Result.bSuccess = true;
+            OutAttackerResults.Add(Result);
+        }
+    }
+
+    return (OutWallResults.Num() + OutPlatformResults.Num() + OutAttackerResults.Num()) > 0;
+}
+
+bool AMonsterSpawner::SpawnPreparedMonsters(
+    const TArray<FSpawnProbeResult>& WallResults,
+    const TArray<FSpawnProbeResult>& PlatformResults,
+    const TArray<FSpawnProbeResult>& AttackerResults,
+    TArray<AMonsterBase*>& OutSpawnedMonsters,
+    FSpawnFailStats& InOutWallStats,
+    FSpawnFailStats& InOutPlatformStats,
+    FSpawnFailStats& InOutAttackerStats) const
+{
+    OutSpawnedMonsters.Reset();
+
+    if (!GetWorld())
+    {
+        return false;
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    for (const FSpawnProbeResult& Result : WallResults)
+    {
+        AWallCrawler* Spawned = GetWorld()->SpawnActor<AWallCrawler>(
+            WallCrawlerClass,
+            Result.Location,
+            Result.Rotation,
+            SpawnParams);
+
+        if (!Spawned)
+        {
+            InOutWallStats.Add(ESpawnFailReason::SpawnActorFailed);
+            return false;
+        }
+
+        OutSpawnedMonsters.Add(Spawned);
+
+        if (bShowDebugPoints)
+        {
+            DrawDebugSphere(GetWorld(), Result.Location, 35.0f, 12, FColor::Green, false, 12.0f, 0, 2.0f);
+            DrawDebugLine(GetWorld(), Result.Location, Result.SurfacePoint, FColor::Green, false, 12.0f, 0, 2.0f);
+        }
+    }
+
+    for (const FSpawnProbeResult& Result : PlatformResults)
+    {
+        AFlyingPlatform* Spawned = GetWorld()->SpawnActor<AFlyingPlatform>(
+            FlyingPlatformClass,
+            Result.Location,
+            Result.Rotation,
+            SpawnParams);
+
+        if (!Spawned)
+        {
+            InOutPlatformStats.Add(ESpawnFailReason::SpawnActorFailed);
+            return false;
+        }
+
+        OutSpawnedMonsters.Add(Spawned);
+
+        if (bShowDebugPoints)
+        {
+            DrawDebugSphere(GetWorld(), Result.Location, 35.0f, 12, FColor::Blue, false, 12.0f, 0, 2.0f);
+            DrawDebugLine(GetWorld(), Result.SurfacePoint, Result.Location, FColor::Blue, false, 12.0f, 0, 2.0f);
+        }
+    }
+
+    for (const FSpawnProbeResult& Result : AttackerResults)
+    {
+        AFlyingAttacker* Spawned = GetWorld()->SpawnActor<AFlyingAttacker>(
+            FlyingAttackerClass,
+            Result.Location,
+            Result.Rotation,
+            SpawnParams);
+
+        if (!Spawned)
+        {
+            InOutAttackerStats.Add(ESpawnFailReason::SpawnActorFailed);
+            return false;
+        }
+
+        OutSpawnedMonsters.Add(Spawned);
+
+        if (bShowDebugPoints)
+        {
+            DrawDebugSphere(GetWorld(), Result.Location, 40.0f, 12, FColor::Red, false, 12.0f, 0, 2.0f);
+            DrawDebugLine(GetWorld(), Result.SurfacePoint, Result.Location, FColor::Red, false, 12.0f, 0, 2.0f);
+        }
+    }
+
+    return true;
+}
+
 void AMonsterSpawner::SpawnMonsters()
 {
     if (!GetWorld())
@@ -1075,141 +1293,143 @@ void AMonsterSpawner::SpawnMonsters()
         return;
     }
 
-    ClearAllMonsters();
+    // Keep previously spawned monsters alive while the new mountain-based spawn result is being prepared.
+    // This makes the procedural flow explicit:
+    // mountain generated -> front/cliff area analyzed -> spawn candidates prepared -> candidates validated -> SpawnActor.
+    TArray<AMonsterBase*> PreviousMonsters = MoveTemp(SpawnedMonsters);
+    SpawnedMonsters.Reset();
 
-    int32 SpawnedWall = 0;
-    int32 SpawnedPlatform = 0;
-    int32 SpawnedAttacker = 0;
+    TArray<FSpawnProbeResult> WallResults;
+    TArray<FSpawnProbeResult> PlatformResults;
+    TArray<FSpawnProbeResult> AttackerResults;
 
     FSpawnFailStats WallStats;
     FSpawnFailStats PlatformStats;
     FSpawnFailStats AttackerStats;
 
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    const bool bPreparedAny = PrepareSpawnResults(
+        WallResults,
+        PlatformResults,
+        AttackerResults,
+        WallStats,
+        PlatformStats,
+        AttackerStats);
 
-    if (WallCrawlerClass)
+    LogFailStats(TEXT("[MonsterSpawner][Prepared WallCrawler]"), WallStats, WallResults.Num(), WallCrawlerCount);
+    LogFailStats(TEXT("[MonsterSpawner][Prepared FlyingPlatform]"), PlatformStats, PlatformResults.Num(), FlyingPlatformCount);
+    LogFailStats(TEXT("[MonsterSpawner][Prepared FlyingAttacker]"), AttackerStats, AttackerResults.Num(), FlyingAttackerCount);
+
+    if (!bPreparedAny)
     {
-        for (int32 Attempt = 0; Attempt < MaxAttemptsPerWallCrawler && SpawnedWall < WallCrawlerCount; ++Attempt)
+        UE_LOG(LogTemp, Warning, TEXT("[MonsterSpawner] No validated spawn candidates. Existing monsters are kept. No SpawnActor executed."));
+        SpawnedMonsters = MoveTemp(PreviousMonsters);
+        return;
+    }
+
+    TArray<AMonsterBase*> NewSpawnedMonsters;
+    const bool bSpawnSucceeded = SpawnPreparedMonsters(
+        WallResults,
+        PlatformResults,
+        AttackerResults,
+        NewSpawnedMonsters,
+        WallStats,
+        PlatformStats,
+        AttackerStats);
+
+    if (!bSpawnSucceeded)
+    {
+        for (AMonsterBase* Monster : NewSpawnedMonsters)
         {
-            FSpawnProbeResult Result;
-            ESpawnFailReason FailReason = ESpawnFailReason::None;
-
-            if (!FindWallCrawlerSpawn(Result, FailReason))
+            if (IsValid(Monster))
             {
-                WallStats.Add(FailReason);
-                continue;
+                Monster->Destroy();
             }
+        }
 
-            AWallCrawler* Spawned = GetWorld()->SpawnActor<AWallCrawler>(
-                WallCrawlerClass,
-                Result.Location,
-                Result.Rotation,
-                SpawnParams);
+        UE_LOG(LogTemp, Error, TEXT("[MonsterSpawner] SpawnActor failed after preparation. New spawned monsters were removed and previous monsters are kept."));
+        SpawnedMonsters = MoveTemp(PreviousMonsters);
+        return;
+    }
 
-            if (!Spawned)
-            {
-                WallStats.Add(ESpawnFailReason::SpawnActorFailed);
-                continue;
-            }
-
-            SpawnedMonsters.Add(Spawned);
-            SpawnedWall++;
-
-            if (bShowDebugPoints)
-            {
-                DrawDebugSphere(GetWorld(), Result.Location, 35.0f, 12, FColor::Green, false, 12.0f, 0, 2.0f);
-                DrawDebugLine(GetWorld(), Result.Location, Result.SurfacePoint, FColor::Green, false, 12.0f, 0, 2.0f);
-            }
+    for (AMonsterBase* Monster : PreviousMonsters)
+    {
+        if (IsValid(Monster))
+        {
+            Monster->Destroy();
         }
     }
 
-    if (FlyingPlatformClass)
-    {
-        for (int32 Attempt = 0; Attempt < MaxAttemptsPerFlyingPlatform && SpawnedPlatform < FlyingPlatformCount; ++Attempt)
-        {
-            FSpawnProbeResult Result;
-            ESpawnFailReason FailReason = ESpawnFailReason::None;
-
-            if (!FindFlyingPlatformSpawn(Result, FailReason))
-            {
-                PlatformStats.Add(FailReason);
-                continue;
-            }
-
-            AFlyingPlatform* Spawned = GetWorld()->SpawnActor<AFlyingPlatform>(
-                FlyingPlatformClass,
-                Result.Location,
-                Result.Rotation,
-                SpawnParams);
-
-            if (!Spawned)
-            {
-                PlatformStats.Add(ESpawnFailReason::SpawnActorFailed);
-                continue;
-            }
-
-            SpawnedMonsters.Add(Spawned);
-            SpawnedPlatform++;
-
-            if (bShowDebugPoints)
-            {
-                DrawDebugSphere(GetWorld(), Result.Location, 35.0f, 12, FColor::Blue, false, 12.0f, 0, 2.0f);
-                DrawDebugLine(GetWorld(), Result.SurfacePoint, Result.Location, FColor::Blue, false, 12.0f, 0, 2.0f);
-            }
-        }
-    }
-
-    if (FlyingAttackerClass)
-    {
-        for (int32 Attempt = 0; Attempt < MaxAttemptsPerFlyingAttacker && SpawnedAttacker < FlyingAttackerCount; ++Attempt)
-        {
-            FSpawnProbeResult Result;
-            ESpawnFailReason FailReason = ESpawnFailReason::None;
-
-            if (!FindFlyingAttackerSpawn(Result, FailReason))
-            {
-                AttackerStats.Add(FailReason);
-                continue;
-            }
-
-            AFlyingAttacker* Spawned = GetWorld()->SpawnActor<AFlyingAttacker>(
-                FlyingAttackerClass,
-                Result.Location,
-                Result.Rotation,
-                SpawnParams);
-
-            if (!Spawned)
-            {
-                AttackerStats.Add(ESpawnFailReason::SpawnActorFailed);
-                continue;
-            }
-
-            SpawnedMonsters.Add(Spawned);
-            SpawnedAttacker++;
-
-            if (bShowDebugPoints)
-            {
-                DrawDebugSphere(GetWorld(), Result.Location, 40.0f, 12, FColor::Red, false, 12.0f, 0, 2.0f);
-                DrawDebugLine(GetWorld(), Result.SurfacePoint, Result.Location, FColor::Red, false, 12.0f, 0, 2.0f);
-            }
-        }
-    }
-
-    LogFailStats(TEXT("[MonsterSpawner][WallCrawler]"), WallStats, SpawnedWall, WallCrawlerCount);
-    LogFailStats(TEXT("[MonsterSpawner][FlyingPlatform]"), PlatformStats, SpawnedPlatform, FlyingPlatformCount);
-    LogFailStats(TEXT("[MonsterSpawner][FlyingAttacker]"), AttackerStats, SpawnedAttacker, FlyingAttackerCount);
+    SpawnedMonsters = MoveTemp(NewSpawnedMonsters);
 
     UE_LOG(
         LogTemp,
         Warning,
-        TEXT("[MonsterSpawner] Result | Wall %d/%d | Platform %d/%d | Attacker %d/%d | Total %d"),
-        SpawnedWall, WallCrawlerCount,
-        SpawnedPlatform, FlyingPlatformCount,
-        SpawnedAttacker, FlyingAttackerCount,
+        TEXT("[MonsterSpawner] Final SpawnActor Result | Wall %d/%d | Platform %d/%d | Attacker %d/%d | Total %d"),
+        WallResults.Num(), WallCrawlerCount,
+        PlatformResults.Num(), FlyingPlatformCount,
+        AttackerResults.Num(), FlyingAttackerCount,
         SpawnedMonsters.Num()
     );
 }
+
+
+void AMonsterSpawner::GetCurrentMonsterCounts(
+    int32& OutWallCrawlerCount,
+    int32& OutFlyingPlatformCount,
+    int32& OutFlyingAttackerCount,
+    int32& OutTotalCount) const
+{
+    OutWallCrawlerCount = 0;
+    OutFlyingPlatformCount = 0;
+    OutFlyingAttackerCount = 0;
+    OutTotalCount = 0;
+
+    for (AMonsterBase* Monster : SpawnedMonsters)
+    {
+        if (!IsValid(Monster))
+        {
+            continue;
+        }
+
+        ++OutTotalCount;
+
+        if (Monster->IsA(AWallCrawler::StaticClass()))
+        {
+            ++OutWallCrawlerCount;
+        }
+        else if (Monster->IsA(AFlyingPlatform::StaticClass()))
+        {
+            ++OutFlyingPlatformCount;
+        }
+        else if (Monster->IsA(AFlyingAttacker::StaticClass()))
+        {
+            ++OutFlyingAttackerCount;
+        }
+    }
+}
+
+FString AMonsterSpawner::GetCurrentMonsterCountDebugText() const
+{
+    int32 WallCount = 0;
+    int32 PlatformCount = 0;
+    int32 AttackerCount = 0;
+    int32 TotalCount = 0;
+
+    GetCurrentMonsterCounts(WallCount, PlatformCount, AttackerCount, TotalCount);
+
+    return FString::Printf(
+        TEXT("Monsters: WallCrawler %d/%d | FlyingPlatform %d/%d | FlyingAttacker %d/%d | Total %d/%d"),
+        WallCount,
+        WallCrawlerCount,
+        PlatformCount,
+        FlyingPlatformCount,
+        AttackerCount,
+        FlyingAttackerCount,
+        TotalCount,
+        WallCrawlerCount + FlyingPlatformCount + FlyingAttackerCount
+    );
+}
+
 
 void AMonsterSpawner::ClearAllMonsters()
 {

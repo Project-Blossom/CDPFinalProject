@@ -16,6 +16,7 @@
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "Monsters/FlyingPlatform.h"
+#include "Monsters/MonsterSpawner.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
@@ -2799,6 +2800,24 @@ void ADownfallCharacter::DrawDebugInfo()
     GEngine->AddOnScreenDebugMessage(
         LineIndex++, 0.0f, bDebugFlyMode ? FColor::Yellow : FColor::Silver,
         FString::Printf(TEXT("Fly Mode: %s | Space Up / Ctrl Down"), bDebugFlyMode ? TEXT("ON") : TEXT("OFF"))
+    );
+
+    // Monster spawn count 표시
+    FString MonsterCountText = TEXT("Monsters: Spawner not found");
+    TArray<AActor*> FoundMonsterSpawners;
+    UGameplayStatics::GetAllActorsOfClass(GetWorld(), AMonsterSpawner::StaticClass(), FoundMonsterSpawners);
+
+    if (FoundMonsterSpawners.Num() > 0)
+    {
+        if (AMonsterSpawner* MonsterSpawner = Cast<AMonsterSpawner>(FoundMonsterSpawners[0]))
+        {
+            MonsterCountText = MonsterSpawner->GetCurrentMonsterCountDebugText();
+        }
+    }
+
+    GEngine->AddOnScreenDebugMessage(
+        LineIndex++, 0.0f, FColor::Orange,
+        MonsterCountText
     );
 
     // Insanity 표시

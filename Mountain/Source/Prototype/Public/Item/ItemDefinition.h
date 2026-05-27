@@ -39,7 +39,7 @@ public:
     float UtilityEffectValue = 0.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility|Lamp")
-    bool bBlockMonsterSenseOnUtilityUse = fasle;
+    bool bBlockMonsterSenseOnUtilityUse = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility|Lamp", meta = (ClampMin = "0.0"))
     float MonsterSenseBlockDuration = 15.0f;

@@ -258,6 +258,16 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Spawning")
     void ClearAllMonsters();
 
+    UFUNCTION(BlueprintCallable, Category = "Spawning|Debug")
+    void GetCurrentMonsterCounts(
+        int32& OutWallCrawlerCount,
+        int32& OutFlyingPlatformCount,
+        int32& OutFlyingAttackerCount,
+        int32& OutTotalCount) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Spawning|Debug")
+    FString GetCurrentMonsterCountDebugText() const;
+
     UFUNCTION()
     void HandleMountainGenerated(AActor* Generator);
 
@@ -286,6 +296,23 @@ private:
     bool FindWallCrawlerSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
     bool FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
     bool FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
+
+    bool PrepareSpawnResults(
+        TArray<FSpawnProbeResult>& OutWallResults,
+        TArray<FSpawnProbeResult>& OutPlatformResults,
+        TArray<FSpawnProbeResult>& OutAttackerResults,
+        FSpawnFailStats& OutWallStats,
+        FSpawnFailStats& OutPlatformStats,
+        FSpawnFailStats& OutAttackerStats) const;
+
+    bool SpawnPreparedMonsters(
+        const TArray<FSpawnProbeResult>& WallResults,
+        const TArray<FSpawnProbeResult>& PlatformResults,
+        const TArray<FSpawnProbeResult>& AttackerResults,
+        TArray<AMonsterBase*>& OutSpawnedMonsters,
+        FSpawnFailStats& InOutWallStats,
+        FSpawnFailStats& InOutPlatformStats,
+        FSpawnFailStats& InOutAttackerStats) const;
 
     bool EvaluateFlyingAttackerTerritory(const FVector& CandidateLocation, float TerritoryRadius) const;
 
