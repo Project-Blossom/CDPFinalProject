@@ -16,6 +16,7 @@
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "Monsters/FlyingPlatform.h"
+#include "Monsters/MonsterBase.h"
 #include "Monsters/MonsterSpawner.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISense_Sight.h"
@@ -3296,10 +3297,59 @@ bool ADownfallCharacter::TryUseEquippedUtility()
         return false;
     }
 
+    UItemDefinition* Def = Inventory->GetItemDefinitionAt(EquippedUtilitySlotIndex);
+    if (!Def)
+    {
+        return false;
+    }
+
+    const FName CooldownKey = Def->ItemId;
+    const float CooldownSeconds = FMath::Max(0.0f, Def->UtilityCooldownSeconds);
+
+    if (UWorld* World = GetWorld())
+    {
+        const float Now = World->GetTimeSeconds();
+
+        if (const float* CooldownEndTime = UtilityCooldownEndTimes.Find(CooldownKey))
+        {
+            const float Remaining = *CooldownEndTime - Now;
+            if (Remaining > 0.0f)
+            {
+                const FString ItemName = Def->DisplayName.IsEmpty()
+                    ? Def->ItemId.ToString()
+                    : Def->DisplayName.ToString();
+
+                const FString Message = FString::Printf(
+                    TEXT("%s cooldown: %.1f sec remaining"),
+                    *ItemName,
+                    Remaining
+                );
+
+                if (GEngine)
+                {
+                    GEngine->AddOnScreenDebugMessage(-1, 1.25f, FColor::Yellow, Message);
+                }
+
+                UE_LOG(LogDownFall, Warning, TEXT("%s"), *Message);
+                return false;
+            }
+
+            UtilityCooldownEndTimes.Remove(CooldownKey);
+        }
+    }
+
     const bool bUsed = Inventory->UseItem(EquippedUtilitySlotIndex, this);
     if (!bUsed)
     {
         return false;
+    }
+
+    if (CooldownSeconds > 0.0f)
+    {
+        if (UWorld* World = GetWorld())
+        {
+            UtilityCooldownEndTimes.Add(CooldownKey, World->GetTimeSeconds() + CooldownSeconds);
+        }
     }
 
     const TArray<FItemStack>& AfterSlots = Inventory->GetSlots();

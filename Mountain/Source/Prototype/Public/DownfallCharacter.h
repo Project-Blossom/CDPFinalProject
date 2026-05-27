@@ -1064,6 +1064,9 @@ protected:
     UPROPERTY()
     FTimerHandle MonsterSenseBlockTimerHandle;
 
+    UPROPERTY(Transient)
+    TMap<FName, float> UtilityCooldownEndTimes;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Stealth", meta = (AllowPrivateAccess = "true"))
     bool bMonsterSenseBlocked = false;
 

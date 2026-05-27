@@ -38,6 +38,9 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility", meta = (ClampMin = "0.0"))
     float UtilityEffectValue = 0.f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility|Cooldown", meta = (ClampMin = "0.0"))
+    float UtilityCooldownSeconds = 0.f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Utility|Lamp")
     bool bBlockMonsterSenseOnUtilityUse = false;
 
@@ -50,6 +53,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stack", meta = (ClampMin = "1"))
     int32 MaxStack = 1;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Place")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Place", meta = (EditCondition = "UseType==EItemUseType::PlaceActor || UseType==EItemUseType::AttachAnchorToBolt"))
     TSubclassOf<AActor> PlaceActorClass;
 };
