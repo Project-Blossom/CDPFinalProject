@@ -28,6 +28,7 @@ class USplineComponent;
 class USplineMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
 
@@ -429,6 +430,24 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual", meta = (ClampMin = "1", ClampMax = "16"))
     int32 SafetyLineVisualMaxSegments = 6;
+
+    // 1인칭 시점에서 로프가 화면 중앙을 가리지 않도록,
+    // 로프의 플레이어 쪽 시각 끝점을 카메라 기준 화면 위쪽으로 보정한다.
+    // 실제 물리 제약 위치는 그대로 두고 시각 표현만 변경한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual|FirstPerson")
+    bool bUseFirstPersonSafetyLineVisualOffset = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual|FirstPerson", meta = (ClampMin = "0.0"))
+    float SafetyLineVisualCameraForwardOffsetCm = 80.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual|FirstPerson")
+    float SafetyLineVisualCameraRightOffsetCm = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual|FirstPerson")
+    float SafetyLineVisualCameraUpOffsetCm = 85.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SafetyLine|Visual|FirstPerson", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float SafetyLineVisualOpacity = 0.35f;
 
     // Events
     UFUNCTION(BlueprintImplementableEvent, Category = "Climbing")
@@ -1116,6 +1135,7 @@ private:
     void UpdateSafetyLineVisual();
     void ClearSafetyLineVisual();
     void EnsureSafetyLineVisualMeshPool(int32 RequiredSegments);
+    FVector GetSafetyLineVisualPlayerEndLocation() const;
     float CalculateNextSwitchInterval() const;
     void ApplyClimbingMappingContext();
     void UpdateAltitudeUI();
@@ -1151,6 +1171,9 @@ private:
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<USplineMeshComponent>> SafetyLineSplineMeshes;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UMaterialInstanceDynamic>> SafetyLineSplineMaterialInstances;
 
     float CachedDirtIntensity = -std::numeric_limits<float>::max();
     float CachedDirtBlurOffset = -std::numeric_limits<float>::max();

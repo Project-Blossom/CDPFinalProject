@@ -2568,6 +2568,7 @@ void ADownfallCharacter::EnsureSafetyLineVisualMeshPool(int32 RequiredSegments)
         NewMesh->SetVisibility(false);
 
         SafetyLineSplineMeshes.Add(NewMesh);
+        SafetyLineSplineMaterialInstances.Add(nullptr);
     }
 
     for (int32 Index = 0; Index < SafetyLineSplineMeshes.Num(); ++Index)
@@ -2597,6 +2598,29 @@ void ADownfallCharacter::ClearSafetyLineVisual()
     }
 }
 
+FVector ADownfallCharacter::GetSafetyLineVisualPlayerEndLocation() const
+{
+    if (bUseFirstPersonSafetyLineVisualOffset && FirstPersonCamera)
+    {
+        const FVector CameraLocation = FirstPersonCamera->GetComponentLocation();
+        const FVector Forward = FirstPersonCamera->GetForwardVector();
+        const FVector Right = FirstPersonCamera->GetRightVector();
+        const FVector Up = FirstPersonCamera->GetUpVector();
+
+        return CameraLocation
+            + Forward * SafetyLineVisualCameraForwardOffsetCm
+            + Right * SafetyLineVisualCameraRightOffsetCm
+            + Up * SafetyLineVisualCameraUpOffsetCm;
+    }
+
+    if (GetCapsuleComponent())
+    {
+        return GetCapsuleComponent()->GetComponentLocation();
+    }
+
+    return GetActorLocation();
+}
+
 void ADownfallCharacter::UpdateSafetyLineVisual()
 {
     if (!SafetyLineSpline)
@@ -2611,7 +2635,7 @@ void ADownfallCharacter::UpdateSafetyLineVisual()
     }
 
     const FVector AnchorLocation = GetSafetyLineAnchorLocation();
-    const FVector PlayerLocation = GetCapsuleComponent()->GetComponentLocation();
+    const FVector PlayerLocation = GetSafetyLineVisualPlayerEndLocation();
 
     if (AnchorLocation.IsNearlyZero() || PlayerLocation.IsNearlyZero())
     {
@@ -2669,7 +2693,30 @@ void ADownfallCharacter::UpdateSafetyLineVisual()
         MeshComp->SetStaticMesh(SafetyLineVisualMesh);
         if (SafetyLineVisualMaterial)
         {
-            MeshComp->SetMaterial(0, SafetyLineVisualMaterial);
+            const bool bNeedMaterialInstance =
+                !SafetyLineSplineMaterialInstances.IsValidIndex(Index)
+                || !SafetyLineSplineMaterialInstances[Index]
+                || MeshComp->GetMaterial(0) != SafetyLineSplineMaterialInstances[Index];
+
+            if (bNeedMaterialInstance)
+            {
+                UMaterialInstanceDynamic* MID = MeshComp->CreateDynamicMaterialInstance(0, SafetyLineVisualMaterial);
+
+                if (SafetyLineSplineMaterialInstances.IsValidIndex(Index))
+                {
+                    SafetyLineSplineMaterialInstances[Index] = MID;
+                }
+            }
+
+            if (SafetyLineSplineMaterialInstances.IsValidIndex(Index))
+            {
+                if (UMaterialInstanceDynamic* MID = SafetyLineSplineMaterialInstances[Index])
+                {
+                    MID->SetScalarParameterValue(TEXT("Opacity"), SafetyLineVisualOpacity);
+                    MID->SetScalarParameterValue(TEXT("Alpha"), SafetyLineVisualOpacity);
+                    MID->SetScalarParameterValue(TEXT("Transparency"), SafetyLineVisualOpacity);
+                }
+            }
         }
 
         const FVector StartPos = SafetyLineSpline->GetLocationAtSplinePoint(Index, ESplineCoordinateSpace::Local);
@@ -4314,21 +4361,21 @@ void ADownfallCharacter::UpdateMinimapUI()
         return;
     }
 
-    const FVector PlayerPos  = GetActorLocation();
+    const FVector PlayerPos = GetActorLocation();
     const FVector CapturePos = CachedSceneCapture->GetActorLocation();
 
     // ── UV 좌표 계산 ───────────────────────────────────────────
     // 암벽 좌표계: Y축 = 좌우(UVX), Z축 = 상하(UVY)
-    const float HalfW = CliffTotalWidth  * 0.5f;
+    const float HalfW = CliffTotalWidth * 0.5f;
     const float HalfH = CliffTotalHeight * 0.5f;
 
     const float UV_X = FMath::Clamp(
-        (PlayerPos.Y - (CapturePos.Y - HalfW)) / CliffTotalWidth,  0.0f, 1.0f);
+        (PlayerPos.Y - (CapturePos.Y - HalfW)) / CliffTotalWidth, 0.0f, 1.0f);
     const float UV_Y = FMath::Clamp(
         1.0f - (PlayerPos.Z - (CapturePos.Z - HalfH)) / CliffTotalHeight, 0.0f, 1.0f);
 
     // ── UV Scale (표시 범위 비율) ──────────────────────────────
-    const float UVScale_X = FMath::Clamp(MinimapViewRange / CliffTotalWidth,  0.01f, 1.0f);
+    const float UVScale_X = FMath::Clamp(MinimapViewRange / CliffTotalWidth, 0.01f, 1.0f);
     const float UVScale_Y = FMath::Clamp(MinimapViewRange / CliffTotalHeight, 0.01f, 1.0f);
 
     // ── UV Offset (플레이어 중앙 정렬) ─────────────────────────
@@ -4338,7 +4385,7 @@ void ADownfallCharacter::UpdateMinimapUI()
     // UV Region 적용 → 미니맵 배경 스크롤
     MinimapWidget->SetMinimapUVRegion(
         FVector2D(UVOffset_X, UVOffset_Y),
-        FVector2D(UVScale_X,  UVScale_Y)
+        FVector2D(UVScale_X, UVScale_Y)
     );
 
     // ── 플레이어 마커 위치 (일반: 중앙, 경계: 약간 이동) ───────
@@ -4403,7 +4450,7 @@ void ADownfallCharacter::AutoConfigureMinimapCapture()
         if (!BoxExtent.IsNearlyZero())
         {
             // Y축 = 좌우 폭, Z축 = 높이
-            const float DetectedWidth  = BoxExtent.Y * 2.0f;
+            const float DetectedWidth = BoxExtent.Y * 2.0f;
             const float DetectedHeight = BoxExtent.Z * 2.0f;
 
             // 기본값(50000)인 경우에만 자동 설정 (수동 설정 우선)
@@ -4418,7 +4465,7 @@ void ADownfallCharacter::AutoConfigureMinimapCapture()
 
             // SceneCapture2D 위치: 암벽 중심 기준 X축 앞 5000cm에 자동 배치
             const FVector CliffCenter = Origin;
-            const FVector CapturePos  = CliffCenter + FVector(-5000.f, 0.f, 0.f);
+            const FVector CapturePos = CliffCenter + FVector(-5000.f, 0.f, 0.f);
             const FRotator CaptureRot = FRotator(0.f, 0.f, 0.f); // X+ 방향 정면
 
             CachedSceneCapture->SetActorLocationAndRotation(CapturePos, CaptureRot);
@@ -4454,8 +4501,8 @@ void ADownfallCharacter::AutoConfigureMinimapCapture()
 
     UE_LOG(LogDownFall, Log,
         TEXT("Minimap: ShowFlags — Lighting=%s Shadows=%s Wireframe=%s"),
-        bCaptureWithLighting        ? TEXT("ON") : TEXT("OFF"),
-        bCaptureWithShadows         ? TEXT("ON") : TEXT("OFF"),
+        bCaptureWithLighting ? TEXT("ON") : TEXT("OFF"),
+        bCaptureWithShadows ? TEXT("ON") : TEXT("OFF"),
         bCaptureWithWireframeShowFlag ? TEXT("ON") : TEXT("OFF"));
 
     CaptureComp->CaptureScene();
