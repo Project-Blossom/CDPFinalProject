@@ -515,23 +515,8 @@ void ADownfallCharacter::BeginPlay()
                     CachedSceneCapture = Cast<ASceneCapture2D>(TargetCapture);
                     if (CachedSceneCapture.IsValid())
                     {
-                        USceneCaptureComponent2D* CaptureComp =
-                            CachedSceneCapture->GetCaptureComponent2D();
-                        if (CaptureComp)
-                        {
-                            // [테스트] ShowFlags.SetWireframe 방식 vs 레벨 ViewMode 방식 비교
-                            if (bCaptureWithWireframeShowFlag)
-                            {
-                                CaptureComp->ShowFlags.SetWireframe(true);
-                                UE_LOG(LogDownFall, Log, TEXT("Minimap: ShowFlags.SetWireframe(true) 적용"));
-                            }
-
-                            CaptureComp->CaptureScene();
-
-                            UE_LOG(LogDownFall, Log, TEXT("Minimap: SceneCapture2D captured (%s) [Wireframe=%s]"),
-                                *TargetCapture->GetName(),
-                                bCaptureWithWireframeShowFlag ? TEXT("ShowFlag") : TEXT("LevelViewMode"));
-                        }
+                        // 암벽 바운드 자동 감지 → SceneCapture 위치/범위 설정 → CaptureScene()
+                        AutoConfigureMinimapCapture();
                     }
                 }
                 else
@@ -4329,23 +4314,40 @@ void ADownfallCharacter::UpdateMinimapUI()
         return;
     }
 
-    // 1. 플레이어 위치 → 미니맵 UV 계산
-    // SceneCapture2D Orthographic 기준: 캡처 중심 위치 + 캡처 범위(Width/Height)
-    const FVector PlayerPos = GetActorLocation();
+    const FVector PlayerPos  = GetActorLocation();
     const FVector CapturePos = CachedSceneCapture->GetActorLocation();
 
-    // Side View (X축 방향 캡처 가정):
-    // U = 플레이어 Y (좌우) / CaptureWidth
-    // V = 플레이어 Z (상하) / CaptureHeight  (0=상단이 되도록 반전)
-    const float HalfW = MinimapCaptureWidth * 0.5f;
-    const float HalfH = MinimapCaptureHeight * 0.5f;
+    // ── UV 좌표 계산 ───────────────────────────────────────────
+    // 암벽 좌표계: Y축 = 좌우(UVX), Z축 = 상하(UVY)
+    const float HalfW = CliffTotalWidth  * 0.5f;
+    const float HalfH = CliffTotalHeight * 0.5f;
 
-    const float U = FMath::Clamp((PlayerPos.Y - (CapturePos.Y - HalfW)) / MinimapCaptureWidth, 0.0f, 1.0f);
-    const float V = FMath::Clamp(1.0f - (PlayerPos.Z - (CapturePos.Z - HalfH)) / MinimapCaptureHeight, 0.0f, 1.0f);
+    const float UV_X = FMath::Clamp(
+        (PlayerPos.Y - (CapturePos.Y - HalfW)) / CliffTotalWidth,  0.0f, 1.0f);
+    const float UV_Y = FMath::Clamp(
+        1.0f - (PlayerPos.Z - (CapturePos.Z - HalfH)) / CliffTotalHeight, 0.0f, 1.0f);
 
-    MinimapWidget->SetPlayerMarkerUV(FVector2D(U, V));
+    // ── UV Scale (표시 범위 비율) ──────────────────────────────
+    const float UVScale_X = FMath::Clamp(MinimapViewRange / CliffTotalWidth,  0.01f, 1.0f);
+    const float UVScale_Y = FMath::Clamp(MinimapViewRange / CliffTotalHeight, 0.01f, 1.0f);
 
-    // 2. Color Tint Lerp 처리
+    // ── UV Offset (플레이어 중앙 정렬) ─────────────────────────
+    const float UVOffset_X = FMath::Clamp(UV_X - UVScale_X * 0.5f, 0.0f, 1.0f - UVScale_X);
+    const float UVOffset_Y = FMath::Clamp(UV_Y - UVScale_Y * 0.5f, 0.0f, 1.0f - UVScale_Y);
+
+    // UV Region 적용 → 미니맵 배경 스크롤
+    MinimapWidget->SetMinimapUVRegion(
+        FVector2D(UVOffset_X, UVOffset_Y),
+        FVector2D(UVScale_X,  UVScale_Y)
+    );
+
+    // ── 플레이어 마커 위치 (일반: 중앙, 경계: 약간 이동) ───────
+    const float MarkerNorm_X = FMath::Clamp((UV_X - UVOffset_X) / UVScale_X, 0.0f, 1.0f);
+    const float MarkerNorm_Y = FMath::Clamp((UV_Y - UVOffset_Y) / UVScale_Y, 0.0f, 1.0f);
+
+    MinimapWidget->SetPlayerMarkerPosition(FVector2D(MarkerNorm_X, MarkerNorm_Y));
+
+    // ── Color Tint Lerp ────────────────────────────────────────
     if (bMinimapTintLerping)
     {
         MinimapTintLerpElapsed += GetWorld()->GetDeltaSeconds();
@@ -4372,4 +4374,91 @@ void ADownfallCharacter::StartMinimapTintLerp(const FLinearColor& TargetTint, fl
     MinimapTintLerpDuration = Duration;
     MinimapTintLerpElapsed = 0.0f;
     bMinimapTintLerping = true;
+}
+
+void ADownfallCharacter::AutoConfigureMinimapCapture()
+{
+    if (!CachedSceneCapture.IsValid())
+    {
+        return;
+    }
+
+    USceneCaptureComponent2D* CaptureComp = CachedSceneCapture->GetCaptureComponent2D();
+    if (!CaptureComp)
+    {
+        return;
+    }
+
+    // ── 암벽 바운드 자동 감지 ─────────────────────────────────
+    // MountainGenWorldActor의 ProcMesh 바운드에서 Width/Height를 읽어 자동 설정
+    // CliffTotalWidth/Height가 기본값(50000)이 아니면 수동 설정값 사용
+    const float DefaultSize = 50000.f;
+    bool bAutoDetected = false;
+
+    if (CachedMountainActor.IsValid())
+    {
+        FVector Origin, BoxExtent;
+        CachedMountainActor->GetActorBounds(false, Origin, BoxExtent);
+
+        if (!BoxExtent.IsNearlyZero())
+        {
+            // Y축 = 좌우 폭, Z축 = 높이
+            const float DetectedWidth  = BoxExtent.Y * 2.0f;
+            const float DetectedHeight = BoxExtent.Z * 2.0f;
+
+            // 기본값(50000)인 경우에만 자동 설정 (수동 설정 우선)
+            if (FMath::IsNearlyEqual(CliffTotalWidth, DefaultSize, 1.0f))
+            {
+                CliffTotalWidth = DetectedWidth;
+            }
+            if (FMath::IsNearlyEqual(CliffTotalHeight, DefaultSize, 1.0f))
+            {
+                CliffTotalHeight = DetectedHeight;
+            }
+
+            // SceneCapture2D 위치: 암벽 중심 기준 X축 앞 5000cm에 자동 배치
+            const FVector CliffCenter = Origin;
+            const FVector CapturePos  = CliffCenter + FVector(-5000.f, 0.f, 0.f);
+            const FRotator CaptureRot = FRotator(0.f, 0.f, 0.f); // X+ 방향 정면
+
+            CachedSceneCapture->SetActorLocationAndRotation(CapturePos, CaptureRot);
+
+            // OrthoWidth: 폭과 높이 중 큰 값으로 설정 (전체 암벽 커버)
+            const float OrthoWidth = FMath::Max(DetectedWidth, DetectedHeight);
+            CaptureComp->OrthoWidth = OrthoWidth;
+
+            bAutoDetected = true;
+            UE_LOG(LogDownFall, Log,
+                TEXT("Minimap: AutoConfig — Width=%.0f Height=%.0f OrthoWidth=%.0f CapturePos=%s"),
+                CliffTotalWidth, CliffTotalHeight, OrthoWidth, *CapturePos.ToString());
+        }
+    }
+
+    if (!bAutoDetected)
+    {
+        UE_LOG(LogDownFall, Warning,
+            TEXT("Minimap: 암벽 바운드 감지 실패 — 수동 설정값 사용 (CliffTotalWidth=%.0f, CliffTotalHeight=%.0f)"),
+            CliffTotalWidth, CliffTotalHeight);
+    }
+
+    // ── ShowFlags 적용 ────────────────────────────────────────
+    if (bCaptureWithWireframeShowFlag)
+    {
+        CaptureComp->ShowFlags.SetWireframe(true);
+        UE_LOG(LogDownFall, Log, TEXT("Minimap: ShowFlags.SetWireframe(true)"));
+    }
+
+    // 조명/그림자 체크박스 적용
+    CaptureComp->ShowFlags.SetLighting(bCaptureWithLighting);
+    CaptureComp->ShowFlags.SetDynamicShadows(bCaptureWithShadows);
+
+    UE_LOG(LogDownFall, Log,
+        TEXT("Minimap: ShowFlags — Lighting=%s Shadows=%s Wireframe=%s"),
+        bCaptureWithLighting        ? TEXT("ON") : TEXT("OFF"),
+        bCaptureWithShadows         ? TEXT("ON") : TEXT("OFF"),
+        bCaptureWithWireframeShowFlag ? TEXT("ON") : TEXT("OFF"));
+
+    CaptureComp->CaptureScene();
+    UE_LOG(LogDownFall, Log, TEXT("Minimap: CaptureScene() 완료 [AutoDetect=%s]"),
+        bAutoDetected ? TEXT("true") : TEXT("false"));
 }

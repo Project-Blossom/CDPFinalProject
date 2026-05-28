@@ -938,11 +938,16 @@ public:
     FName SceneCaptureActorTag = FName("MinimapCapture");
 
     // [테스트] ShowFlags.SetWireframe(true) 후 캡처 여부
-    // FreeRunSetup 레벨 ViewMode 고정 방식과 비교 실험용
-    // true: C++에서 강제 Wireframe ShowFlag 적용
-    // false: 레벨 ViewMode 설정에 의존
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
     bool bCaptureWithWireframeShowFlag = false;
+
+    // 캡처 시 조명 영향 여부 (false = Unlit, 와이어프레임 미니맵에 권장)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    bool bCaptureWithLighting = false;
+
+    // 캡처 시 그림자 포함 여부
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    bool bCaptureWithShadows = false;
 
     // 미니맵 Orthographic 캡처 범위 (cm) — SceneCapture2D OrthoWidth와 동일하게 설정
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
@@ -952,6 +957,22 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
         meta = (ClampMin = "100.0"))
     float MinimapCaptureHeight = 50000.f;
+
+    // 암벽 전체 크기 (UV 계산 기준)
+    // MountainGenWorldActor의 CliffTotalWidth/Height와 동일하게 설정
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
+        meta = (ClampMin = "100.0"))
+    float CliffTotalWidth = 50000.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
+        meta = (ClampMin = "100.0"))
+    float CliffTotalHeight = 50000.f;
+
+    // 미니맵 표시 범위 (cm) — 캐릭터 중심 기준 표시할 반경
+    // 기획서 기본값: 10000.0f (100m)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
+        meta = (ClampMin = "100.0"))
+    float MinimapViewRange = 10000.f;
 
     // Pause Menu
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Pause")
@@ -1191,4 +1212,9 @@ private:
     UPROPERTY()
     TObjectPtr<UMaterialInstanceDynamic>   CloudMaterialMID;
     FLinearColor                           BloodMoonStartCloudColor = FLinearColor::White;
+
+    // ── Minimap 내부 함수 ──────────────────────────────────────
+    // 암벽 바운드 자동 감지 → SceneCapture2D 위치/OrthoWidth 자동 설정
+    // CliffTotalWidth/Height가 기본값(50000)이면 바운드에서 자동 읽어 설정
+    void AutoConfigureMinimapCapture();
 };

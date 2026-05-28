@@ -34,26 +34,28 @@ public:
     // ── C++ 제어 함수 ──────────────────────────────────────────
 
     /**
+     * 미니맵 UV Region 설정 — 스크롤 미니맵 핵심 함수
+     * RT_Minimap 전체 중 일부 영역만 표시 (캐릭터 주변 100m 범위)
+     * @param UVOffset  표시 시작 UV 좌표 (0~1)
+     * @param UVScale   표시 크기 비율 (MinimapViewRange / CliffTotal)
+     */
+    UFUNCTION(BlueprintCallable, Category = "Minimap")
+    void SetMinimapUVRegion(FVector2D UVOffset, FVector2D UVScale);
+
+    /**
+     * 플레이어 마커 위치 설정
+     * 일반 주행: (0.5, 0.5) 중앙 고정
+     * 경계 근처: 클램프에 따라 약간 이동
+     */
+    UFUNCTION(BlueprintCallable, Category = "Minimap")
+    void SetPlayerMarkerPosition(FVector2D NormalizedPos);
+
+    /**
      * 미니맵 전체 색조 변경 (날씨 이벤트 Lerp에서 호출)
-     * 방식 2: UMG Image Color Tint 곱셈 적용
-     * - 정상: (1,1,1,1) 원본 색상 유지
-     * - Blizzard: (0.6, 0.8, 1.0) 차가운 파란색
-     * - BloodMoon: (1.0, 0.2, 0.1) 붉은색
      */
     UFUNCTION(BlueprintCallable, Category = "Minimap")
     void SetMinimapTint(const FLinearColor& Tint);
 
-    /**
-     * 플레이어 마커 위치 설정
-     * @param UV (0~1) 범위의 미니맵 내 UV 좌표
-     *           U: 수평 위치, V: 수직 위치 (0=상단, 1=하단)
-     */
-    UFUNCTION(BlueprintCallable, Category = "Minimap")
-    void SetPlayerMarkerUV(FVector2D UV);
-
-    /**
-     * 미니맵 이미지 크기 반환 (UV → 픽셀 좌표 계산용)
-     */
     UFUNCTION(BlueprintPure, Category = "Minimap")
     FVector2D GetMinimapImageSize() const;
 
