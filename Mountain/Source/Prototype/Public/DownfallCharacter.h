@@ -193,10 +193,10 @@ public:
     bool bDebugFlyMode = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug|Movement", meta = (ClampMin = "100.0"))
-    float DebugFlySpeed = 1200.0f;
+    float DebugFlySpeed = 6000.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug|Movement", meta = (ClampMin = "100.0"))
-    float DebugFlyVerticalSpeed = 1000.0f;
+    float DebugFlyVerticalSpeed = 3000.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Optimization")
     float PlatformAbductionCheckInterval = 0.10f;
