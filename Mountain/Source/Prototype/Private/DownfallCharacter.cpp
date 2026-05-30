@@ -458,6 +458,8 @@ void ADownfallCharacter::BeginPlay()
         Inventory->PlaceTraceDistanceCm = GripFinder->MaxReachDistance;
     }
 
+    CachedMountainActor = FindMountainGenActor();
+
     RefreshInventoryUIState();
     ApplyClimbingMappingContext();
 
@@ -531,8 +533,6 @@ void ADownfallCharacter::BeginPlay()
     {
         UE_LOG(LogDownFall, Warning, TEXT("AltitudeWidgetClass not assigned"));
     }
-
-    CachedMountainActor = FindMountainGenActor();
 
     ApplyDirtMaskParameters(true);
     ApplyEdgeBlurParameters(true);
@@ -4463,10 +4463,10 @@ void ADownfallCharacter::AutoConfigureMinimapCapture()
                 CliffTotalHeight = DetectedHeight;
             }
 
-            // SceneCapture2D 위치: 암벽 중심 기준 X축 앞 5000cm에 자동 배치
+            // 암벽 전면(X+ 방향) 기준 5000cm 앞에 배치 — 암벽 내부 방지
             const FVector CliffCenter = Origin;
-            const FVector CapturePos = CliffCenter + FVector(-5000.f, 0.f, 0.f);
-            const FRotator CaptureRot = FRotator(0.f, 0.f, 0.f); // X+ 방향 정면
+            const FVector CapturePos  = CliffCenter + FVector(-(BoxExtent.X + 5000.f), 0.f, 0.f);
+            const FRotator CaptureRot = FRotator(0.f, 0.f, 0.f);
 
             CachedSceneCapture->SetActorLocationAndRotation(CapturePos, CaptureRot);
 
