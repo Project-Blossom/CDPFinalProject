@@ -2034,13 +2034,14 @@ void ADownfallCharacter::SetupConstraint(UPhysicsConstraintComponent* Constraint
         NAME_None
     );
 
-    // ✅ Linear Constraint: 최대 거리 제한만 (팔 길이)
+    // Linear Constraint: 팔 길이 제한
     Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
     Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
     Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Limited, ArmLength);
 
-    // Drive 제거
-    Constraint->SetLinearPositionDrive(false, false, false);
+    Constraint->SetLinearPositionDrive(true, true, true);
+    Constraint->SetLinearVelocityDrive(false, false, false);
+    Constraint->SetLinearDriveParams(GripStrength, GripDamping, 0.0f);
 
     // Angular Constraint
     Constraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
