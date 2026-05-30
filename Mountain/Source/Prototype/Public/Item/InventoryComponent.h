@@ -67,6 +67,9 @@ public:
     int32 ConsumeAnchorUseAt(int32 Index, int32 Amount = 1);
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
+    bool ConsumeItemAt(int32 Index, int32 Amount = 1);
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool TryAdd(FName ItemId, int32 Count, bool bForceInstance = false);
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")

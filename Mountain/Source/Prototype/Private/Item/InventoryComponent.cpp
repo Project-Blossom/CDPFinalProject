@@ -361,7 +361,7 @@ bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
         {
             S.bHasInstance = true;
             S.Instance.InstanceId = FGuid::NewGuid();
-            S.Instance.UpgradeLevel = (Def && Def->UseType == EItemUseType::AttachAnchorToBolt) ? 5 : 0;
+            S.Instance.UpgradeLevel = 0;
             S.Count = 1;
         }
     }
@@ -857,13 +857,6 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
         SpawnParams.Instigator = Cast<APawn>(User);
         SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-        EnsureAnchorDurabilityInitialized(Index, 5);
-        if (!S.bHasInstance || S.Instance.UpgradeLevel <= 0)
-        {
-            BP_OnUseFailed(User, FText::FromString(TEXT("Anchor durability is insufficient.")));
-            return false;
-        }
-
         AActor* Spawned = W->SpawnActor<AActor>(Def->PlaceActorClass, SpawnTransform, SpawnParams);
 
         if (!Spawned)
@@ -1108,4 +1101,28 @@ int32 UInventoryComponent::ConsumeAnchorUseAt(int32 Index, int32 Amount)
     OnInventoryChanged.Broadcast();
 
     return S.IsValid() ? S.Instance.UpgradeLevel : 0;
+}
+
+bool UInventoryComponent::ConsumeItemAt(int32 Index, int32 Amount)
+{
+    if (!Slots.IsValidIndex(Index) || Amount <= 0)
+    {
+        return false;
+    }
+
+    FItemStack& S = Slots[Index];
+    if (!S.IsValid())
+    {
+        return false;
+    }
+
+    S.Count -= Amount;
+    if (S.Count <= 0)
+    {
+        S.Reset();
+    }
+
+    SanitizeReservedCenterSlot();
+    OnInventoryChanged.Broadcast();
+    return true;
 }

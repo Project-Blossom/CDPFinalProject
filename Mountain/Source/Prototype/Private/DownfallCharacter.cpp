@@ -962,7 +962,7 @@ bool ADownfallCharacter::AttachSafetyLineToBolt(AActor* AnchorActor)
 
     if (bSafetyLineAttached)
     {
-        DetachSafetyLine(false);
+        return false;
     }
 
     const FVector AnchorLoc = ResolveSafetyLineAnchorLocation(AnchorActor);
@@ -975,26 +975,17 @@ bool ADownfallCharacter::AttachSafetyLineToBolt(AActor* AnchorActor)
     SafetyLineAnchorWorld = AnchorLoc;
     SafetyLineCurrentLengthCm = SafetyLineInitialLengthCm;
     bSafetyLineAttached = true;
+    bSafetyLineTriggered = false;
     bSafetyLineConstraintEngaged = false;
-    bSafetyLineRetrieveArmed = false; // 설치 직후에는 회수 금지
+    bSafetyLineRetrieveArmed = false;
 
-    UpdateSafetyLineVisual();
+    ClearSafetyLineVisual();
     return true;
 }
 
 bool ADownfallCharacter::BeginUsingAnchorSlot(int32 SlotIndex)
 {
     if (!Inventory || !Inventory->HasValidItemAt(SlotIndex))
-    {
-        return false;
-    }
-
-    if (!Inventory->EnsureAnchorDurabilityInitialized(SlotIndex, 5))
-    {
-        return false;
-    }
-
-    if (Inventory->GetAnchorDurabilityAt(SlotIndex) <= 0)
     {
         return false;
     }
@@ -1084,16 +1075,6 @@ int32 ADownfallCharacter::GetDisplayedInventoryCountAt(int32 Index) const
         return 0;
     }
 
-    UWorld* W = GetWorld();
-    UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
-    UItemSubsystem* IS = GI ? GI->GetSubsystem<UItemSubsystem>() : nullptr;
-    const UItemDefinition* Def = IS ? IS->GetItemDefinitionById(Slots[Index].ItemId) : nullptr;
-
-    if (Def && Def->UseType == EItemUseType::AttachAnchorToBolt)
-    {
-        return Inventory->GetAnchorDurabilityAt(Index);
-    }
-
     return Slots[Index].Count;
 }
 
@@ -1105,6 +1086,7 @@ void ADownfallCharacter::DetachSafetyLine(bool bBreakBolt)
     }
 
     bSafetyLineAttached = false;
+    bSafetyLineTriggered = false;
     bSafetyLineConstraintEngaged = false;
     bSafetyLineRetrieveArmed = false;
     ActiveSafetyBolt = nullptr;
@@ -1182,7 +1164,7 @@ void ADownfallCharacter::FinishUsingAnchor(bool bConsumeOneUse)
 
     if (bConsumeOneUse && Inventory && UsedSlot != INDEX_NONE)
     {
-        Inventory->ConsumeAnchorUseAt(UsedSlot, 1);
+        Inventory->ConsumeItemAt(UsedSlot, 1);
     }
 
     if (UsedAnchorActor && IsValid(UsedAnchorActor))
@@ -1206,7 +1188,7 @@ void ADownfallCharacter::FinishUsingAnchor(bool bConsumeOneUse)
 
 bool ADownfallCharacter::IsSafetyLineTaut() const
 {
-    if (!bSafetyLineAttached)
+    if (!bSafetyLineAttached || !bSafetyLineTriggered)
     {
         return false;
     }
@@ -1219,7 +1201,7 @@ bool ADownfallCharacter::IsSafetyLineTaut() const
 
 void ADownfallCharacter::EngageSafetyLineConstraint()
 {
-    if (!bSafetyLineAttached || !SafetyLineConstraint)
+    if (!bSafetyLineAttached || !bSafetyLineTriggered || !SafetyLineConstraint)
     {
         return;
     }
@@ -1248,7 +1230,7 @@ void ADownfallCharacter::DisengageSafetyLineConstraint()
 
 void ADownfallCharacter::RefreshSafetyLineConstraint()
 {
-    if (!bSafetyLineAttached || !SafetyLineConstraint)
+    if (!bSafetyLineAttached || !bSafetyLineTriggered || !SafetyLineConstraint)
     {
         return;
     }
@@ -1299,70 +1281,99 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
     const FVector PlayerLoc = GetCapsuleComponent()->GetComponentLocation();
     const float CurrentDistance = FVector::Distance(PlayerLoc, SafetyLineAnchorWorld);
 
-    const UCharacterMovementComponent* MoveComp = GetCharacterMovement();
-    const bool bIsWalking = MoveComp && MoveComp->MovementMode == MOVE_Walking;
-    const bool bIsFalling = MoveComp && MoveComp->MovementMode == MOVE_Falling;
-    const bool bCanAutoRetrieveByDistance = (bIsClimbing || bIsWalking);
+    UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+    UCapsuleComponent* Capsule = GetCapsuleComponent();
 
-    // walk / climbing 상태에서는 로프 반동 금지
-    if (bCanAutoRetrieveByDistance)
+    const FVector CurrentVelocity =
+        (Capsule && Capsule->IsSimulatingPhysics())
+        ? Capsule->GetPhysicsLinearVelocity()
+        : (MoveComp ? MoveComp->Velocity : GetVelocity());
+
+    const bool bMovementFalling = MoveComp && MoveComp->IsFalling();
+    const bool bMovementOnGround = MoveComp && MoveComp->IsMovingOnGround();
+    const bool bMovingDown = CurrentVelocity.Z < -50.0f;
+    const bool bPhysicsFalling = Capsule && Capsule->IsSimulatingPhysics() && !bIsClimbing && bMovingDown;
+    const bool bLikelyFalling = bMovingDown && (bMovementFalling || bPhysicsFalling || (!bIsClimbing && !bMovementOnGround));
+
+    // Trigger only when the player has fallen below the installed anchor by the rope length.
+    // Do not use 3D distance here: moving upward or sideways away from the anchor must not fire the rope.
+    const float VerticalDropFromAnchor = SafetyLineAnchorWorld.Z - PlayerLoc.Z;
+    const bool bDroppedBelowAnchorLength = VerticalDropFromAnchor >= (SafetyLineCurrentLengthCm - SafetyLineEngageToleranceCm);
+
+    // Installed anchor waits silently. The rope is created only when the player is actually falling
+    // downward below the anchor by the rope length. Do not require MovementMode == MOVE_Falling only,
+    // because this character often uses physics simulation / MOVE_None while transitioning out of climbing.
+    if (!bSafetyLineTriggered)
     {
-        DisengageSafetyLineConstraint();
-
-        // 한 번 11m 안쪽으로 다시 들어왔을 때만 회수 가능 상태 활성화
-        if (CurrentDistance < SafetyLineAutoRetrieveDistanceCm)
+        if (bLikelyFalling && bDroppedBelowAnchorLength)
         {
-            bSafetyLineRetrieveArmed = true;
-        }
+            bSafetyLineTriggered = true;
 
-        const bool bExceededAutoRetrieveDistance =
-            bSafetyLineRetrieveArmed &&
-            (SafetyLineAutoRetrieveDistanceCm > 0.0f) &&
-            (CurrentDistance >= SafetyLineAutoRetrieveDistanceCm);
-
-        if (bExceededAutoRetrieveDistance)
-        {
-            FinishUsingAnchor(true);
-            return;
-        }
-    }
-
-    // 로프 반동은 falling 상태에서만
-    if (bIsFalling)
-    {
-        if (CurrentDistance >= (SafetyLineCurrentLengthCm - SafetyLineEngageToleranceCm))
-        {
-            if (!bSafetyLineConstraintEngaged)
+            if (Capsule)
             {
-                EngageSafetyLineConstraint();
+                if (!Capsule->IsSimulatingPhysics())
+                {
+                    Capsule->SetSimulatePhysics(true);
+                }
+
+                // Preserve some falling motion so the result feels like a rope catch, not a hard stop.
+                FVector CatchVelocity = CurrentVelocity;
+                const FVector AnchorToPlayerDir = (PlayerLoc - SafetyLineAnchorWorld).GetSafeNormal();
+                const float OutwardSpeed = FVector::DotProduct(CatchVelocity, AnchorToPlayerDir);
+
+                if (OutwardSpeed > 0.0f)
+                {
+                    CatchVelocity -= AnchorToPlayerDir * (OutwardSpeed * 0.65f);
+                }
+
+                if (CatchVelocity.Z < 0.0f)
+                {
+                    CatchVelocity.Z *= 0.35f;
+                }
+
+                Capsule->SetPhysicsLinearVelocity(CatchVelocity);
+                Capsule->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
             }
-            else
+
+            if (MoveComp)
             {
-                RefreshSafetyLineConstraint();
+                MoveComp->Velocity = FVector::ZeroVector;
+                MoveComp->SetMovementMode(MOVE_None);
             }
+
+            EngageSafetyLineConstraint();
+            UpdateSafetyLineVisual();
         }
         else
         {
-            DisengageSafetyLineConstraint();
+            ClearSafetyLineVisual();
         }
+
+        return;
     }
 
-    if (bSafetyLineConstraintEngaged)
+    if (!bSafetyLineConstraintEngaged)
+    {
+        EngageSafetyLineConstraint();
+    }
+    else
+    {
+        RefreshSafetyLineConstraint();
+    }
+
+    if (bSafetyLineConstraintEngaged && Capsule)
     {
         const FVector Dir = (PlayerLoc - SafetyLineAnchorWorld).GetSafeNormal();
-        FVector Vel = GetCapsuleComponent()->GetPhysicsLinearVelocity();
+        FVector Vel = Capsule->GetPhysicsLinearVelocity();
 
         const float OutwardSpeed = FVector::DotProduct(Vel, Dir);
         if (OutwardSpeed > 0.0f && CurrentDistance >= (SafetyLineCurrentLengthCm - 5.0f))
         {
             Vel -= Dir * (OutwardSpeed * 0.85f);
-            GetCapsuleComponent()->SetPhysicsLinearVelocity(Vel);
+            Capsule->SetPhysicsLinearVelocity(Vel);
         }
-    }
 
-    if (!bIsClimbing && bIsWalking)
-    {
-        DisengageSafetyLineConstraint();
+        UpdateSafetyLineVisual();
     }
 }
 
@@ -1953,6 +1964,11 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
 
     // 9. 이벤트 발생
     OnHandGripped(bIsLeftHand, GripInfo);
+
+    if (bSafetyLineAttached && bSafetyLineTriggered)
+    {
+        FinishUsingAnchor(true);
+    }
 
     UE_LOG(LogDownFall, Log, TEXT("%s hand gripped: Kind=%d Angle=%.1f°, Quality=%.2f"),
         bIsLeftHand ? TEXT("Left") : TEXT("Right"),
@@ -2628,7 +2644,7 @@ void ADownfallCharacter::UpdateSafetyLineVisual()
         return;
     }
 
-    if (!bSafetyLineAttached || !SafetyLineVisualMesh)
+    if (!bSafetyLineAttached || !bSafetyLineTriggered || !SafetyLineVisualMesh)
     {
         ClearSafetyLineVisual();
         return;
@@ -3494,7 +3510,7 @@ void ADownfallCharacter::StartLowFrequencyUpdatesIfNeeded()
         (LeftHand.State == EHandState::Gripping || RightHand.State == EHandState::Gripping);
 
     const bool bNeedsAltitudeUI = (AltitudeWidget != nullptr);
-    const bool bNeedsSafetyLineVisual = bSafetyLineAttached;
+    const bool bNeedsSafetyLineVisual = bSafetyLineAttached && bSafetyLineTriggered;
 
     if (!bNeedsPlatformCheck && !bNeedsAltitudeUI && !bNeedsSafetyLineVisual)
     {
@@ -3540,7 +3556,7 @@ void ADownfallCharacter::StopLowFrequencyUpdatesIfPossible()
         (LeftHand.State == EHandState::Gripping || RightHand.State == EHandState::Gripping);
 
     const bool bNeedsAltitudeUI = (AltitudeWidget != nullptr);
-    const bool bNeedsSafetyLineVisual = bSafetyLineAttached;
+    const bool bNeedsSafetyLineVisual = bSafetyLineAttached && bSafetyLineTriggered;
 
     if (!bNeedsPlatformCheck && !bNeedsAltitudeUI && !bNeedsSafetyLineVisual)
     {
@@ -4465,7 +4481,7 @@ void ADownfallCharacter::AutoConfigureMinimapCapture()
 
             // 암벽 전면(X+ 방향) 기준 5000cm 앞에 배치 — 암벽 내부 방지
             const FVector CliffCenter = Origin;
-            const FVector CapturePos  = CliffCenter + FVector(-(BoxExtent.X + 5000.f), 0.f, 0.f);
+            const FVector CapturePos = CliffCenter + FVector(-(BoxExtent.X + 5000.f), 0.f, 0.f);
             const FRotator CaptureRot = FRotator(0.f, 0.f, 0.f);
 
             CachedSceneCapture->SetActorLocationAndRotation(CapturePos, CaptureRot);

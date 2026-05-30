@@ -380,6 +380,9 @@ public:
     bool bSafetyLineAttached = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
+    bool bSafetyLineTriggered = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
     bool bSafetyLineConstraintEngaged = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
