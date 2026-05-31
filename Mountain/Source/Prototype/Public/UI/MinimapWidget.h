@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/RetainerBox.h"
 #include "MinimapWidget.generated.h"
 
 class UImage;
@@ -22,6 +23,10 @@ class PROTOTYPE_API UMinimapWidget : public UUserWidget
 
 public:
     // ── BindWidget — WBP에서 동일 이름으로 위젯 바인딩 필요 ──
+
+    // RetainerBox — MinimapImage를 원형 클립하는 컨테이너
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<class URetainerBox> MinimapRetainer;
 
     // Wireframe 미니맵 이미지 (RT_Minimap RenderTarget 할당)
     UPROPERTY(meta = (BindWidget))

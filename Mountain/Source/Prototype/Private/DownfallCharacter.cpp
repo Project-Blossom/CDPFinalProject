@@ -44,6 +44,7 @@
 #include "Components/VolumetricCloudComponent.h"
 #include "Engine/SceneCapture2D.h"
 #include "Components/SceneCaptureComponent2D.h"
+#include "ProceduralMeshComponent.h"
 #include "UI/MinimapWidget.h"
 #include <limits>
 #include "Components/SceneComponent.h"
@@ -4490,6 +4491,34 @@ void ADownfallCharacter::AutoConfigureMinimapCapture()
             // OrthoWidth: 폭과 높이 중 큰 값으로 설정 (전체 암벽 커버)
             const float OrthoWidth = FMath::Max(DetectedWidth, DetectedHeight);
             CaptureComp->OrthoWidth = OrthoWidth;
+
+            // ── M_MinimapCliff DMI에 CliffFrontX/BackX 자동 설정 ──
+            // Origin.X ± BoxExtent.X = 암벽 전면/후면 X 좌표
+            const float AutoFrontX = Origin.X + BoxExtent.X;
+            const float AutoBackX  = Origin.X - BoxExtent.X;
+
+            UProceduralMeshComponent* ProcMesh =
+                CachedMountainActor->FindComponentByClass<UProceduralMeshComponent>();
+            if (ProcMesh)
+            {
+                // 현재 머티리얼에서 DMI 생성 (이미 DMI면 그대로 캐스트)
+                UMaterialInterface* CurrentMat = ProcMesh->GetMaterial(0);
+                UMaterialInstanceDynamic* MinimapMID =
+                    Cast<UMaterialInstanceDynamic>(CurrentMat);
+                if (!MinimapMID && CurrentMat)
+                {
+                    MinimapMID = ProcMesh->CreateAndSetMaterialInstanceDynamic(0);
+                }
+                if (MinimapMID)
+                {
+                    MinimapMID->SetScalarParameterValue(FName("CliffFrontX"), AutoFrontX);
+                    MinimapMID->SetScalarParameterValue(FName("CliffBackX"),  AutoBackX);
+                    MinimapMID->SetScalarParameterValue(FName("CliffTopZ"),   DetectedHeight);
+                    UE_LOG(LogDownFall, Log,
+                        TEXT("Minimap: M_MinimapCliff DMI — FrontX=%.0f BackX=%.0f TopZ=%.0f"),
+                        AutoFrontX, AutoBackX, DetectedHeight);
+                }
+            }
 
             bAutoDetected = true;
             UE_LOG(LogDownFall, Log,

@@ -4,12 +4,12 @@
 #include "Components/Image.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/RetainerBox.h"
 
 void UMinimapWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
-    // PlayerMarker의 CanvasPanelSlot 캐시 (SetPosition 효율화)
     if (PlayerMarker)
     {
         PlayerMarkerSlot = Cast<UCanvasPanelSlot>(PlayerMarker->Slot);
@@ -31,8 +31,6 @@ void UMinimapWidget::SetMinimapUVRegion(FVector2D UVOffset, FVector2D UVScale)
         return;
     }
 
-    // FSlateBrush의 UVRegion을 수정하여 RT_Minimap의 일부 영역만 표시
-    // UVOffset: 표시 시작점, UVScale: 표시 범위 크기
     FSlateBrush Brush = MinimapImage->GetBrush();
     Brush.SetUVRegion(FBox2D(UVOffset, UVOffset + UVScale));
     MinimapImage->SetBrush(Brush);
@@ -40,28 +38,60 @@ void UMinimapWidget::SetMinimapUVRegion(FVector2D UVOffset, FVector2D UVScale)
 
 void UMinimapWidget::SetPlayerMarkerPosition(FVector2D NormalizedPos)
 {
-    if (!PlayerMarker)
+    if (!PlayerMarker || !PlayerMarkerSlot)
     {
         return;
     }
 
-    // NormalizedPos (0~1) → 미니맵 위젯 픽셀 좌표 변환
-    // 일반 상태: NormalizedPos = (0.5, 0.5) → 마커가 미니맵 중앙에 고정
-    const FVector2D MapSize    = GetMinimapImageSize();
-    const FVector2D MarkerSize = PlayerMarker->GetDesiredSize();
-    const FVector2D PixelPos   = NormalizedPos * MapSize - MarkerSize * 0.5f;
+    // RetainerBox가 있으면 그 Canvas Panel Slot 기준, 없으면 MinimapImage Slot 기준
+    UWidget* ReferenceWidget = MinimapRetainer
+        ? StaticCast<UWidget*>(MinimapRetainer)
+        : StaticCast<UWidget*>(MinimapImage);
 
-    if (PlayerMarkerSlot)
+    if (!ReferenceWidget)
     {
-        PlayerMarkerSlot->SetPosition(PixelPos);
+        return;
     }
+
+    UCanvasPanelSlot* RefSlot = Cast<UCanvasPanelSlot>(ReferenceWidget->Slot);
+    if (!RefSlot)
+    {
+        return;
+    }
+
+    const FVector2D ImagePos   = RefSlot->GetPosition();
+    const FVector2D ImageSize  = RefSlot->GetSize();
+    const FVector2D ImageAlign = RefSlot->GetAlignment();
+    const FVector2D MarkerSize = FVector2D(16.f, 16.f);
+
+    // Anchor 기준 상대좌표에서 좌상단 계산
+    const FVector2D ImageTopLeft = ImagePos - ImageSize * ImageAlign;
+
+    // 마커 중심이 NormalizedPos에 오도록 계산
+    const FVector2D MarkerPos = ImageTopLeft + NormalizedPos * ImageSize - MarkerSize * 0.5f;
+
+    PlayerMarkerSlot->SetPosition(MarkerPos);
 }
 
 FVector2D UMinimapWidget::GetMinimapImageSize() const
 {
+    if (MinimapRetainer)
+    {
+        UCanvasPanelSlot* RetainerSlot = Cast<UCanvasPanelSlot>(MinimapRetainer->Slot);
+        if (RetainerSlot)
+        {
+            return RetainerSlot->GetSize();
+        }
+    }
     if (MinimapImage)
     {
+        const FSlateBrush& Brush = MinimapImage->GetBrush();
+        const FVector2D BrushSize = Brush.ImageSize;
+        if (!BrushSize.IsNearlyZero())
+        {
+            return BrushSize;
+        }
         return MinimapImage->GetDesiredSize();
     }
-    return FVector2D(256.f, 256.f);
+    return FVector2D(512.f, 512.f);
 }
