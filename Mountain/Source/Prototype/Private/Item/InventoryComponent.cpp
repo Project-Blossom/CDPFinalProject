@@ -317,6 +317,61 @@ int32 UInventoryComponent::FindPartialStack(FName ItemId, int32 MaxStack) const
     return INDEX_NONE;
 }
 
+
+bool UInventoryComponent::CanAdd(FName ItemId, int32 Count, bool bForceInstance) const
+{
+    if (ItemId == NAME_None || Count <= 0)
+    {
+        return false;
+    }
+
+    UItemSubsystem* IS = GetWorld() ? GetWorld()->GetGameInstance()->GetSubsystem<UItemSubsystem>() : nullptr;
+    const UItemDefinition* Def = IS ? IS->GetItemDefinitionById(ItemId) : nullptr;
+
+    const int32 MaxStack = Def ? FMath::Max(1, Def->MaxStack) : 1;
+    const bool bUniqueSlot = bForceInstance || (MaxStack == 1);
+    const bool bShouldInstance = bForceInstance ||
+        (Def && (Def->UseType == EItemUseType::Equip ||
+            Def->UseType == EItemUseType::UtilityEquip ||
+            Def->UseType == EItemUseType::AttachAnchorToBolt));
+
+    int32 Remaining = Count;
+
+    if (!bUniqueSlot && !bShouldInstance && MaxStack > 1)
+    {
+        for (int32 i = 0; i < Slots.Num() && Remaining > 0; ++i)
+        {
+            if (IsReservedCenterSlot(i))
+            {
+                continue;
+            }
+
+            const FItemStack& S = Slots[i];
+            if (S.IsValid() && S.ItemId == ItemId && !S.bHasInstance && S.Count < MaxStack)
+            {
+                Remaining -= FMath::Max(0, MaxStack - S.Count);
+            }
+        }
+    }
+
+    for (int32 i = 0; i < Slots.Num() && Remaining > 0; ++i)
+    {
+        if (IsReservedCenterSlot(i))
+        {
+            continue;
+        }
+
+        if (!Slots[i].IsEmpty())
+        {
+            continue;
+        }
+
+        Remaining -= (bUniqueSlot || bShouldInstance) ? 1 : MaxStack;
+    }
+
+    return Remaining <= 0;
+}
+
 bool UInventoryComponent::TryAdd(FName ItemId, int32 Count, bool bForceInstance)
 {
     if (ItemId == NAME_None || Count <= 0) return false;
