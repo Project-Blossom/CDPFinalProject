@@ -70,6 +70,20 @@ void AItemDropActor::InitializeDrop(FName NewItemId, int32 NewCount)
     Count = FMath::Max(1, NewCount);
 }
 
+void AItemDropActor::InitializeDropWithMesh(FName NewItemId, int32 NewCount, UStaticMesh* NewVisualMesh)
+{
+    InitializeDrop(NewItemId, NewCount);
+    SetVisualMesh(NewVisualMesh);
+}
+
+void AItemDropActor::SetVisualMesh(UStaticMesh* NewVisualMesh)
+{
+    if (ItemMesh && NewVisualMesh)
+    {
+        ItemMesh->SetStaticMesh(NewVisualMesh);
+    }
+}
+
 bool AItemDropActor::TryPickup(AActor* Picker)
 {
     if (!Picker || ItemId == NAME_None || Count <= 0)

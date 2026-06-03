@@ -7,6 +7,7 @@
 class USphereComponent;
 class UStaticMeshComponent;
 class UPrimitiveComponent;
+class UStaticMesh;
 
 UCLASS(Blueprintable)
 class PROTOTYPE_API AItemDropActor : public AActor
@@ -57,6 +58,12 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Drop")
     void InitializeDrop(FName NewItemId, int32 NewCount);
+
+    UFUNCTION(BlueprintCallable, Category = "Drop")
+    void InitializeDropWithMesh(FName NewItemId, int32 NewCount, UStaticMesh* NewVisualMesh);
+
+    UFUNCTION(BlueprintCallable, Category = "Drop|Visual")
+    void SetVisualMesh(UStaticMesh* NewVisualMesh);
 
     UFUNCTION(BlueprintCallable, Category = "Drop")
     bool TryPickup(AActor* Picker);
