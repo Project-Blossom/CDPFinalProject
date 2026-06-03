@@ -813,6 +813,7 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 
     PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode);
     PlayerInputComponent->BindKey(EKeys::NumPadThree, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode);
+    PlayerInputComponent->BindKey(EKeys::R, IE_Pressed, this, &ADownfallCharacter::OnDestroyInventoryItemPressed);
 }
 
 void ADownfallCharacter::OnUseItemTriggered(const FInputActionValue& Value)
@@ -899,6 +900,11 @@ void ADownfallCharacter::OnToggleInventoryTriggered(const FInputActionValue& Val
 void ADownfallCharacter::OnUtilityUseTriggered(const FInputActionValue& Value)
 {
     TryUseEquippedUtility();
+}
+
+void ADownfallCharacter::OnDestroyInventoryItemPressed()
+{
+    TryDestroyInventoryItemAtCursor();
 }
 
 bool ADownfallCharacter::TryAttachSafetyLineFromLookTarget(float TraceDistanceCm)
@@ -3332,6 +3338,109 @@ bool ADownfallCharacter::TryUseHeldItem()
     return true;
 }
 
+bool ADownfallCharacter::CanDestroyInventorySlot(int32 Index) const
+{
+    if (!Inventory)
+    {
+        return false;
+    }
+
+    if (ItemUseState != EItemUseState::InventoryOpen &&
+        ItemUseState != EItemUseState::HoldingItem)
+    {
+        return false;
+    }
+
+    if (!IsValidInventorySlotIndex(Index) || Inventory->IsReservedCenterSlot(Index))
+    {
+        return false;
+    }
+
+    const TArray<FItemStack>& Slots = Inventory->GetSlots();
+    if (!Slots.IsValidIndex(Index) || !Slots[Index].IsValid())
+    {
+        return false;
+    }
+
+    if (Index == ActiveUsingAnchorSlotIndex && bSafetyLineAttached)
+    {
+        return false;
+    }
+
+    if (Index == EquippedUtilitySlotIndex)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool ADownfallCharacter::TryDestroyInventoryItemAtCursor()
+{
+    if (!Inventory)
+    {
+        return false;
+    }
+
+    int32 DestroySlotIndex = INDEX_NONE;
+    const bool bDestroyingHeldItem = (ItemUseState == EItemUseState::HoldingItem);
+
+    if (bDestroyingHeldItem)
+    {
+        DestroySlotIndex = HeldSlotIndex;
+    }
+    else if (ItemUseState == EItemUseState::InventoryOpen)
+    {
+        DestroySlotIndex = InventoryCursorIndex;
+    }
+    else
+    {
+        return false;
+    }
+
+    if (!CanDestroyInventorySlot(DestroySlotIndex))
+    {
+        return false;
+    }
+
+    if (!Inventory->ConsumeItemAt(DestroySlotIndex, 1))
+    {
+        return false;
+    }
+
+    const bool bSlotStillHasItem = Inventory->HasValidItemAt(DestroySlotIndex);
+
+    if (HeldSlotIndex == DestroySlotIndex && !bSlotStillHasItem)
+    {
+        HeldSlotIndex = INDEX_NONE;
+    }
+
+    if (ActiveUsingAnchorSlotIndex == DestroySlotIndex && !bSlotStillHasItem)
+    {
+        ActiveUsingAnchorSlotIndex = INDEX_NONE;
+    }
+
+    if (EquippedUtilitySlotIndex == DestroySlotIndex && !bSlotStillHasItem)
+    {
+        EquippedUtilitySlotIndex = INDEX_NONE;
+    }
+
+    if (bDestroyingHeldItem)
+    {
+        HeldSlotIndex = INDEX_NONE;
+        ItemUseState = EItemUseState::None;
+        InventoryCursorIndex = Inventory ? Inventory->GetReservedCenterSlotIndex() : 12;
+
+        if (Inventory)
+        {
+            Inventory->SetPreviewEnabled(false);
+        }
+    }
+
+    RefreshInventoryUIState();
+    return true;
+}
+
 bool ADownfallCharacter::TryUseEquippedUtility()
 {
     if (!Inventory || !IsValidInventorySlotIndex(EquippedUtilitySlotIndex))
@@ -4495,7 +4604,7 @@ void ADownfallCharacter::AutoConfigureMinimapCapture()
             // ── M_MinimapCliff DMI에 CliffFrontX/BackX 자동 설정 ──
             // Origin.X ± BoxExtent.X = 암벽 전면/후면 X 좌표
             const float AutoFrontX = Origin.X + BoxExtent.X;
-            const float AutoBackX  = Origin.X - BoxExtent.X;
+            const float AutoBackX = Origin.X - BoxExtent.X;
 
             UProceduralMeshComponent* ProcMesh =
                 CachedMountainActor->FindComponentByClass<UProceduralMeshComponent>();
@@ -4512,8 +4621,8 @@ void ADownfallCharacter::AutoConfigureMinimapCapture()
                 if (MinimapMID)
                 {
                     MinimapMID->SetScalarParameterValue(FName("CliffFrontX"), AutoFrontX);
-                    MinimapMID->SetScalarParameterValue(FName("CliffBackX"),  AutoBackX);
-                    MinimapMID->SetScalarParameterValue(FName("CliffTopZ"),   DetectedHeight);
+                    MinimapMID->SetScalarParameterValue(FName("CliffBackX"), AutoBackX);
+                    MinimapMID->SetScalarParameterValue(FName("CliffTopZ"), DetectedHeight);
                     UE_LOG(LogDownFall, Log,
                         TEXT("Minimap: M_MinimapCliff DMI — FrontX=%.0f BackX=%.0f TopZ=%.0f"),
                         AutoFrontX, AutoBackX, DetectedHeight);

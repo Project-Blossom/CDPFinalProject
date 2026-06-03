@@ -1047,6 +1047,7 @@ protected:
     void OnToggleInventoryTriggered(const FInputActionValue& Value);
     void OnPauseTriggered(const FInputActionValue& Value);
     void OnUtilityUseTriggered(const FInputActionValue& Value);
+    void OnDestroyInventoryItemPressed();
 
     // Debug
     void OnDebugInsanity(const FInputActionValue& Value);
@@ -1098,6 +1099,8 @@ protected:
     bool TryPickHeldItemFromCursor();
     bool TryUseHeldItem();
     bool TryUseEquippedUtility();
+    bool TryDestroyInventoryItemAtCursor();
+    bool CanDestroyInventorySlot(int32 Index) const;
     bool IsUtilityEquipSlot(int32 Index) const;
     bool BeginEquippingUtilitySlot(int32 SlotIndex);
     void ClearEquippedUtilitySlot();
