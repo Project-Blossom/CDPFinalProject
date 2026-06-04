@@ -24,6 +24,7 @@ class AExponentialHeightFog;
 class AStaticMeshActor;
 class ASceneCapture2D;
 class UMinimapWidget;
+class AMonsterSpawner;
 class USplineComponent;
 class USplineMeshComponent;
 class UStaticMesh;
@@ -478,6 +479,13 @@ public:
     // Insanity
     UFUNCTION(BlueprintCallable, Category = "Insanity")
     void AddInsanity(float Amount);
+
+    // Insanity 80 임계값 초과 여부 (HallucinationGhost 소환 조건)
+    UFUNCTION(BlueprintPure, Category = "Insanity")
+    bool IsInsanityAboveGlitchThreshold() const { return Insanity >= 80.0f; }
+
+    UFUNCTION(BlueprintPure, Category = "Insanity")
+    float GetInsanity() const { return Insanity; }
 
     UFUNCTION(BlueprintCallable, Category = "AI|Stealth")
     void ActivateMonsterSenseBlock(float DurationSeconds = 15.0f);
@@ -1163,6 +1171,8 @@ private:
 
     FTimerHandle LowFrequencyUpdateTimerHandle;
     TWeakObjectPtr<class AMountainGenWorldActor> CachedMountainActor;
+    TWeakObjectPtr<class AMonsterSpawner>        CachedMonsterSpawner;
+    bool bGhostSpawnedThisSession = false; // 세션당 1회 소환 방지
 
     // Minimap SceneCapture2D 캐시
     TWeakObjectPtr<class ASceneCapture2D>  CachedSceneCapture;

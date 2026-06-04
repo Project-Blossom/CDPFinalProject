@@ -461,6 +461,17 @@ void ADownfallCharacter::BeginPlay()
 
     CachedMountainActor = FindMountainGenActor();
 
+    // MonsterSpawner 캐시
+    {
+        TArray<AActor*> Found;
+        UGameplayStatics::GetAllActorsOfClass(
+            GetWorld(), AMonsterSpawner::StaticClass(), Found);
+        if (Found.Num() > 0)
+        {
+            CachedMonsterSpawner = Cast<AMonsterSpawner>(Found[0]);
+        }
+    }
+
     RefreshInventoryUIState();
     ApplyClimbingMappingContext();
 
@@ -2276,8 +2287,19 @@ void ADownfallCharacter::EndMonsterSenseBlock()
 }
 
 void ADownfallCharacter::AddInsanity(float Amount)
-{
+{   
+    const float PrevInsanity = Insanity;
     Insanity = FMath::Clamp(Insanity + Amount, 0.0f, MaxInsanity);
+    // Insanity 80 임계값 상향 돌파 시 HallucinationGhost 소환
+    if (PrevInsanity < 80.0f && Insanity >= 80.0f
+        && !bGhostSpawnedThisSession
+        && CachedMonsterSpawner.IsValid())
+    {
+        bGhostSpawnedThisSession = true;
+        CachedMonsterSpawner->SpawnHallucinationGhosts();
+        UE_LOG(LogDownFall, Warning,
+            TEXT("Insanity 80 임계값 돌파 → HallucinationGhost 소환"));
+    }
     UpdateInsanityEffects();
 
     // Altitude Widget Glitch 모드 제어 (상태 변화 감지)

@@ -8,6 +8,7 @@ class AMonsterBase;
 class AWallCrawler;
 class AFlyingPlatform;
 class AFlyingAttacker;
+class AHallucinationGhost;
 class AMountainGenWorldActor;
 
 UENUM()
@@ -157,6 +158,27 @@ public:
     TSubclassOf<AFlyingAttacker> FlyingAttackerClass;
 
     // =====================================================
+    // HallucinationGhost (Insanity 80+ 소환)
+    // =====================================================
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HallucinationGhost")
+    TSubclassOf<AHallucinationGhost> HallucinationGhostClass;
+
+    // 소환할 고스트 수
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HallucinationGhost",
+        meta = (ClampMin = "0"))
+    int32 HallucinationGhostCount = 3;
+
+    // 고스트 간 최소 거리
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HallucinationGhost",
+        meta = (ClampMin = "0.0"))
+    float HallucinationGhostMinDistance = 800.0f;
+
+    // StageHeightMax — CliffTotalHeight 기반 자동 설정 (0이면 자동)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HallucinationGhost",
+        meta = (ClampMin = "0.0"))
+    float HallucinationGhostStageHeightMax = 0.0f;
+
+    // =====================================================
     // WallCrawler Rules
     // =====================================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallCrawler", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -255,6 +277,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Spawning")
     void SpawnMonsters();
 
+    // Insanity 80+ 조건 시 DownfallCharacter에서 호출
+    UFUNCTION(BlueprintCallable, Category = "Spawning")
+    void SpawnHallucinationGhosts();
+
+    // 현재 스폰된 고스트 전체 제거
+    UFUNCTION(BlueprintCallable, Category = "Spawning")
+    void ClearHallucinationGhosts();
+
     UFUNCTION(BlueprintCallable, Category = "Spawning")
     void ClearAllMonsters();
 
@@ -323,6 +353,9 @@ private:
 private:
     UPROPERTY()
     TArray<AMonsterBase*> SpawnedMonsters;
+
+    UPROPERTY()
+    TArray<AActor*> SpawnedGhosts;
 
     FTimerHandle DeferredInitialSpawnTimer;
 };

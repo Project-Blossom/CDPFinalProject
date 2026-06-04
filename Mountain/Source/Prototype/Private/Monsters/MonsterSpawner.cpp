@@ -7,6 +7,7 @@
 #include "Monsters/FlyingMonster.h"
 #include "Monsters/FlyingPlatform.h"
 #include "Monsters/FlyingAttacker.h"
+#include "Monsters/HallucinationGhost.h"
 
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
@@ -1440,6 +1441,87 @@ void AMonsterSpawner::ClearAllMonsters()
             Monster->Destroy();
         }
     }
-
     SpawnedMonsters.Empty();
+
+    ClearHallucinationGhosts();
+}
+
+void AMonsterSpawner::SpawnHallucinationGhosts()
+{
+    if (!HallucinationGhostClass)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("MonsterSpawner: HallucinationGhostClass 미설정 — BP에서 할당 필요"));
+        return;
+    }
+
+    // StageHeightMax 결정: 0이면 CliffTotalHeight 자동 사용
+    float HeightMax = HallucinationGhostStageHeightMax;
+    if (HeightMax <= 0.0f && IsValid(TargetMountain))
+    {
+        FVector Origin, Extent;
+        TargetMountain->GetActorBounds(false, Origin, Extent);
+        HeightMax = Origin.Z + Extent.Z;
+    }
+
+    TArray<FVector> SpawnedPositions;
+    int32 Spawned = 0;
+
+    for (int32 i = 0; i < HallucinationGhostCount; ++i)
+    {
+        FVector SpawnLoc;
+        // SampleFrontBandAirLocation 패턴으로 암벽 앞 공중 위치 샘플
+        if (!SampleFrontBandAirLocation(SpawnLoc,
+            AttackerMinWallDistance, AttackerMinHeightAboveGround,
+            AttackerMaxHeightAboveGround, EMonsterSpawnKind::FlyingAttacker))
+        {
+            continue;
+        }
+
+        // 동종 간 최소 거리 체크
+        bool bTooClose = false;
+        for (const FVector& Pos : SpawnedPositions)
+        {
+            if (FVector::Dist(SpawnLoc, Pos) < HallucinationGhostMinDistance)
+            {
+                bTooClose = true;
+                break;
+            }
+        }
+        if (bTooClose) continue;
+
+        FActorSpawnParameters Params;
+        Params.SpawnCollisionHandlingOverride =
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+        AHallucinationGhost* Ghost = GetWorld()->SpawnActor<AHallucinationGhost>(
+            HallucinationGhostClass, SpawnLoc, FRotator::ZeroRotator, Params);
+
+        if (Ghost)
+        {
+            Ghost->StageHeightMax = HeightMax;
+            SpawnedGhosts.Add(Ghost);
+            SpawnedPositions.Add(SpawnLoc);
+            ++Spawned;
+            UE_LOG(LogTemp, Log,
+                TEXT("MonsterSpawner: HallucinationGhost 스폰 [%d/%d] @ %s"),
+                Spawned, HallucinationGhostCount, *SpawnLoc.ToString());
+        }
+    }
+
+    UE_LOG(LogTemp, Log,
+        TEXT("MonsterSpawner: HallucinationGhost 스폰 완료 (%d/%d)"),
+        Spawned, HallucinationGhostCount);
+}
+
+void AMonsterSpawner::ClearHallucinationGhosts()
+{
+    for (AActor* Ghost : SpawnedGhosts)
+    {
+        if (IsValid(Ghost))
+        {
+            Ghost->Destroy();
+        }
+    }
+    SpawnedGhosts.Empty();
 }
