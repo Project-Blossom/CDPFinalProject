@@ -13,33 +13,26 @@ struct FItemSpawnEntry
 {
     GENERATED_BODY()
 
-    // ItemDefinition에 등록된 ItemId와 동일해야 한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
     FName ItemId = NAME_None;
 
-    // 이 항목으로 몇 개의 드롭 액터를 만들지 결정한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item", meta = (ClampMin = "0"))
     int32 SpawnCount = 1;
 
-    // 드롭 액터 하나가 들고 있는 아이템 개수 범위.
-    // 초코처럼 스택 아이템이면 1~3 등으로 설정 가능하다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item", meta = (ClampMin = "1"))
     int32 CountMin = 1;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item", meta = (ClampMin = "1"))
     int32 CountMax = 1;
 
-    // 이 항목의 월드 표시용 메시.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Visual")
     TObjectPtr<UStaticMesh> VisualMesh = nullptr;
 
-    // 특정 아이템만 다른 드롭 액터 BP를 쓰고 싶을 때 설정한다.
-    // 비워두면 ItemSpawner의 DefaultDropActorClass를 사용한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Class")
     TSubclassOf<AItemDropActor> DropActorClass = nullptr;
 };
 
-UCLASS(Blueprintable)
+UCLASS(BlueprintType, Blueprintable)
 class PROTOTYPE_API AItemSpawner : public AActor
 {
     GENERATED_BODY()
