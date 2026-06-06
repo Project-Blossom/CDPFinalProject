@@ -82,7 +82,7 @@ public:
 
 private:
     // 컴포넌트
-    UPROPERTY()
+    UPROPERTY(VisibleAnywhere, Category = "Ghost|Visual")
     TObjectPtr<UStaticMeshComponent> MeshComp;
 
     UPROPERTY()
