@@ -2,7 +2,7 @@
 #include "Monsters/HallucinationGhost.h"
 
 #include "DownfallCharacter.h"
-#include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -13,7 +13,7 @@ AHallucinationGhost::AHallucinationGhost()
 {
     PrimaryActorTick.bCanEverTick = true;
 
-    MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
+    MeshComp = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("MeshComp"));
     SetRootComponent(MeshComp);
 
     // 충돌 없음 — 플레이어와 통과 가능

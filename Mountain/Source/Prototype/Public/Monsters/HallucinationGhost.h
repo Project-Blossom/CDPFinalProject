@@ -7,7 +7,7 @@
 #include "GameFramework/Actor.h"
 #include "HallucinationGhost.generated.h"
 
-class UStaticMeshComponent;
+class USkeletalMeshComponent;
 class UMaterialInstanceDynamic;
 class ADownfallCharacter;
 
@@ -83,7 +83,7 @@ public:
 private:
     // 컴포넌트
     UPROPERTY(VisibleAnywhere, Category = "Ghost|Visual")
-    TObjectPtr<UStaticMeshComponent> MeshComp;
+    TObjectPtr<USkeletalMeshComponent> MeshComp;
 
     UPROPERTY()
     TObjectPtr<UMaterialInstanceDynamic> GhostMID;
