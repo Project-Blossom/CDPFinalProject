@@ -36,13 +36,7 @@ void AItemSpawner::BeginPlay()
         }
         else if (bAutoSpawnOnBeginPlay && GetWorld())
         {
-            GetWorld()->GetTimerManager().SetTimer(
-                DeferredInitialSpawnTimer,
-                this,
-                &AItemSpawner::TryInitialSpawnFallback,
-                0.25f,
-                false
-            );
+            GetWorld()->GetTimerManager().SetTimer(DeferredInitialSpawnTimer, this, &AItemSpawner::TryInitialSpawnFallback, 0.25f, false);
         }
     }
     else if (bAutoSpawnOnBeginPlay)
@@ -115,46 +109,11 @@ bool AItemSpawner::GetMountainBounds(FBox& OutBounds) const
     return OutBounds.IsValid != 0;
 }
 
-bool AItemSpawner::TraceFrontSurfaceAtYZ(float Y, float Z, FHitResult& OutHit) const
-{
-    if (!GetWorld() || !TargetMountain)
-    {
-        return false;
-    }
-
-    const float FrontX = TargetMountain->GetFrontSurfaceWorldX();
-    const FVector Start(FrontX + FrontTraceStartDistanceCm, Y, Z);
-    const FVector End(FrontX - FrontTraceBackDistanceCm, Y, Z);
-
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(ItemSpawnerFrontSurfaceTrace), false);
-    Params.AddIgnoredActor(this);
-
-    FHitResult Hit;
-    if (!GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_WorldStatic, Params))
-    {
-        return false;
-    }
-
-    if (Hit.GetActor() != TargetMountain)
-    {
-        return false;
-    }
-
-    const float FrontDot = FVector::DotProduct(Hit.ImpactNormal.GetSafeNormal(), FVector::ForwardVector);
-    if (FrontDot < FrontFacingNormalDotMin)
-    {
-        return false;
-    }
-
-    OutHit = Hit;
-    return true;
-}
-
 int32 AItemSpawner::GetTotalRequestedDropCount() const
 {
     int32 Total = 0;
 
-    for (const FItemSpawnEntry& Entry : ItemsToSpawn)
+    for (const FCliffItemSpawnEntry& Entry : CliffItemsToSpawn)
     {
         if (Entry.ItemId != NAME_None && Entry.SpawnCount > 0)
         {
@@ -165,14 +124,14 @@ int32 AItemSpawner::GetTotalRequestedDropCount() const
     return Total;
 }
 
-float AItemSpawner::CalculateSurfaceOffset(const FItemSpawnEntry& Entry) const
+float AItemSpawner::CalculateFrontOffset(const FCliffItemSpawnEntry& Entry) const
 {
-    if (Entry.SurfaceOffsetOverrideCm > 0.0f)
+    if (Entry.FrontOffsetOverrideCm > 0.0f)
     {
-        return Entry.SurfaceOffsetOverrideCm;
+        return Entry.FrontOffsetOverrideCm;
     }
 
-    float Offset = DefaultSurfaceOffsetCm;
+    float Offset = DefaultFrontOffsetCm;
 
     if (bUseVisualMeshBoundsForOffset && Entry.VisualMesh)
     {
@@ -182,10 +141,10 @@ float AItemSpawner::CalculateSurfaceOffset(const FItemSpawnEntry& Entry) const
     return FMath::Max(0.0f, Offset);
 }
 
-bool AItemSpawner::BuildDeterministicSpawnTransform(int32 LinearIndex, int32 TotalCount, const FItemSpawnEntry& Entry, FTransform& OutTransform) const
+bool AItemSpawner::BuildSpawnTransform(int32 LinearIndex, int32 TotalCount, const FCliffItemSpawnEntry& Entry, FTransform& OutTransform) const
 {
     FBox Bounds;
-    if (!GetMountainBounds(Bounds) || TotalCount <= 0)
+    if (!GetMountainBounds(Bounds) || !TargetMountain || TotalCount <= 0)
     {
         return false;
     }
@@ -203,32 +162,24 @@ bool AItemSpawner::BuildDeterministicSpawnTransform(int32 LinearIndex, int32 Tot
 
     const float HeightAlphaMin = FMath::Clamp(FMath::Min(SpawnHeightRatioMin, SpawnHeightRatioMax), 0.0f, 1.0f);
     const float HeightAlphaMax = FMath::Clamp(FMath::Max(SpawnHeightRatioMin, SpawnHeightRatioMax), 0.0f, 1.0f);
+
     const float ZMin = FMath::Lerp(Bounds.Min.Z, Bounds.Max.Z, HeightAlphaMin);
     const float ZMax = FMath::Lerp(Bounds.Min.Z, Bounds.Max.Z, HeightAlphaMax);
 
     const float YAlpha = ((float)Column + 0.5f) / (float)ColumnCount;
     const float ZAlpha = ((float)Row + 0.5f) / (float)RowCount;
 
-    const float Y = FMath::Lerp(YMin, YMax, YAlpha);
-    const float Z = FMath::Lerp(ZMin, ZMax, ZAlpha);
-
-    FHitResult SurfaceHit;
-    if (!TraceFrontSurfaceAtYZ(Y, Z, SurfaceHit))
-    {
-        return false;
-    }
-
-    const FVector SurfaceNormal = SurfaceHit.ImpactNormal.GetSafeNormal();
-    const float SurfaceOffset = CalculateSurfaceOffset(Entry);
-    const FVector SpawnLocation = SurfaceHit.ImpactPoint + SurfaceNormal * SurfaceOffset;
+    const FVector SpawnLocation(
+        TargetMountain->GetFrontSurfaceWorldX() + CalculateFrontOffset(Entry),
+        FMath::Lerp(YMin, YMax, YAlpha),
+        FMath::Lerp(ZMin, ZMax, ZAlpha)
+    );
 
     OutTransform = FTransform(FRotator::ZeroRotator, SpawnLocation, FVector::OneVector);
 
     if (bDrawDebugSpawnPoints && GetWorld())
     {
-        DrawDebugSphere(GetWorld(), SurfaceHit.ImpactPoint, 25.0f, 12, FColor::Yellow, false, 10.0f, 0, 2.0f);
         DrawDebugSphere(GetWorld(), SpawnLocation, 35.0f, 12, FColor::Cyan, false, 10.0f, 0, 2.0f);
-        DrawDebugLine(GetWorld(), SurfaceHit.ImpactPoint, SpawnLocation, FColor::Cyan, false, 10.0f, 0, 2.0f);
     }
 
     return true;
@@ -274,7 +225,7 @@ void AItemSpawner::SpawnItems()
     int32 LinearIndex = 0;
     int32 SpawnedCount = 0;
 
-    for (const FItemSpawnEntry& Entry : ItemsToSpawn)
+    for (const FCliffItemSpawnEntry& Entry : CliffItemsToSpawn)
     {
         if (Entry.ItemId == NAME_None || Entry.SpawnCount <= 0)
         {
@@ -286,8 +237,7 @@ void AItemSpawner::SpawnItems()
         {
             if (bVerboseLog)
             {
-                UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': no drop actor class for item %s"),
-                    *GetName(), *Entry.ItemId.ToString());
+                UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': no drop actor class for item %s"), *GetName(), *Entry.ItemId.ToString());
             }
 
             LinearIndex += Entry.SpawnCount;
@@ -297,14 +247,8 @@ void AItemSpawner::SpawnItems()
         for (int32 i = 0; i < Entry.SpawnCount; ++i)
         {
             FTransform SpawnTransform;
-            if (!BuildDeterministicSpawnTransform(LinearIndex, TotalCount, Entry, SpawnTransform))
+            if (!BuildSpawnTransform(LinearIndex, TotalCount, Entry, SpawnTransform))
             {
-                if (bVerboseLog)
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': failed to place item %s at deterministic slot %d/%d"),
-                        *GetName(), *Entry.ItemId.ToString(), LinearIndex + 1, TotalCount);
-                }
-
                 ++LinearIndex;
                 continue;
             }
@@ -314,24 +258,20 @@ void AItemSpawner::SpawnItems()
             Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
             AItemDropActor* Drop = World->SpawnActor<AItemDropActor>(ClassToSpawn, SpawnTransform, Params);
-            if (!Drop)
+            if (Drop)
             {
-                ++LinearIndex;
-                continue;
+                Drop->InitializeDropWithMesh(Entry.ItemId, Entry.CountPerDrop, Entry.VisualMesh);
+                SpawnedDrops.Add(Drop);
+                ++SpawnedCount;
             }
 
-            Drop->InitializeDropWithMesh(Entry.ItemId, Entry.CountPerDrop, Entry.VisualMesh);
-            SpawnedDrops.Add(Drop);
-
-            ++SpawnedCount;
             ++LinearIndex;
         }
     }
 
     if (bVerboseLog)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': spawned %d/%d fixed item drops on cliff front"),
-            *GetName(), SpawnedCount, TotalCount);
+        UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': spawned %d/%d item drops on cliff front plane"), *GetName(), SpawnedCount, TotalCount);
     }
 }
 
