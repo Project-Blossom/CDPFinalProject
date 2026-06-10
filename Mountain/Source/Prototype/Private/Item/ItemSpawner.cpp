@@ -36,7 +36,13 @@ void AItemSpawner::BeginPlay()
         }
         else if (bAutoSpawnOnBeginPlay && GetWorld())
         {
-            GetWorld()->GetTimerManager().SetTimer(DeferredInitialSpawnTimer, this, &AItemSpawner::TryInitialSpawnFallback, 0.25f, false);
+            GetWorld()->GetTimerManager().SetTimer(
+                DeferredInitialSpawnTimer,
+                this,
+                &AItemSpawner::TryInitialSpawnFallback,
+                0.25f,
+                false
+            );
         }
     }
     else if (bAutoSpawnOnBeginPlay)
@@ -109,6 +115,43 @@ bool AItemSpawner::GetMountainBounds(FBox& OutBounds) const
     return OutBounds.IsValid != 0;
 }
 
+bool AItemSpawner::TraceFrontSurfaceAtYZ(float Y, float Z, FHitResult& OutHit) const
+{
+    if (!GetWorld() || !TargetMountain)
+    {
+        return false;
+    }
+
+    const float FrontX = TargetMountain->GetFrontSurfaceWorldX();
+
+    // +X 앞쪽에서 -X 방향으로 쏴서 실제 노이즈가 반영된 절벽 앞면을 찾는다.
+    const FVector Start(FrontX + FrontTraceStartDistanceCm, Y, Z);
+    const FVector End(FrontX - FrontTraceBackDistanceCm, Y, Z);
+
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(ItemSpawnerFrontSurfaceTrace), false);
+    Params.AddIgnoredActor(this);
+
+    FHitResult Hit;
+    if (!GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_WorldStatic, Params))
+    {
+        return false;
+    }
+
+    if (Hit.GetActor() != TargetMountain)
+    {
+        return false;
+    }
+
+    const FVector SurfaceNormal = Hit.ImpactNormal.GetSafeNormal();
+    if (FVector::DotProduct(SurfaceNormal, FVector::ForwardVector) < FrontFacingNormalDotMin)
+    {
+        return false;
+    }
+
+    OutHit = Hit;
+    return true;
+}
+
 int32 AItemSpawner::GetTotalRequestedDropCount() const
 {
     int32 Total = 0;
@@ -124,21 +167,21 @@ int32 AItemSpawner::GetTotalRequestedDropCount() const
     return Total;
 }
 
-float AItemSpawner::CalculateFrontOffset(const FCliffItemSpawnEntry& Entry) const
+float AItemSpawner::CalculateSurfaceDistance(const FCliffItemSpawnEntry& Entry) const
 {
-    if (Entry.FrontOffsetOverrideCm > 0.0f)
+    if (Entry.SurfaceDistanceOverrideCm > 0.0f)
     {
-        return Entry.FrontOffsetOverrideCm;
+        return Entry.SurfaceDistanceOverrideCm;
     }
 
-    float Offset = DefaultFrontOffsetCm;
+    float Distance = SurfaceDistanceFromCliffCm;
 
-    if (bUseVisualMeshBoundsForOffset && Entry.VisualMesh)
+    if (bAddVisualMeshRadiusToDistance && Entry.VisualMesh)
     {
-        Offset += Entry.VisualMesh->GetBounds().SphereRadius + MeshClearancePaddingCm;
+        Distance += Entry.VisualMesh->GetBounds().SphereRadius + MeshClearancePaddingCm;
     }
 
-    return FMath::Max(0.0f, Offset);
+    return FMath::Max(0.0f, Distance);
 }
 
 bool AItemSpawner::BuildSpawnTransform(int32 LinearIndex, int32 TotalCount, const FCliffItemSpawnEntry& Entry, FTransform& OutTransform) const
@@ -162,24 +205,34 @@ bool AItemSpawner::BuildSpawnTransform(int32 LinearIndex, int32 TotalCount, cons
 
     const float HeightAlphaMin = FMath::Clamp(FMath::Min(SpawnHeightRatioMin, SpawnHeightRatioMax), 0.0f, 1.0f);
     const float HeightAlphaMax = FMath::Clamp(FMath::Max(SpawnHeightRatioMin, SpawnHeightRatioMax), 0.0f, 1.0f);
-
     const float ZMin = FMath::Lerp(Bounds.Min.Z, Bounds.Max.Z, HeightAlphaMin);
     const float ZMax = FMath::Lerp(Bounds.Min.Z, Bounds.Max.Z, HeightAlphaMax);
 
     const float YAlpha = ((float)Column + 0.5f) / (float)ColumnCount;
     const float ZAlpha = ((float)Row + 0.5f) / (float)RowCount;
 
-    const FVector SpawnLocation(
-        TargetMountain->GetFrontSurfaceWorldX() + CalculateFrontOffset(Entry),
-        FMath::Lerp(YMin, YMax, YAlpha),
-        FMath::Lerp(ZMin, ZMax, ZAlpha)
-    );
+    const float Y = FMath::Lerp(YMin, YMax, YAlpha);
+    const float Z = FMath::Lerp(ZMin, ZMax, ZAlpha);
+
+    FHitResult SurfaceHit;
+    if (!TraceFrontSurfaceAtYZ(Y, Z, SurfaceHit))
+    {
+        return false;
+    }
+
+    const FVector SurfaceNormal = SurfaceHit.ImpactNormal.GetSafeNormal();
+
+    // 아이템 배치 기준:
+    // 완성된 절벽 노이즈 앞면 SurfaceHit.ImpactPoint에서 표면 노말 방향으로 1m.
+    const FVector SpawnLocation = SurfaceHit.ImpactPoint + SurfaceNormal * CalculateSurfaceDistance(Entry);
 
     OutTransform = FTransform(FRotator::ZeroRotator, SpawnLocation, FVector::OneVector);
 
     if (bDrawDebugSpawnPoints && GetWorld())
     {
+        DrawDebugSphere(GetWorld(), SurfaceHit.ImpactPoint, 25.0f, 12, FColor::Yellow, false, 10.0f, 0, 2.0f);
         DrawDebugSphere(GetWorld(), SpawnLocation, 35.0f, 12, FColor::Cyan, false, 10.0f, 0, 2.0f);
+        DrawDebugLine(GetWorld(), SurfaceHit.ImpactPoint, SpawnLocation, FColor::Cyan, false, 10.0f, 0, 2.0f);
     }
 
     return true;
@@ -237,7 +290,8 @@ void AItemSpawner::SpawnItems()
         {
             if (bVerboseLog)
             {
-                UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': no drop actor class for item %s"), *GetName(), *Entry.ItemId.ToString());
+                UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': no drop actor class for item %s"),
+                    *GetName(), *Entry.ItemId.ToString());
             }
 
             LinearIndex += Entry.SpawnCount;
@@ -249,6 +303,12 @@ void AItemSpawner::SpawnItems()
             FTransform SpawnTransform;
             if (!BuildSpawnTransform(LinearIndex, TotalCount, Entry, SpawnTransform))
             {
+                if (bVerboseLog)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': failed to place %s at cliff front slot %d/%d"),
+                        *GetName(), *Entry.ItemId.ToString(), LinearIndex + 1, TotalCount);
+                }
+
                 ++LinearIndex;
                 continue;
             }
@@ -271,7 +331,8 @@ void AItemSpawner::SpawnItems()
 
     if (bVerboseLog)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': spawned %d/%d item drops on cliff front plane"), *GetName(), SpawnedCount, TotalCount);
+        UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': spawned %d/%d item drops 1m from noisy cliff front"),
+            *GetName(), SpawnedCount, TotalCount);
     }
 }
 
