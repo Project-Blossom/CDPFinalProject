@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
+#include "Math/RandomStream.h"
 #include "ItemSpawner.generated.h"
 
 class USceneComponent;
@@ -30,7 +31,6 @@ struct FCliffItemSpawnEntry
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Class")
     TSubclassOf<AItemDropActor> DropActorClass = nullptr;
 
-    // 0이면 ItemSpawner의 SurfaceDistanceFromCliffCm 값을 사용한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Placement", meta = (ClampMin = "0.0"))
     float SurfaceDistanceOverrideCm = 0.0f;
 };
@@ -79,41 +79,41 @@ public:
     TArray<FCliffItemSpawnEntry> CliffItemsToSpawn;
 
     // =====================================================
-    // Goal Based Cliff Front Placement
+    // Seeded Random Cliff Front Placement
     // =====================================================
 
-    // 절벽 전체 Y 폭에서 좌우 끝을 제외하는 거리.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement|Seed")
+    int32 PlacementSeed = 12345;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement", meta = (ClampMin = "0.0"))
     float SideMarginCm = 300.0f;
 
-    // 절벽 높이 중 아이템을 배치할 구간. 0~1 비율.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement|Height", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float SpawnHeightRatioMin = 0.08f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement|Height", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float SpawnHeightRatioMax = 0.92f;
 
-    // 절벽 앞면의 실제 노이즈 표면에서 1m 떨어진 위치에 아이템 중심을 둔다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement", meta = (ClampMin = "0.0"))
     float SurfaceDistanceFromCliffCm = 100.0f;
 
-    // true면 메시 반지름만큼 더 밀어내서 아이템 전체가 절벽 밖으로 나오게 한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement")
     bool bAddVisualMeshRadiusToDistance = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement", meta = (ClampMin = "0.0"))
     float MeshClearancePaddingCm = 0.0f;
 
-    // +X 방향을 바라보는 표면만 절벽 앞면으로 인정한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float FrontFacingNormalDotMin = 0.25f;
 
-    // 실제 노이즈 표면을 찾기 위해 +X 앞쪽에서 -X 방향으로 쏘는 Trace 거리.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement|Trace", meta = (ClampMin = "100.0"))
     float FrontTraceStartDistanceCm = 3000.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement|Trace", meta = (ClampMin = "100.0"))
     float FrontTraceBackDistanceCm = 30000.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement|Trace", meta = (ClampMin = "1", ClampMax = "500"))
+    int32 MaxPlacementAttemptsPerDrop = 40;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
     bool bDrawDebugSpawnPoints = false;
@@ -137,9 +137,10 @@ private:
     bool ResolveMountain();
     bool GetMountainBounds(FBox& OutBounds) const;
     bool TraceFrontSurfaceAtYZ(float Y, float Z, FHitResult& OutHit) const;
-    bool BuildSpawnTransform(int32 LinearIndex, int32 TotalCount, const FCliffItemSpawnEntry& Entry, FTransform& OutTransform) const;
+    bool BuildSeededRandomSpawnTransform(FRandomStream& Stream, const FCliffItemSpawnEntry& Entry, FTransform& OutTransform) const;
     float CalculateSurfaceDistance(const FCliffItemSpawnEntry& Entry) const;
     int32 GetTotalRequestedDropCount() const;
+    int32 MakeEntrySeed(int32 EntryIndex, int32 ItemIndexInEntry) const;
     void TryInitialSpawnFallback();
 
 private:

@@ -71,11 +71,12 @@ void AItemSpawner::HandleMountainGenerated(AActor* Generator)
         return;
     }
 
-    if (!bRespawnWhenMountainRegenerates && SpawnedDrops.Num() > 0)
+    if (!bRespawnWhenMountainRegenerates)
     {
         return;
     }
 
+    ClearSpawnedItems();
     SpawnItems();
 }
 
@@ -123,8 +124,6 @@ bool AItemSpawner::TraceFrontSurfaceAtYZ(float Y, float Z, FHitResult& OutHit) c
     }
 
     const float FrontX = TargetMountain->GetFrontSurfaceWorldX();
-
-    // +X 앞쪽에서 -X 방향으로 쏴서 실제 노이즈가 반영된 절벽 앞면을 찾는다.
     const FVector Start(FrontX + FrontTraceStartDistanceCm, Y, Z);
     const FVector End(FrontX - FrontTraceBackDistanceCm, Y, Z);
 
@@ -184,19 +183,29 @@ float AItemSpawner::CalculateSurfaceDistance(const FCliffItemSpawnEntry& Entry) 
     return FMath::Max(0.0f, Distance);
 }
 
-bool AItemSpawner::BuildSpawnTransform(int32 LinearIndex, int32 TotalCount, const FCliffItemSpawnEntry& Entry, FTransform& OutTransform) const
+int32 AItemSpawner::MakeEntrySeed(int32 EntryIndex, int32 ItemIndexInEntry) const
+{
+    uint32 Hash = GetTypeHash(PlacementSeed);
+
+    if (TargetMountain)
+    {
+        Hash = HashCombine(Hash, GetTypeHash(TargetMountain->Settings.Seed));
+        Hash = HashCombine(Hash, GetTypeHash((uint8)TargetMountain->Settings.Difficulty));
+    }
+
+    Hash = HashCombine(Hash, GetTypeHash(EntryIndex));
+    Hash = HashCombine(Hash, GetTypeHash(ItemIndexInEntry));
+
+    return static_cast<int32>(Hash & 0x7fffffff);
+}
+
+bool AItemSpawner::BuildSeededRandomSpawnTransform(FRandomStream& Stream, const FCliffItemSpawnEntry& Entry, FTransform& OutTransform) const
 {
     FBox Bounds;
-    if (!GetMountainBounds(Bounds) || !TargetMountain || TotalCount <= 0)
+    if (!GetMountainBounds(Bounds) || !TargetMountain)
     {
         return false;
     }
-
-    const int32 ColumnCount = FMath::Max(1, FMath::CeilToInt(FMath::Sqrt((float)TotalCount)));
-    const int32 RowCount = FMath::Max(1, FMath::CeilToInt((float)TotalCount / (float)ColumnCount));
-
-    const int32 Column = LinearIndex % ColumnCount;
-    const int32 Row = LinearIndex / ColumnCount;
 
     const float YMinRaw = Bounds.Min.Y + SideMarginCm;
     const float YMaxRaw = Bounds.Max.Y - SideMarginCm;
@@ -208,34 +217,35 @@ bool AItemSpawner::BuildSpawnTransform(int32 LinearIndex, int32 TotalCount, cons
     const float ZMin = FMath::Lerp(Bounds.Min.Z, Bounds.Max.Z, HeightAlphaMin);
     const float ZMax = FMath::Lerp(Bounds.Min.Z, Bounds.Max.Z, HeightAlphaMax);
 
-    const float YAlpha = ((float)Column + 0.5f) / (float)ColumnCount;
-    const float ZAlpha = ((float)Row + 0.5f) / (float)RowCount;
+    const int32 Attempts = FMath::Max(1, MaxPlacementAttemptsPerDrop);
 
-    const float Y = FMath::Lerp(YMin, YMax, YAlpha);
-    const float Z = FMath::Lerp(ZMin, ZMax, ZAlpha);
-
-    FHitResult SurfaceHit;
-    if (!TraceFrontSurfaceAtYZ(Y, Z, SurfaceHit))
+    for (int32 Attempt = 0; Attempt < Attempts; ++Attempt)
     {
-        return false;
+        const float Y = Stream.FRandRange(YMin, YMax);
+        const float Z = Stream.FRandRange(ZMin, ZMax);
+
+        FHitResult SurfaceHit;
+        if (!TraceFrontSurfaceAtYZ(Y, Z, SurfaceHit))
+        {
+            continue;
+        }
+
+        const FVector SurfaceNormal = SurfaceHit.ImpactNormal.GetSafeNormal();
+        const FVector SpawnLocation = SurfaceHit.ImpactPoint + SurfaceNormal * CalculateSurfaceDistance(Entry);
+
+        OutTransform = FTransform(FRotator::ZeroRotator, SpawnLocation, FVector::OneVector);
+
+        if (bDrawDebugSpawnPoints && GetWorld())
+        {
+            DrawDebugSphere(GetWorld(), SurfaceHit.ImpactPoint, 25.0f, 12, FColor::Yellow, false, 10.0f, 0, 2.0f);
+            DrawDebugSphere(GetWorld(), SpawnLocation, 35.0f, 12, FColor::Cyan, false, 10.0f, 0, 2.0f);
+            DrawDebugLine(GetWorld(), SurfaceHit.ImpactPoint, SpawnLocation, FColor::Cyan, false, 10.0f, 0, 2.0f);
+        }
+
+        return true;
     }
 
-    const FVector SurfaceNormal = SurfaceHit.ImpactNormal.GetSafeNormal();
-
-    // 아이템 배치 기준:
-    // 완성된 절벽 노이즈 앞면 SurfaceHit.ImpactPoint에서 표면 노말 방향으로 1m.
-    const FVector SpawnLocation = SurfaceHit.ImpactPoint + SurfaceNormal * CalculateSurfaceDistance(Entry);
-
-    OutTransform = FTransform(FRotator::ZeroRotator, SpawnLocation, FVector::OneVector);
-
-    if (bDrawDebugSpawnPoints && GetWorld())
-    {
-        DrawDebugSphere(GetWorld(), SurfaceHit.ImpactPoint, 25.0f, 12, FColor::Yellow, false, 10.0f, 0, 2.0f);
-        DrawDebugSphere(GetWorld(), SpawnLocation, 35.0f, 12, FColor::Cyan, false, 10.0f, 0, 2.0f);
-        DrawDebugLine(GetWorld(), SurfaceHit.ImpactPoint, SpawnLocation, FColor::Cyan, false, 10.0f, 0, 2.0f);
-    }
-
-    return true;
+    return false;
 }
 
 void AItemSpawner::SpawnItems()
@@ -275,11 +285,12 @@ void AItemSpawner::SpawnItems()
         return;
     }
 
-    int32 LinearIndex = 0;
     int32 SpawnedCount = 0;
 
-    for (const FCliffItemSpawnEntry& Entry : CliffItemsToSpawn)
+    for (int32 EntryIndex = 0; EntryIndex < CliffItemsToSpawn.Num(); ++EntryIndex)
     {
+        const FCliffItemSpawnEntry& Entry = CliffItemsToSpawn[EntryIndex];
+
         if (Entry.ItemId == NAME_None || Entry.SpawnCount <= 0)
         {
             continue;
@@ -294,22 +305,22 @@ void AItemSpawner::SpawnItems()
                     *GetName(), *Entry.ItemId.ToString());
             }
 
-            LinearIndex += Entry.SpawnCount;
             continue;
         }
 
-        for (int32 i = 0; i < Entry.SpawnCount; ++i)
+        for (int32 ItemIndex = 0; ItemIndex < Entry.SpawnCount; ++ItemIndex)
         {
+            FRandomStream Stream(MakeEntrySeed(EntryIndex, ItemIndex));
+
             FTransform SpawnTransform;
-            if (!BuildSpawnTransform(LinearIndex, TotalCount, Entry, SpawnTransform))
+            if (!BuildSeededRandomSpawnTransform(Stream, Entry, SpawnTransform))
             {
                 if (bVerboseLog)
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': failed to place %s at cliff front slot %d/%d"),
-                        *GetName(), *Entry.ItemId.ToString(), LinearIndex + 1, TotalCount);
+                    UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': failed to place %s seed=%d entry=%d item=%d"),
+                        *GetName(), *Entry.ItemId.ToString(), PlacementSeed, EntryIndex, ItemIndex);
                 }
 
-                ++LinearIndex;
                 continue;
             }
 
@@ -324,15 +335,13 @@ void AItemSpawner::SpawnItems()
                 SpawnedDrops.Add(Drop);
                 ++SpawnedCount;
             }
-
-            ++LinearIndex;
         }
     }
 
     if (bVerboseLog)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': spawned %d/%d item drops 1m from noisy cliff front"),
-            *GetName(), SpawnedCount, TotalCount);
+        UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': spawned %d/%d random item drops, PlacementSeed=%d"),
+            *GetName(), SpawnedCount, TotalCount, PlacementSeed);
     }
 }
 

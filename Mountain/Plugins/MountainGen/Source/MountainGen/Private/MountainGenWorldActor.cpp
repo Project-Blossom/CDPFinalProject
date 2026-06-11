@@ -20,6 +20,7 @@
 #include "VoxelDensityGenerator.h"
 #include "VoxelMesher.h"
 #include "MountainGenAutoTune.h"
+#include "Engine/World.h"
 
 // ============================================================
 // Weld
