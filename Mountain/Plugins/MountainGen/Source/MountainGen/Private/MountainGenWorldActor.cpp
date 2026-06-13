@@ -1133,6 +1133,9 @@ void AMountainGenWorldActor::BeginPlay()
         const bool bHasExistingSection = (ProcMesh->GetNumSections() > 0);
         const bool bHasValidBounds = (ProcMesh->Bounds.GetBox().IsValid != 0);
 
+        UE_LOG(LogTemp, Warning, TEXT("[MountainGen][%s] BeginPlay: bHasExistingSection=%d bHasValidBounds=%d bAsyncWorking=%d"),
+            *GetName(), bHasExistingSection ? 1 : 0, bHasValidBounds ? 1 : 0, bAsyncWorking ? 1 : 0);
+
         if (bHasExistingSection || bHasValidBounds)
         {
             UpdateGeneratedMeshStateAndBroadcast();
@@ -1288,6 +1291,8 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
 
     if (Result.MeshData.Vertices.Num() == 0 || Result.MeshData.Triangles.Num() == 0)
     {
+        UE_LOG(LogTemp, Error, TEXT("[MountainGen][%s] ApplyGeneratedMeshResult: MeshData EMPTY (V=%d T=%d)"),
+            *GetName(), Result.MeshData.Vertices.Num(), Result.MeshData.Triangles.Num());
         UI_Status(TEXT("[MountainGen] 생성 실패: MeshData 비어있음"), 2.0f, FColor::Red);
         bAsyncWorking = false;
         InFlightBuildSerial = 0;
@@ -1299,6 +1304,9 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
         }
         return;
     }
+
+    UE_LOG(LogTemp, Warning, TEXT("[MountainGen][%s] ApplyGeneratedMeshResult: MeshData OK (V=%d T=%d), ActorLocation=%s"),
+        *GetName(), Result.MeshData.Vertices.Num(), Result.MeshData.Triangles.Num(), *GetActorLocation().ToString());
 
     // Build shared surface metadata/report for runtime-generated results.
     GeneratedSurfaceSamples.Reset();

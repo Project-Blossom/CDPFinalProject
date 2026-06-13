@@ -1,6 +1,7 @@
 #include "Core/DownfallGameInstance.h"
 #include "Core/DownfallSaveGame.h"
 #include "Kismet/GameplayStatics.h"
+#include "Math/RandomStream.h"
 
 void UDownfallGameInstance::Init()
 {
@@ -254,6 +255,26 @@ FStageTimeRecord* UDownfallGameInstance::FindStageRecord(FName StageId)
     }
     return nullptr;
 }
+
+void UDownfallGameInstance::GenerateNewSeeds()
+{
+    GeneratedSeeds.Reset();
+    GeneratedSeeds.Reserve(3);
+
+    FRandomStream Stream;
+    Stream.GenerateNewSeed();
+
+    for (int32 i = 0; i < 3; ++i)
+    {
+        // MountainGenWorldActor::SetSeed/RandomizeSeed와 동일하게 1 이상의 양수로 클램프
+        int32 NewSeed = Stream.RandRange(1, TNumericLimits<int32>::Max());
+        GeneratedSeeds.Add(NewSeed);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("DownfallGameInstance: Generated 3 new cliff seeds: %d, %d, %d"),
+        GeneratedSeeds[0], GeneratedSeeds[1], GeneratedSeeds[2]);
+}
+
 
 void UDownfallGameInstance::SaveGame()
 {

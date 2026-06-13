@@ -89,6 +89,24 @@ public:
     UFUNCTION(BlueprintPure, Category = "Stage")
     int32 GetCurrentStageIndex() const { return CurrentStageIndex; }
 
+    // ========== Cliff Selection ==========
+
+    // CliffSelection 레벨 진입 시 호출 — 3개의 새 Seed 생성
+    UFUNCTION(BlueprintCallable, Category = "CliffSelection")
+    void GenerateNewSeeds();
+
+    // 생성된 Seed 3개 반환
+    UFUNCTION(BlueprintPure, Category = "CliffSelection")
+    const TArray<int32>& GetGeneratedSeeds() const { return GeneratedSeeds; }
+
+    // 선택된 Seed 설정 (Enter 입력 시 호출)
+    UFUNCTION(BlueprintCallable, Category = "CliffSelection")
+    void SetSelectedSeed(int32 Seed) { SelectedSeed = Seed; }
+
+    // 선택된 Seed 반환 (다음 스테이지에서 사용)
+    UFUNCTION(BlueprintPure, Category = "CliffSelection")
+    int32 GetSelectedSeed() const { return SelectedSeed; }
+
 protected:
     // 스테이지 기록 배열
     UPROPERTY(BlueprintReadOnly, Category = "Stage")
@@ -111,4 +129,14 @@ protected:
 
     // 스테이지 기록 찾기 (내부 함수)
     FStageTimeRecord* FindStageRecord(FName StageId);
+
+    // ========== Cliff Selection (Runtime Only) ==========
+
+    // CliffSelection 레벨에서 생성된 Seed 3개 (스테이지 전환 간 임시 데이터, 세이브 안 됨)
+    UPROPERTY(BlueprintReadOnly, Category = "CliffSelection")
+    TArray<int32> GeneratedSeeds;
+
+    // 플레이어가 선택(Enter)한 Seed — 다음 스테이지 레벨 로드 시 사용
+    UPROPERTY(BlueprintReadOnly, Category = "CliffSelection")
+    int32 SelectedSeed = 0;
 };
