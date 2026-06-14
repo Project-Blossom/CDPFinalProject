@@ -20,7 +20,8 @@
 
 AMonsterSpawner::AMonsterSpawner()
 {
-    PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bStartWithTickEnabled = true;
 }
 
 const TCHAR* AMonsterSpawner::GetFailReasonText(ESpawnFailReason Reason)
@@ -66,6 +67,8 @@ void AMonsterSpawner::BeginPlay()
 {
     Super::BeginPlay();
 
+    LastObservedPlacementSeed = PlacementSeed;
+
     ResolveMountain();
 
     if (TargetMountain && bSpawnOnlyAfterMountainGenerated)
@@ -92,6 +95,32 @@ void AMonsterSpawner::BeginPlay()
     {
         SpawnMonsters();
     }
+}
+
+void AMonsterSpawner::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+
+    if (!bAutoRespawnWhenPlacementSeedChanges)
+    {
+        LastObservedPlacementSeed = PlacementSeed;
+        return;
+    }
+
+    if (LastObservedPlacementSeed == PlacementSeed)
+    {
+        return;
+    }
+
+    const int32 OldSeed = LastObservedPlacementSeed;
+    LastObservedPlacementSeed = PlacementSeed;
+
+    if (bVerboseLog)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[MonsterSpawner] PlacementSeed changed %d -> %d. Clear and respawn monsters."), OldSeed, PlacementSeed);
+    }
+
+    RespawnMonsters();
 }
 
 void AMonsterSpawner::TryInitialSpawnFallback()
@@ -178,15 +207,20 @@ bool AMonsterSpawner::GetFrontBandBounds(FBox& OutBounds) const
     const float MinX = FrontX - 50.0f;
     const float MaxX = FrontX + AllowedDepth;
 
+    const float YMinRaw = MountainBounds.Min.Y + SideSpawnMarginCm;
+    const float YMaxRaw = MountainBounds.Max.Y - SideSpawnMarginCm;
+    const float YMin = (YMinRaw < YMaxRaw) ? YMinRaw : MountainBounds.Min.Y;
+    const float YMax = (YMinRaw < YMaxRaw) ? YMaxRaw : MountainBounds.Max.Y;
+
     const FVector Min(
         MinX,
-        MountainBounds.Min.Y - 300.0f,
+        YMin,
         MountainBounds.Min.Z + 80.0f
     );
 
     const FVector Max(
         MaxX,
-        MountainBounds.Max.Y + 300.0f,
+        YMax,
         MountainBounds.Max.Z + 2500.0f
     );
 
@@ -207,6 +241,21 @@ float AMonsterSpawner::GetMinDistanceForKind(EMonsterSpawnKind Kind) const
     default:
         return 0.0f;
     }
+}
+
+int32 AMonsterSpawner::MakePlacementStreamSeed(EMonsterSpawnKind Kind) const
+{
+    uint32 Hash = GetTypeHash(PlacementSeed);
+
+    if (TargetMountain)
+    {
+        Hash = HashCombine(Hash, GetTypeHash(TargetMountain->Settings.Seed));
+        Hash = HashCombine(Hash, GetTypeHash((uint8)TargetMountain->Settings.Difficulty));
+    }
+
+    Hash = HashCombine(Hash, GetTypeHash((uint8)Kind));
+
+    return static_cast<int32>(Hash & 0x7fffffff);
 }
 
 bool AMonsterSpawner::IsFarEnoughFromSameType(const FVector& Location, EMonsterSpawnKind Kind) const
@@ -491,7 +540,23 @@ bool AMonsterSpawner::IsPointWithinFrontSpawnBand(const FVector& WorldPoint) con
         ? FrontSpawnDepthOverrideCm
         : TargetMountain->GetSuggestedFrontSpawnDepthCm();
 
-    return SignedFrontDepth <= AllowedDepth;
+    if (SignedFrontDepth > AllowedDepth)
+    {
+        return false;
+    }
+
+    FBox Bounds;
+    if (!GetMountainBounds(Bounds))
+    {
+        return false;
+    }
+
+    const float YMinRaw = Bounds.Min.Y + SideSpawnMarginCm;
+    const float YMaxRaw = Bounds.Max.Y - SideSpawnMarginCm;
+    const float YMin = (YMinRaw < YMaxRaw) ? YMinRaw : Bounds.Min.Y;
+    const float YMax = (YMinRaw < YMaxRaw) ? YMaxRaw : Bounds.Max.Y;
+
+    return WorldPoint.Y >= YMin && WorldPoint.Y <= YMax;
 }
 
 bool AMonsterSpawner::IsFrontFacingSurface(const FHitResult& Hit) const
@@ -539,7 +604,7 @@ bool AMonsterSpawner::TraceFrontCliffFromAir(const FVector& AirLocation, float T
     return true;
 }
 
-bool AMonsterSpawner::SampleMountainSurface(FHitResult& OutHit, float MinAbsNormalZ, float MaxAbsNormalZ, ESpawnFailReason* OutFailReason) const
+bool AMonsterSpawner::SampleMountainSurface(FRandomStream& Stream, FHitResult& OutHit, float MinAbsNormalZ, float MaxAbsNormalZ, ESpawnFailReason* OutFailReason) const
 {
     if (OutFailReason)
     {
@@ -558,8 +623,10 @@ bool AMonsterSpawner::SampleMountainSurface(FHitResult& OutHit, float MinAbsNorm
         FrontSpawnDepthOverrideCm + 2000.0f
     );
 
-    const float YMin = Bounds.Min.Y - 300.0f;
-    const float YMax = Bounds.Max.Y + 300.0f;
+    const float YMinRaw = Bounds.Min.Y + SideSpawnMarginCm;
+    const float YMaxRaw = Bounds.Max.Y - SideSpawnMarginCm;
+    const float YMin = (YMinRaw < YMaxRaw) ? YMinRaw : Bounds.Min.Y;
+    const float YMax = (YMinRaw < YMaxRaw) ? YMaxRaw : Bounds.Max.Y;
     const float ZMin = Bounds.Min.Z + 80.0f;
     const float ZMax = Bounds.Max.Z + 500.0f;
 
@@ -571,8 +638,8 @@ bool AMonsterSpawner::SampleMountainSurface(FHitResult& OutHit, float MinAbsNorm
     {
         const FVector Start(
             FrontX + FMath::Max(800.0f, FrontSpawnDepthOverrideCm),
-            FMath::FRandRange(YMin, YMax),
-            FMath::FRandRange(ZMin, ZMax)
+            Stream.FRandRange(YMin, YMax),
+            Stream.FRandRange(ZMin, ZMax)
         );
 
         const FVector End = Start - FVector::ForwardVector * TraceBackDistance;
@@ -616,7 +683,7 @@ bool AMonsterSpawner::SampleMountainSurface(FHitResult& OutHit, float MinAbsNorm
     return false;
 }
 
-bool AMonsterSpawner::SampleFrontBandAirLocation(FVector& OutLocation, float HorizontalRadius, float MinZOffset, float MaxZOffset, EMonsterSpawnKind Kind) const
+bool AMonsterSpawner::SampleFrontBandAirLocation(FRandomStream& Stream, FVector& OutLocation, float HorizontalRadius, float MinZOffset, float MaxZOffset, EMonsterSpawnKind Kind) const
 {
     OutLocation = FVector::ZeroVector;
 
@@ -635,9 +702,9 @@ bool AMonsterSpawner::SampleFrontBandAirLocation(FVector& OutLocation, float Hor
     for (int32 Attempt = 0; Attempt < CandidateTries; ++Attempt)
     {
         const FVector Candidate(
-            FMath::FRandRange(FrontBounds.Min.X, FrontBounds.Max.X),
-            FMath::FRandRange(FrontBounds.Min.Y, FrontBounds.Max.Y),
-            FMath::FRandRange(FrontBounds.Min.Z, FrontBounds.Max.Z)
+            Stream.FRandRange(FrontBounds.Min.X, FrontBounds.Max.X),
+            Stream.FRandRange(FrontBounds.Min.Y, FrontBounds.Max.Y),
+            Stream.FRandRange(FrontBounds.Min.Z, FrontBounds.Max.Z)
         );
 
         if (!IsPointWithinFrontSpawnBand(Candidate))
@@ -706,7 +773,7 @@ bool AMonsterSpawner::SampleFrontBandAirLocation(FVector& OutLocation, float Hor
     return true;
 }
 
-bool AMonsterSpawner::FindWallCrawlerSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const
+bool AMonsterSpawner::FindWallCrawlerSpawn(FRandomStream& Stream, FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const
 {
     OutResult = FSpawnProbeResult();
     OutFailReason = ESpawnFailReason::None;
@@ -717,18 +784,24 @@ bool AMonsterSpawner::FindWallCrawlerSpawn(FSpawnProbeResult& OutResult, ESpawnF
         return false;
     }
 
-    const AWallCrawler* WallCDO = WallCrawlerClass->GetDefaultObject<AWallCrawler>();
-    const float RequiredTraceDistance = WallCDO ? WallCDO->WallTraceDistance : 100.0f;
-    const float RequiredStickDistance = WallCDO ? WallCDO->WallStickDistance : 20.0f;
-
+    // 단순화된 규칙:
+    // 1) 모든 몬스터는 먼저 절벽 앞면 표면을 찾는다.
+    // 2) WallCrawler는 그 표면에서 살짝 띄우고, 벽을 바라보게 회전한다.
     FHitResult SurfaceHit;
-    if (!SampleMountainSurface(SurfaceHit, WallMinAbsNormalZ, WallMaxAbsNormalZ, &OutFailReason))
+    if (!SampleMountainSurface(Stream, SurfaceHit, WallMinAbsNormalZ, WallMaxAbsNormalZ, &OutFailReason))
     {
         return false;
     }
 
+    const FVector SurfaceNormal = SurfaceHit.ImpactNormal.GetSafeNormal();
     const FVector CandidateLocation =
-        SurfaceHit.ImpactPoint + SurfaceHit.ImpactNormal * FMath::Max(WallCrawlerSpawnOffset, RequiredStickDistance + 5.0f);
+        SurfaceHit.ImpactPoint + SurfaceNormal * FMath::Max(0.0f, WallCrawlerSpawnOffset);
+
+    if (!IsPointWithinFrontSpawnBand(CandidateLocation))
+    {
+        OutFailReason = ESpawnFailReason::OutsideFrontBand;
+        return false;
+    }
 
     if (!IsFarEnoughFromSameType(CandidateLocation, EMonsterSpawnKind::WallCrawler))
     {
@@ -736,38 +809,15 @@ bool AMonsterSpawner::FindWallCrawlerSpawn(FSpawnProbeResult& OutResult, ESpawnF
         return false;
     }
 
-    if (IsInsideRock(CandidateLocation, 50.0f))
-    {
-        OutFailReason = ESpawnFailReason::InsideRock;
-        return false;
-    }
-
-    FHitResult FacingHit;
-    const FVector FacingStart = CandidateLocation;
-    const FVector FacingEnd = CandidateLocation - SurfaceHit.ImpactNormal * FMath::Max(WallCrawlerFacingProbeDepth, RequiredTraceDistance + 20.0f);
-
-    if (!TraceMountainOnly(FacingStart, FacingEnd, FacingHit))
-    {
-        OutFailReason = ESpawnFailReason::FacingTraceFailed;
-        return false;
-    }
-
-    const float FacingAbsNormalZ = FMath::Abs(FacingHit.ImpactNormal.Z);
-    if (FacingAbsNormalZ < WallMinAbsNormalZ || FacingAbsNormalZ > WallMaxAbsNormalZ)
-    {
-        OutFailReason = ESpawnFailReason::FacingNormalInvalid;
-        return false;
-    }
-
     OutResult.bSuccess = true;
     OutResult.Location = CandidateLocation;
-    OutResult.Rotation = (-FacingHit.ImpactNormal).Rotation() + WallCrawlerVisualRotationOffset;
-    OutResult.SurfacePoint = FacingHit.ImpactPoint;
-    OutResult.SurfaceNormal = FacingHit.ImpactNormal;
+    OutResult.Rotation = (-SurfaceNormal).Rotation() + WallCrawlerVisualRotationOffset;
+    OutResult.SurfacePoint = SurfaceHit.ImpactPoint;
+    OutResult.SurfaceNormal = SurfaceNormal;
     return true;
 }
 
-bool AMonsterSpawner::FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const
+bool AMonsterSpawner::FindFlyingPlatformSpawn(FRandomStream& Stream, FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const
 {
     OutResult = FSpawnProbeResult();
     OutFailReason = ESpawnFailReason::None;
@@ -778,64 +828,27 @@ bool AMonsterSpawner::FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpa
         return false;
     }
 
-    const AFlyingPlatform* PlatformCDO = FlyingPlatformClass->GetDefaultObject<AFlyingPlatform>();
-    const float PatrolRadius = PlatformCDO ? PlatformCDO->PatrolRadius : 500.0f;
-    const float VerticalPatrolRange = PlatformCDO ? PlatformCDO->VerticalPatrolRange : 1000.0f;
-
-    FVector CandidateLocation = FVector::ZeroVector;
-    FVector SurfaceNormal = FVector::UpVector;
-    FVector SurfacePoint = FVector::ZeroVector;
-
-    if (bRequireCliffProximityForFlying)
+    // 단순화된 규칙:
+    // 먼저 절벽 앞면 표면을 찾고, FlyingPlatform은 벽 노말 방향으로 멀리 띄운다.
+    FHitResult SurfaceHit;
+    if (!SampleMountainSurface(Stream, SurfaceHit, 0.0f, 1.0f, &OutFailReason))
     {
-        FHitResult SurfaceHit;
-        if (!SampleMountainSurface(SurfaceHit, 0.0f, 1.0f, &OutFailReason))
-        {
-            return false;
-        }
-
-        const float WallOffset = FMath::FRandRange(PlatformMinWallDistance, PlatformMaxWallDistance);
-        CandidateLocation = SurfaceHit.ImpactPoint + SurfaceHit.ImpactNormal * WallOffset;
-        SurfaceNormal = SurfaceHit.ImpactNormal;
-        SurfacePoint = SurfaceHit.ImpactPoint;
-
-        if (!PushOutFromWall(CandidateLocation, SurfaceHit.ImpactNormal, PlatformOverlapCheckRadius))
-        {
-            OutFailReason = ESpawnFailReason::OverlapBlocked;
-            return false;
-        }
+        return false;
     }
-    else
-    {
-        if (!SampleFrontBandAirLocation(
-            CandidateLocation,
-            FMath::Max(PlatformClearanceRadius, PatrolRadius * 0.75f),
-            PlatformMinHeightAboveGround,
-            PlatformMaxHeightAboveGround,
-            EMonsterSpawnKind::FlyingPlatform))
-        {
-            OutFailReason = ESpawnFailReason::NoSurfaceSample;
-            return false;
-        }
-    }
+
+    const FVector SurfaceNormal = SurfaceHit.ImpactNormal.GetSafeNormal();
+    const float MinDistance = FMath::Max(0.0f, FMath::Min(PlatformMinWallDistance, PlatformMaxWallDistance));
+    const float MaxDistance = FMath::Max(MinDistance, FMath::Max(PlatformMinWallDistance, PlatformMaxWallDistance));
+    const float WallOffset = Stream.FRandRange(MinDistance, MaxDistance);
+
+    FVector CandidateLocation = SurfaceHit.ImpactPoint + SurfaceNormal * WallOffset;
+
+    // 플랫폼이 아주 얕게 벽과 겹치는 경우만 바깥쪽으로 살짝 밀어낸다.
+    PushOutFromWall(CandidateLocation, SurfaceNormal, PlatformOverlapCheckRadius);
 
     if (!IsPointWithinFrontSpawnBand(CandidateLocation))
     {
         OutFailReason = ESpawnFailReason::OutsideFrontBand;
-        return false;
-    }
-
-    FHitResult FrontCheckHit;
-    if (!TraceFrontCliffFromAir(CandidateLocation, PlatformMaxWallDistance + 800.0f, FrontCheckHit))
-    {
-        OutFailReason = ESpawnFailReason::FacingTraceFailed;
-        return false;
-    }
-
-    const float PlatformWallDistance = FVector::Dist(CandidateLocation, FrontCheckHit.ImpactPoint);
-    if (PlatformWallDistance < PlatformMinWallDistance || PlatformWallDistance > PlatformMaxWallDistance + PlatformPushOutStep * PlatformMaxPushOutSteps)
-    {
-        OutFailReason = ESpawnFailReason::HeightOutOfRange;
         return false;
     }
 
@@ -845,44 +858,10 @@ bool AMonsterSpawner::FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpa
         return false;
     }
 
-    if (IsInsideRock(CandidateLocation, 60.0f))
-    {
-        OutFailReason = ESpawnFailReason::InsideRock;
-        return false;
-    }
-
-    if (IsSphereOverlappingWorldStatic(CandidateLocation, PlatformOverlapCheckRadius))
-    {
-        OutFailReason = ESpawnFailReason::OverlapBlocked;
-        return false;
-    }
-
-    float HeightAboveGround = 0.0f;
-    if (!TraceHeightAboveGround(CandidateLocation, HeightAboveGround))
-    {
-        OutFailReason = ESpawnFailReason::HeightTraceFailed;
-        return false;
-    }
-
-    if (HeightAboveGround < PlatformMinHeightAboveGround || HeightAboveGround > PlatformMaxHeightAboveGround)
-    {
-        OutFailReason = ESpawnFailReason::HeightOutOfRange;
-        return false;
-    }
-
-    const float NeededRadius = FMath::Max(PlatformClearanceRadius, PatrolRadius * 0.75f);
-    const float NeededHalfHeight = FMath::Max(PlatformClearanceHalfHeight, VerticalPatrolRange * 0.25f);
-
-    if (!HasLocalClearance(CandidateLocation, NeededRadius, NeededHalfHeight))
-    {
-        OutFailReason = ESpawnFailReason::ClearanceFailed;
-        return false;
-    }
-
     OutResult.bSuccess = true;
     OutResult.Location = CandidateLocation;
     OutResult.Rotation = FRotator::ZeroRotator;
-    OutResult.SurfacePoint = SurfacePoint.IsNearlyZero() ? CandidateLocation : SurfacePoint;
+    OutResult.SurfacePoint = SurfaceHit.ImpactPoint;
     OutResult.SurfaceNormal = SurfaceNormal;
     return true;
 }
@@ -940,7 +919,7 @@ bool AMonsterSpawner::EvaluateFlyingAttackerTerritory(const FVector& CandidateLo
         && AverageDistance >= RequiredAverageDistance;
 }
 
-bool AMonsterSpawner::FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const
+bool AMonsterSpawner::FindFlyingAttackerSpawn(FRandomStream& Stream, FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const
 {
     OutResult = FSpawnProbeResult();
     OutFailReason = ESpawnFailReason::None;
@@ -951,54 +930,24 @@ bool AMonsterSpawner::FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpa
         return false;
     }
 
-    const AFlyingAttacker* AttackerCDO = FlyingAttackerClass->GetDefaultObject<AFlyingAttacker>();
-    const float TerritoryRadius = AttackerCDO ? AttackerCDO->TerritoryRadius : 1000.0f;
-    const float SafeDistance = AttackerCDO ? AttackerCDO->SafeDistance : 500.0f;
-
-    FVector CandidateLocation = FVector::ZeroVector;
-
-    if (bRequireCliffProximityForFlying)
+    // 단순화된 규칙:
+    // FlyingAttacker도 절벽 앞면 표면을 기준으로 잡고, 벽에서 약 1m 이상만 떨어뜨린다.
+    FHitResult SurfaceHit;
+    if (!SampleMountainSurface(Stream, SurfaceHit, 0.0f, 1.0f, &OutFailReason))
     {
-        FHitResult SurfaceHit;
-        if (!SampleMountainSurface(SurfaceHit, 0.0f, 1.0f, &OutFailReason))
-        {
-            return false;
-        }
+        return false;
+    }
 
-        const float WallOffset = FMath::FRandRange(AttackerMinWallDistance, AttackerMaxWallDistance);
-        CandidateLocation = SurfaceHit.ImpactPoint + SurfaceHit.ImpactNormal * WallOffset;
-    }
-    else
-    {
-        if (!SampleFrontBandAirLocation(
-            CandidateLocation,
-            FMath::Max(AttackerLocalClearanceRadius, TerritoryRadius * 0.35f),
-            AttackerMinHeightAboveGround,
-            AttackerMaxHeightAboveGround,
-            EMonsterSpawnKind::FlyingAttacker))
-        {
-            OutFailReason = ESpawnFailReason::NoSurfaceSample;
-            return false;
-        }
-    }
+    const FVector SurfaceNormal = SurfaceHit.ImpactNormal.GetSafeNormal();
+    const float MinDistance = FMath::Max(0.0f, FMath::Min(AttackerMinWallDistance, AttackerMaxWallDistance));
+    const float MaxDistance = FMath::Max(MinDistance, FMath::Max(AttackerMinWallDistance, AttackerMaxWallDistance));
+    const float WallOffset = Stream.FRandRange(MinDistance, MaxDistance);
+
+    const FVector CandidateLocation = SurfaceHit.ImpactPoint + SurfaceNormal * WallOffset;
 
     if (!IsPointWithinFrontSpawnBand(CandidateLocation))
     {
         OutFailReason = ESpawnFailReason::OutsideFrontBand;
-        return false;
-    }
-
-    FHitResult FrontCheckHit;
-    if (!TraceFrontCliffFromAir(CandidateLocation, AttackerMaxWallDistance + 800.0f, FrontCheckHit))
-    {
-        OutFailReason = ESpawnFailReason::FacingTraceFailed;
-        return false;
-    }
-
-    const float AttackerWallDistance = FVector::Dist(CandidateLocation, FrontCheckHit.ImpactPoint);
-    if (AttackerWallDistance < AttackerMinWallDistance || AttackerWallDistance > AttackerMaxWallDistance)
-    {
-        OutFailReason = ESpawnFailReason::HeightOutOfRange;
         return false;
     }
 
@@ -1008,53 +957,14 @@ bool AMonsterSpawner::FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpa
         return false;
     }
 
-    if (IsInsideRock(CandidateLocation, 60.0f))
-    {
-        OutFailReason = ESpawnFailReason::InsideRock;
-        return false;
-    }
-
-    float HeightAboveGround = 0.0f;
-    if (!TraceHeightAboveGround(CandidateLocation, HeightAboveGround))
-    {
-        OutFailReason = ESpawnFailReason::HeightTraceFailed;
-        return false;
-    }
-
-    if (HeightAboveGround < AttackerMinHeightAboveGround || HeightAboveGround > AttackerMaxHeightAboveGround)
-    {
-        OutFailReason = ESpawnFailReason::HeightOutOfRange;
-        return false;
-    }
-
-    if (!HasLocalClearance(CandidateLocation, AttackerLocalClearanceRadius, AttackerLocalClearanceHalfHeight))
-    {
-        OutFailReason = ESpawnFailReason::ClearanceFailed;
-        return false;
-    }
-
-    if (!HasLocalClearance(
-        CandidateLocation,
-        FMath::Max(AttackerLocalClearanceRadius, SafeDistance * 0.6f),
-        FMath::Max(AttackerLocalClearanceHalfHeight, 180.0f)))
-    {
-        OutFailReason = ESpawnFailReason::ClearanceFailed;
-        return false;
-    }
-
-    if (!EvaluateFlyingAttackerTerritory(CandidateLocation, TerritoryRadius))
-    {
-        OutFailReason = ESpawnFailReason::TerritoryFailed;
-        return false;
-    }
-
     OutResult.bSuccess = true;
     OutResult.Location = CandidateLocation;
     OutResult.Rotation = FRotator::ZeroRotator;
-    OutResult.SurfacePoint = CandidateLocation;
-    OutResult.SurfaceNormal = FVector::UpVector;
+    OutResult.SurfacePoint = SurfaceHit.ImpactPoint;
+    OutResult.SurfaceNormal = SurfaceNormal;
     return true;
 }
+
 
 
 static bool MG_IsFarEnoughFromPreparedResults(const TArray<FSpawnProbeResult>& PreparedResults, const FVector& Location, float RequiredDistance)
@@ -1096,6 +1006,10 @@ bool AMonsterSpawner::PrepareSpawnResults(
     OutPlatformStats = FSpawnFailStats();
     OutAttackerStats = FSpawnFailStats();
 
+    FRandomStream WallStream(MakePlacementStreamSeed(EMonsterSpawnKind::WallCrawler));
+    FRandomStream PlatformStream(MakePlacementStreamSeed(EMonsterSpawnKind::FlyingPlatform));
+    FRandomStream AttackerStream(MakePlacementStreamSeed(EMonsterSpawnKind::FlyingAttacker));
+
     if (WallCrawlerCount > 0 && !WallCrawlerClass)
     {
         OutWallStats.Add(ESpawnFailReason::NoClass);
@@ -1107,7 +1021,7 @@ bool AMonsterSpawner::PrepareSpawnResults(
             FSpawnProbeResult Result;
             ESpawnFailReason FailReason = ESpawnFailReason::None;
 
-            if (!FindWallCrawlerSpawn(Result, FailReason))
+            if (!FindWallCrawlerSpawn(WallStream, Result, FailReason))
             {
                 OutWallStats.Add(FailReason);
                 continue;
@@ -1135,7 +1049,7 @@ bool AMonsterSpawner::PrepareSpawnResults(
             FSpawnProbeResult Result;
             ESpawnFailReason FailReason = ESpawnFailReason::None;
 
-            if (!FindFlyingPlatformSpawn(Result, FailReason))
+            if (!FindFlyingPlatformSpawn(PlatformStream, Result, FailReason))
             {
                 OutPlatformStats.Add(FailReason);
                 continue;
@@ -1163,7 +1077,7 @@ bool AMonsterSpawner::PrepareSpawnResults(
             FSpawnProbeResult Result;
             ESpawnFailReason FailReason = ESpawnFailReason::None;
 
-            if (!FindFlyingAttackerSpawn(Result, FailReason))
+            if (!FindFlyingAttackerSpawn(AttackerStream, Result, FailReason))
             {
                 OutAttackerStats.Add(FailReason);
                 continue;
@@ -1294,11 +1208,21 @@ void AMonsterSpawner::SpawnMonsters()
         return;
     }
 
-    // Keep previously spawned monsters alive while the new mountain-based spawn result is being prepared.
-    // This makes the procedural flow explicit:
-    // mountain generated -> front/cliff area analyzed -> spawn candidates prepared -> candidates validated -> SpawnActor.
-    TArray<AMonsterBase*> PreviousMonsters = MoveTemp(SpawnedMonsters);
-    SpawnedMonsters.Reset();
+    LastObservedPlacementSeed = PlacementSeed;
+
+    TArray<AMonsterBase*> PreviousMonsters;
+
+    if (bClearExistingMonstersBeforeSpawn)
+    {
+        // ItemSpawner처럼 새 배치를 만들기 전에 기존 몬스터를 먼저 제거한다.
+        ClearSpawnedMonsters();
+    }
+    else
+    {
+        // 실패 시 기존 몬스터를 유지하고 싶을 때만 예전 방식으로 보관한다.
+        PreviousMonsters = MoveTemp(SpawnedMonsters);
+        SpawnedMonsters.Reset();
+    }
 
     TArray<FSpawnProbeResult> WallResults;
     TArray<FSpawnProbeResult> PlatformResults;
@@ -1322,8 +1246,13 @@ void AMonsterSpawner::SpawnMonsters()
 
     if (!bPreparedAny)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[MonsterSpawner] No validated spawn candidates. Existing monsters are kept. No SpawnActor executed."));
-        SpawnedMonsters = MoveTemp(PreviousMonsters);
+        UE_LOG(LogTemp, Warning, TEXT("[MonsterSpawner] No validated spawn candidates. No SpawnActor executed."));
+
+        if (!bClearExistingMonstersBeforeSpawn)
+        {
+            SpawnedMonsters = MoveTemp(PreviousMonsters);
+        }
+
         return;
     }
 
@@ -1347,16 +1276,24 @@ void AMonsterSpawner::SpawnMonsters()
             }
         }
 
-        UE_LOG(LogTemp, Error, TEXT("[MonsterSpawner] SpawnActor failed after preparation. New spawned monsters were removed and previous monsters are kept."));
-        SpawnedMonsters = MoveTemp(PreviousMonsters);
+        UE_LOG(LogTemp, Error, TEXT("[MonsterSpawner] SpawnActor failed after preparation. New spawned monsters were removed."));
+
+        if (!bClearExistingMonstersBeforeSpawn)
+        {
+            SpawnedMonsters = MoveTemp(PreviousMonsters);
+        }
+
         return;
     }
 
-    for (AMonsterBase* Monster : PreviousMonsters)
+    if (!bClearExistingMonstersBeforeSpawn)
     {
-        if (IsValid(Monster))
+        for (AMonsterBase* Monster : PreviousMonsters)
         {
-            Monster->Destroy();
+            if (IsValid(Monster))
+            {
+                Monster->Destroy();
+            }
         }
     }
 
@@ -1365,12 +1302,26 @@ void AMonsterSpawner::SpawnMonsters()
     UE_LOG(
         LogTemp,
         Warning,
-        TEXT("[MonsterSpawner] Final SpawnActor Result | Wall %d/%d | Platform %d/%d | Attacker %d/%d | Total %d"),
+        TEXT("[MonsterSpawner] Final SpawnActor Result | PlacementSeed=%d | Wall %d/%d | Platform %d/%d | Attacker %d/%d | Total %d"),
+        PlacementSeed,
         WallResults.Num(), WallCrawlerCount,
         PlatformResults.Num(), FlyingPlatformCount,
         AttackerResults.Num(), FlyingAttackerCount,
         SpawnedMonsters.Num()
     );
+}
+
+void AMonsterSpawner::RespawnMonsters()
+{
+    ClearSpawnedMonsters();
+    SpawnMonsters();
+}
+
+void AMonsterSpawner::SetPlacementSeedAndRespawn(int32 NewPlacementSeed)
+{
+    PlacementSeed = NewPlacementSeed;
+    LastObservedPlacementSeed = NewPlacementSeed;
+    RespawnMonsters();
 }
 
 
@@ -1432,7 +1383,7 @@ FString AMonsterSpawner::GetCurrentMonsterCountDebugText() const
 }
 
 
-void AMonsterSpawner::ClearAllMonsters()
+void AMonsterSpawner::ClearSpawnedMonsters()
 {
     for (AMonsterBase* Monster : SpawnedMonsters)
     {
@@ -1441,8 +1392,13 @@ void AMonsterSpawner::ClearAllMonsters()
             Monster->Destroy();
         }
     }
-    SpawnedMonsters.Empty();
 
+    SpawnedMonsters.Empty();
+}
+
+void AMonsterSpawner::ClearAllMonsters()
+{
+    ClearSpawnedMonsters();
     ClearHallucinationGhosts();
 }
 
@@ -1471,7 +1427,8 @@ void AMonsterSpawner::SpawnHallucinationGhosts()
     {
         FVector SpawnLoc;
         // SampleFrontBandAirLocation 패턴으로 암벽 앞 공중 위치 샘플
-        if (!SampleFrontBandAirLocation(SpawnLoc,
+        FRandomStream GhostStream(MakePlacementStreamSeed(EMonsterSpawnKind::FlyingAttacker) + 100000 + i);
+        if (!SampleFrontBandAirLocation(GhostStream, SpawnLoc,
             AttackerMinWallDistance, AttackerMinHeightAboveGround,
             AttackerMaxHeightAboveGround, EMonsterSpawnKind::FlyingAttacker))
         {

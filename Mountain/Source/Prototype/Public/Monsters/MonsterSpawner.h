@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Math/RandomStream.h"
 #include "MonsterSpawner.generated.h"
 
 class AMonsterBase;
@@ -77,6 +78,7 @@ class PROTOTYPE_API AMonsterSpawner : public AActor
 public:
     AMonsterSpawner();
     virtual void BeginPlay() override;
+    virtual void Tick(float DeltaSeconds) override;
 
 public:
     // =====================================================
@@ -107,6 +109,20 @@ public:
     int32 FlyingAttackerCount = 4;
 
     // =====================================================
+    // Seeded Placement
+    // =====================================================
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Seeded Placement")
+    int32 PlacementSeed = 12345;
+
+    // PlacementSeed가 실행 중 변경되면 기존 몬스터를 제거하고 다시 스폰한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Seeded Placement")
+    bool bAutoRespawnWhenPlacementSeedChanges = true;
+
+    // 아이템 스포너처럼 재스폰 전에 기존 몬스터를 먼저 제거한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Seeded Placement")
+    bool bClearExistingMonstersBeforeSpawn = true;
+
+    // =====================================================
     // Same-Type Distribution Rules
     // =====================================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distribution", meta = (ClampMin = "0.0"))
@@ -135,6 +151,11 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "0.0"))
     float BoundsPadding = 1200.0f;
+
+    // 절벽 좌우 끝에서 이 거리만큼 안쪽 구간만 스폰 후보로 사용한다.
+    // 예: 50이면 Bounds.Min.Y + 50 ~ Bounds.Max.Y - 50 구간.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "0.0"))
+    float SideSpawnMarginCm = 50.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "0.0"))
     float FrontSpawnDepthOverrideCm = 6000.0f;
@@ -233,10 +254,10 @@ public:
     // FlyingAttacker Rules
     // =====================================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FlyingAttacker", meta = (ClampMin = "0.0"))
-    float AttackerMinWallDistance = 350.0f;
+    float AttackerMinWallDistance = 100.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FlyingAttacker", meta = (ClampMin = "0.0"))
-    float AttackerMaxWallDistance = 1200.0f;
+    float AttackerMaxWallDistance = 250.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FlyingAttacker", meta = (ClampMin = "0.0"))
     float AttackerMinHeightAboveGround = 200.0f;
@@ -276,6 +297,15 @@ public:
     // =====================================================
     UFUNCTION(BlueprintCallable, Category = "Spawning")
     void SpawnMonsters();
+
+    UFUNCTION(BlueprintCallable, Category = "Spawning")
+    void RespawnMonsters();
+
+    UFUNCTION(BlueprintCallable, Category = "Spawning")
+    void SetPlacementSeedAndRespawn(int32 NewPlacementSeed);
+
+    UFUNCTION(BlueprintCallable, Category = "Spawning")
+    void ClearSpawnedMonsters();
 
     // Insanity 80+ 조건 시 DownfallCharacter에서 호출
     UFUNCTION(BlueprintCallable, Category = "Spawning")
@@ -317,15 +347,15 @@ private:
     bool PushOutFromWall(FVector& InOutLocation, const FVector& WallNormal, float Radius) const;
 
     bool TraceMountainOnly(const FVector& Start, const FVector& End, FHitResult& OutHit) const;
-    bool SampleMountainSurface(FHitResult& OutHit, float MinAbsNormalZ, float MaxAbsNormalZ, ESpawnFailReason* OutFailReason = nullptr) const;
-    bool SampleFrontBandAirLocation(FVector& OutLocation, float HorizontalRadius, float MinZOffset, float MaxZOffset, EMonsterSpawnKind Kind) const;
+    bool SampleMountainSurface(FRandomStream& Stream, FHitResult& OutHit, float MinAbsNormalZ, float MaxAbsNormalZ, ESpawnFailReason* OutFailReason = nullptr) const;
+    bool SampleFrontBandAirLocation(FRandomStream& Stream, FVector& OutLocation, float HorizontalRadius, float MinZOffset, float MaxZOffset, EMonsterSpawnKind Kind) const;
     bool IsPointWithinFrontSpawnBand(const FVector& WorldPoint) const;
     bool IsFrontFacingSurface(const FHitResult& Hit) const;
     bool TraceFrontCliffFromAir(const FVector& AirLocation, float TraceDistance, FHitResult& OutHit) const;
 
-    bool FindWallCrawlerSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
-    bool FindFlyingPlatformSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
-    bool FindFlyingAttackerSpawn(FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
+    bool FindWallCrawlerSpawn(FRandomStream& Stream, FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
+    bool FindFlyingPlatformSpawn(FRandomStream& Stream, FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
+    bool FindFlyingAttackerSpawn(FRandomStream& Stream, FSpawnProbeResult& OutResult, ESpawnFailReason& OutFailReason) const;
 
     bool PrepareSpawnResults(
         TArray<FSpawnProbeResult>& OutWallResults,
@@ -345,6 +375,7 @@ private:
         FSpawnFailStats& InOutAttackerStats) const;
 
     bool EvaluateFlyingAttackerTerritory(const FVector& CandidateLocation, float TerritoryRadius) const;
+    int32 MakePlacementStreamSeed(EMonsterSpawnKind Kind) const;
 
     static const TCHAR* GetFailReasonText(ESpawnFailReason Reason);
     void LogFailStats(const TCHAR* Label, const FSpawnFailStats& Stats, int32 Spawned, int32 Target) const;
@@ -356,6 +387,9 @@ private:
 
     UPROPERTY()
     TArray<AActor*> SpawnedGhosts;
+
+    UPROPERTY(Transient)
+    int32 LastObservedPlacementSeed = 12345;
 
     FTimerHandle DeferredInitialSpawnTimer;
 };
