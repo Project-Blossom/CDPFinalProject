@@ -10,6 +10,7 @@ class UCameraComponent;
 class UInputMappingContext;
 class UInputAction;
 class UCliffSelectionHUDWidget;
+class UCliffSelectionLoadingWidget;
 class AMountainGenWorldActor;
 
 /**
@@ -59,6 +60,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Camera", meta = (ClampMin = "0.1"))
     float CameraInterpSpeed = 3.0f;
 
+    // 록온된 암벽 정면 수직 거리 (cm) — 이 거리에서 암벽을 바라본다
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Camera", meta = (ClampMin = "100.0"))
+    float CameraDistanceCm = 3200.f;
+
     // ========== Camera Vertical Pan (ACameraAnimationActor와 동일 로직) ==========
 
     // 카메라 상하 이동 속도 (cm/s)
@@ -76,12 +81,18 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|UI")
     TSubclassOf<UCliffSelectionHUDWidget> HUDWidgetClass;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|UI")
+    TSubclassOf<UCliffSelectionLoadingWidget> LoadingWidgetClass;
+
 private:
     // 현재 록온된 암벽 인덱스 (0/1/2 = 좌/중/우)
     int32 CurrentIndex = 1;
 
     // 목표 Yaw (FInterpTo 대상)
     float TargetYaw = 0.f;
+
+    // 목표 XY 위치 (FInterpTo 대상) — 록온된 암벽 정면 CameraDistanceCm 지점
+    FVector TargetXY = FVector::ZeroVector;
 
     // 현재 보간 중인지 여부 (회전 도중 입력 잠금에 사용 가능)
     bool bIsRotating = false;
@@ -96,6 +107,9 @@ private:
 
     UPROPERTY()
     TObjectPtr<UCliffSelectionHUDWidget> HUDWidget;
+
+    UPROPERTY()
+    TObjectPtr<UCliffSelectionLoadingWidget> LoadingWidget;
 
     // 좌/우 입력 핸들러
     void OnMoveSelectionLeft(const FInputActionValue& Value);
@@ -125,4 +139,8 @@ private:
 
     // GameMode에서 스폰된 암벽 배열 가져오기 (캐시 없이 매번 조회)
     AMountainGenWorldActor* GetCliffAt(int32 Index) const;
+
+    // Index 암벽 정면 수직 CameraDistanceCm 위치로 Pawn XY를 즉시 이동
+    // (Z는 PanStartZ 유지, Yaw 보간 시작점은 유지됨)
+    void SetCameraPositionForCliff(int32 Index);
 };

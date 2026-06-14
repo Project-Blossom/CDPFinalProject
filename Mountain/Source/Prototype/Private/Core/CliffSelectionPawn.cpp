@@ -3,6 +3,7 @@
 #include "Core/CliffSelectionGameMode.h"
 #include "Core/DownfallGameInstance.h"
 #include "UI/CliffSelectionHUDWidget.h"
+#include "UI/CliffSelectionLoadingWidget.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
 #include "EnhancedInputComponent.h"
@@ -13,6 +14,7 @@
 #include "MountainGenSettings.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "GameFramework/PlayerStart.h"
 
 ACliffSelectionPawn::ACliffSelectionPawn()
 {
@@ -33,8 +35,22 @@ void ACliffSelectionPawn::BeginPlay()
 
     // 초기 Yaw / 패닝 상태 초기화
     TargetYaw = GetActorRotation().Yaw;
-    PanStartZ = GetActorLocation().Z;
+    // PanStartZ: 항상 0 기준 (PlayerStart Z=0, 암벽 하단에서 상단까지 패닝)
+    PanStartZ = 0.f;
     PanCurrentDistance = 0.f;
+
+    // 로딩 위젯 생성 (Pawn BeginPlay 시점 = PC 확보 후이므로 안전)
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    {
+        if (LoadingWidgetClass)
+        {
+            LoadingWidget = CreateWidget<UCliffSelectionLoadingWidget>(PC, LoadingWidgetClass);
+            if (LoadingWidget)
+            {
+                LoadingWidget->AddToViewport(10); // HUD보다 위에
+            }
+        }
+    }
 
     // HUD 생성
     if (HUDWidgetClass)
@@ -172,16 +188,15 @@ void ACliffSelectionPawn::StartCameraRotateTo(int32 NewIndex)
     TargetYaw = Angles[NewIndex];
     bIsRotating = true;
 
-    // 패닝 타겟 거리 갱신 (새로 록온된 암벽의 CliffHeightCm), 패닝 위치 리셋
+    // 해당 암벽 정면 수직 CameraDistanceCm 위치로 XY 이동
+    SetCameraPositionForCliff(CurrentIndex);
+
+    // 패닝 타겟 거리 갱신 (새로 록온된 암벽의 CliffHeightCm)
+    // Z 진행도(PanCurrentDistance)는 유지 — 슬라이드 연속성 보장
     if (AMountainGenWorldActor* Cliff = GetCliffAt(CurrentIndex))
     {
         PanTargetDistance = FMath::Max(100.f, Cliff->Settings.CliffHeightCm);
     }
-    PanCurrentDistance = 0.f;
-
-    FVector Loc = GetActorLocation();
-    Loc.Z = PanStartZ;
-    SetActorLocation(Loc);
 
     UpdateHUDInfo();
 }
@@ -201,6 +216,18 @@ void ACliffSelectionPawn::TickCameraRotate(float DeltaTime)
     else
     {
         bIsRotating = false;
+    }
+
+    // XY 위치도 동일한 보간 속도로 부드럽게 이동
+    FVector CurrentLoc = GetActorLocation();
+    const float NewX = FMath::FInterpTo(CurrentLoc.X, TargetXY.X, DeltaTime, CameraInterpSpeed);
+    const float NewY = FMath::FInterpTo(CurrentLoc.Y, TargetXY.Y, DeltaTime, CameraInterpSpeed);
+
+    if (!FMath::IsNearlyEqual(NewX, CurrentLoc.X, 0.1f) || !FMath::IsNearlyEqual(NewY, CurrentLoc.Y, 0.1f))
+    {
+        CurrentLoc.X = NewX;
+        CurrentLoc.Y = NewY;
+        SetActorLocation(CurrentLoc);
     }
 }
 
@@ -238,12 +265,20 @@ void ACliffSelectionPawn::HandleAllCliffsGenerated()
     CurrentIndex = Angles.IsValidIndex(1) ? 1 : 0;
     TargetYaw = Angles.IsValidIndex(CurrentIndex) ? Angles[CurrentIndex] : 0.f;
 
+    // PanStartZ: 항상 0 기준 (PlayerStart Z=0, 암벽 하단에서 상단까지 패닝)
+    PanStartZ = 0.f;
+    SetCameraPositionForCliff(CurrentIndex);
+    FVector InitLoc = GetActorLocation();
+    InitLoc.X = TargetXY.X;
+    InitLoc.Y = TargetXY.Y;
+    InitLoc.Z = 0.f; // Z 명시적으로 초기화
+    SetActorLocation(InitLoc);
+
     if (AMountainGenWorldActor* Cliff = GetCliffAt(CurrentIndex))
     {
         PanTargetDistance = FMath::Max(100.f, Cliff->Settings.CliffHeightCm);
     }
     PanCurrentDistance = 0.f;
-    PanStartZ = GetActorLocation().Z;
 
     if (HUDWidget)
     {
@@ -251,6 +286,22 @@ void ACliffSelectionPawn::HandleAllCliffsGenerated()
     }
 
     UpdateHUDInfo();
+}
+
+void ACliffSelectionPawn::SetCameraPositionForCliff(int32 Index)
+{
+    AMountainGenWorldActor* Cliff = GetCliffAt(Index);
+    if (!Cliff) return;
+
+    const FVector CliffLocation = Cliff->GetActorLocation();
+    const FVector CliffForward = Cliff->GetActorForwardVector();
+
+    // 암벽 정면에서 카메라 위치: 암벽으로부터 정면 방향으로 Distance만큼
+    const FVector Target = CliffLocation + CliffForward * CameraDistanceCm;
+
+    // 목표 XY만 설정 — 실제 이동은 TickCameraRotate에서 FInterpTo로 처리
+    TargetXY.X = Target.X;
+    TargetXY.Y = Target.Y;
 }
 
 void ACliffSelectionPawn::UpdateHUDInfo()

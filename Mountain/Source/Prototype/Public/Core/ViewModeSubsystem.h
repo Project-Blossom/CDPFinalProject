@@ -15,6 +15,7 @@ public:
 
 private:
     void HandlePostLoadMap(UWorld* LoadedWorld);
+    void HandleWorldInitialized(UWorld* World, const UWorld::InitializationValues IVS);
     void ApplyViewModeForWorld(UWorld* LoadedWorld);
     void ApplyViewModeDeferred(UWorld* LoadedWorld);
 };

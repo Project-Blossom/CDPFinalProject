@@ -47,7 +47,8 @@ void ACliffSelectionGameMode::BeginPlay()
         UE_LOG(LogTemp, Error, TEXT("CliffSelectionGameMode: GameInstance is not UDownfallGameInstance"));
     }
 
-    ShowLoadingWidget();
+    // 로딩 위젯은 Pawn::BeginPlay에서 생성 (PC 확보 시점)
+    // GameMode BeginPlay에서는 암벽만 스폰
     SpawnCliffs();
 }
 
@@ -185,11 +186,13 @@ void ACliffSelectionGameMode::DestroySpawnedCliffs()
 
 void ACliffSelectionGameMode::HandleCliffGenerated(AActor* Generator)
 {
-    if (CompletedCliffCount >= ExpectedCliffCount)
+    // BeginPlay 시점의 빈 메시 브로드캐스트(bHasExistingSection=0, bHasValidBounds=1 경로)를 무시하고
+    // Regenerate()로 인한 실제 메시 완료 브로드캐스트만 카운트한다.
+    // 판별 기준: Generator가 AMountainGenWorldActor이고 HasGeneratedMesh()가 true인 경우만 유효
+    AMountainGenWorldActor* Cliff = Cast<AMountainGenWorldActor>(Generator);
+    if (!Cliff || !Cliff->HasGeneratedMesh())
     {
-        // BeginPlay 시점의 빈 메시 브로드캐스트 이후, Regenerate()로 인한
-        // 두 번째(실제 메시) 브로드캐스트는 카운트에 포함하지 않는다.
-        UE_LOG(LogTemp, Log, TEXT("CliffSelectionGameMode: Cliff regenerated (post-init) - %s"),
+        UE_LOG(LogTemp, Log, TEXT("CliffSelectionGameMode: Cliff broadcast ignored (empty mesh) - %s"),
             Generator ? *Generator->GetName() : TEXT("Unknown"));
         return;
     }
@@ -198,7 +201,7 @@ void ACliffSelectionGameMode::HandleCliffGenerated(AActor* Generator)
 
     UE_LOG(LogTemp, Log, TEXT("CliffSelectionGameMode: Cliff generated (%d/%d) - %s"),
         CompletedCliffCount, ExpectedCliffCount,
-        Generator ? *Generator->GetName() : TEXT("Unknown"));
+        *Generator->GetName());
 
     if (CompletedCliffCount >= ExpectedCliffCount)
     {
