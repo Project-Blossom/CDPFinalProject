@@ -4942,7 +4942,8 @@ void ADownfallCharacter::OnGripWindowReset()
 void ADownfallCharacter::OnGripCooldownEnded()
 {
     bGripLimitActive = false;
-    GripTimestamps.Empty();
+    GripCountInWindow = 0;
+    bGripWindowStarted = false;
     UE_LOG(LogDownFall, Warning, TEXT("GripLimitPenalty: cooldown ended, grip restored"));
 }
 
