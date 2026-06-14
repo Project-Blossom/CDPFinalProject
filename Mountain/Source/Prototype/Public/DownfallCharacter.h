@@ -63,6 +63,35 @@ struct FHandData
     AActor* GrippedActor = nullptr;
 };
 
+// ─────────────────────────────────────────────────────────────────
+// 기상 이벤트 패널티 — 슬라이드 데이터 (Stage 1: 폭설 미끄러짐)
+// ─────────────────────────────────────────────────────────────────
+USTRUCT(BlueprintType)
+struct FRoadSlideData
+{
+    GENERATED_BODY()
+
+    // 슬라이드 방향 (월드 공간 단위 벡터)
+    UPROPERTY(BlueprintReadOnly)
+    FVector Direction = FVector::ZeroVector;
+
+    // 슬라이드 총 이동 거리 (cm)
+    UPROPERTY(BlueprintReadOnly)
+    float TargetDistanceCm = 200.0f;
+
+    // 슬라이드 지속 시간 (초)
+    UPROPERTY(BlueprintReadOnly)
+    float Duration = 2.0f;
+
+    // 경과 시간
+    UPROPERTY(BlueprintReadOnly)
+    float Elapsed = 0.0f;
+
+    // 활성 여부
+    UPROPERTY(BlueprintReadOnly)
+    bool bActive = false;
+};
+
 // 그립 모드
 // - SurfaceGrip : 일반 지형 등반
 // - AnchorGrip  : 고정 앵커 / 볼트 / 손잡이
@@ -932,9 +961,114 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "VFX|RainVFX")
     float RainDropCurrentWeight = 0.0f;
 
-    // Inventory
-    UFUNCTION(BlueprintCallable, Category = "Inventory")
-    UInventoryComponent* GetInventory() const { return Inventory; }
+    // ─────────────────────────────────────────────────────────────────
+    // 기상 이벤트 패널티
+    // ─────────────────────────────────────────────────────────────────
+
+    // Stage 1: Rain 슬라이드 패널티
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Penalty|Slide",
+        meta = (ClampMin = "0.0"))
+    float SlidePenaltyDelayAfterVFX = 3.0f;        // Rain VFX 활성화 후 패널티 활성까지 대기 시간 (초)
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Penalty|Slide",
+        meta = (ClampMin = "0.0"))
+    float SlideDistanceCm = 20.0f;                  // 그립 시 슬라이드 이동 거리 (cm)
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Penalty|Slide",
+        meta = (ClampMin = "0.1"))
+    float SlideDuration = 2.0f;                     // 슬라이드 지속 시간 (초)
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weather|Penalty|Slide")
+    bool bRainSlidePenaltyEnabled = false;          // Rain 슬라이드 패널티 활성화 여부
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weather|Penalty|Slide")
+    FRoadSlideData CurrentSlide;
+
+    // Stage 2: 그립 카운트 제한 패널티
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Penalty|Grip",
+        meta = (ClampMin = "0.0"))
+    float GripPenaltyDelayAfterVFX = 3.0f;         // Blizzard VFX 활성화 후 패널티 발동까지 대기 시간 (초)
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Penalty|Grip",
+        meta = (ClampMin = "1"))
+    int32 GripCountLimit = 30;                      // 윈도우 내 최대 그립 횟수
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Penalty|Grip",
+        meta = (ClampMin = "0.0"))
+    float GripCountWindow = 10.0f;                  // 첫 그립 후 카운트 집계 시간 윈도우 (초)
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Penalty|Grip",
+        meta = (ClampMin = "0.0"))
+    float GripCooldownDuration = 3.0f;              // 그립 제한 지속 시간 (초)
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weather|Penalty|Grip")
+    bool bGripLimitActive = false;                  // 현재 그립 제한 중
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weather|Penalty|Grip")
+    bool bGripPenaltyEnabled = false;               // Stage 2 패널티 활성화 여부
+
+    // Stage 3: BloodMoon Insanity 증폭 패널티
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Penalty|BloodMoon",
+        meta = (ClampMin = "0.0"))
+    float BloodMoonPenaltyDelayAfterVFX = 3.0f;    // BloodMoon VFX 활성화 후 패널티 발동까지 대기 시간 (초)
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Penalty|BloodMoon",
+        meta = (ClampMin = "0.0"))
+    float BloodMoonInsanityGrowthRate = 0.1f;       // 패널티 중 Insanity 70+ 초과 시 증폭 속도
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weather|Penalty|BloodMoon")
+    bool bBloodMoonPenaltyActive = false;           // BloodMoon 패널티 활성화 여부
+
+    // BP 화면 피드백 이벤트
+    UFUNCTION(BlueprintImplementableEvent, Category = "Weather|Penalty")
+    void OnRainSlidePenaltyStarted();               // Stage 1 슬라이드 활성화 시 BP 연출
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Weather|Penalty")
+    void OnGripLimitPenaltyStarted();               // Stage 2 그립 제한 시작 시 BP 연출
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Weather|Penalty")
+    void OnBloodMoonPenaltyStarted();               // Stage 3 Insanity 증폭 시작 시 BP 연출
+
+    // 패널티 C++ 공개 인터페이스
+    UFUNCTION(BlueprintCallable, Category = "Weather|Penalty")
+    void ActivateRainSlidePenalty();                // Stage 1 패널티 활성화 (외부/BP 호출 가능)
+
+    UFUNCTION(BlueprintCallable, Category = "Weather|Penalty")
+    void ActivateGripLimitPenalty();                // Stage 2 패널티 즉시 발동
+
+    UFUNCTION(BlueprintCallable, Category = "Weather|Penalty")
+    void ActivateBloodMoonInsanityPenalty();        // Stage 3 패널티 즉시 발동
+
+private:
+    // 슬라이드 내부 상태
+    FTimerHandle SlidePenaltyDelayHandle;
+
+    // 그립 카운트 윈도우 내부 상태
+    int32 GripCountInWindow = 0;
+    bool bGripWindowStarted = false;
+    FTimerHandle GripWindowResetHandle;
+    FTimerHandle GripCooldownHandle;
+    FTimerHandle GripPenaltyDelayHandle;
+
+    // BloodMoon 패널티 내부 상태
+    FTimerHandle BloodMoonPenaltyDelayHandle;
+
+    // 슬라이드 Tick 처리
+    void TickRoadSlide(float DeltaTime);
+
+    // 그립 시 슬라이드 발동 (TryGrip에서 호출)
+    void TriggerGripSlide(const FGripPointInfo& GripInfo);
+
+    // 그립 카운트 윈도우 체크 (TryGrip에서 호출)
+    bool CheckGripLimitExceeded();
+
+    // 그립 윈도우 종료 콜백
+    void OnGripWindowReset();
+
+    // 그립 쿨다운 종료 콜백
+    void OnGripCooldownEnded();
+
+public:
 
     // UI 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Altitude")

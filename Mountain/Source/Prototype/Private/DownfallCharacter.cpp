@@ -578,6 +578,7 @@ void ADownfallCharacter::Tick(float DeltaTime)
 
     UpdateStamina(DeltaTime);
     UpdateInsanity(DeltaTime);
+    TickRoadSlide(DeltaTime);
     UpdateClimbingState();
     UpdateSafetyLine(DeltaTime);
     UpdateGlitchEffect();
@@ -1898,6 +1899,14 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
         return;
     }
 
+    // Stage 2: 그립 제한 패널티 체크
+    if (bGripLimitActive)
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("%s hand: Grip blocked by blizzard penalty (cooldown active)"),
+            bIsLeftHand ? TEXT("Left") : TEXT("Right"));
+        return;
+    }
+
     if (Hand.Stamina <= 0.0f)
     {
         UE_LOG(LogDownFall, Warning, TEXT("%s hand: No stamina"), bIsLeftHand ? TEXT("Left") : TEXT("Right"));
@@ -1979,6 +1988,38 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
 
     // 8. 등반 상태 업데이트
     UpdateClimbingState();
+
+    // Stage 2: 그립 카운트 윈도우 기록 (패널티 활성 중일 때만)
+    if (bGripPenaltyEnabled && !bGripLimitActive)
+    {
+        if (CheckGripLimitExceeded())
+        {
+            // 카운트 초과 → 즉시 그립 쿨다운 발동
+            bGripLimitActive = true;
+            GripCountInWindow = 0;
+            bGripWindowStarted = false;
+
+            if (UWorld* World = GetWorld())
+            {
+                World->GetTimerManager().ClearTimer(GripWindowResetHandle);
+                World->GetTimerManager().ClearTimer(GripCooldownHandle);
+                World->GetTimerManager().SetTimer(
+                    GripCooldownHandle,
+                    this,
+                    &ADownfallCharacter::OnGripCooldownEnded,
+                    GripCooldownDuration,
+                    false
+                );
+            }
+
+            UE_LOG(LogDownFall, Warning,
+                TEXT("Grip limit exceeded (%d in %.1fs)! Cooldown %.1fs started"),
+                GripCountInWindow, GripCountWindow, GripCooldownDuration);
+        }
+    }
+
+    // Stage 1: Rain 슬라이드 패널티 — 그립 성공 시마다 노멀 기반 슬라이드 발동
+    TriggerGripSlide(GripInfo);
 
     // 9. 이벤트 발생
     OnHandGripped(bIsLeftHand, GripInfo);
@@ -2338,12 +2379,16 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
         // 혼란 상태일 때 (70 이상)
         if (Insanity >= InsanityThreshold)
         {
-            // 자가 증폭: 초당 0.1씩 증가
-            Insanity = FMath::Min(MaxInsanity, Insanity + InsanityGrowthRate * DeltaTime);
+            // BloodMoon 패널티 활성 시 증폭 속도 교체, 아니면 기본값
+            const float GrowthRate = bBloodMoonPenaltyActive
+                ? BloodMoonInsanityGrowthRate
+                : InsanityGrowthRate;
+            Insanity = FMath::Min(MaxInsanity, Insanity + GrowthRate * DeltaTime);
         }
         else
         {
             // 정상 상태: 초당 0.1씩 감소
+            // BloodMoon 패널티 중이라도 70 미만이면 정상 감소
             Insanity = FMath::Max(0.0f, Insanity - InsanityDecayRate * DeltaTime);
         }
 
@@ -4020,6 +4065,19 @@ void ADownfallCharacter::ActivateRainVFX()
 
     RainElapsedSinceActivation = 0.0f;
     UE_LOG(LogDownFall, Warning, TEXT("RainVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
+
+    // Stage 1 슬라이드 패널티: Rain VFX 활성화 후 SlidePenaltyDelayAfterVFX초 뒤에 활성화
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(SlidePenaltyDelayHandle);
+        World->GetTimerManager().SetTimer(
+            SlidePenaltyDelayHandle,
+            this,
+            &ADownfallCharacter::ActivateRainSlidePenalty,
+            SlidePenaltyDelayAfterVFX,
+            false
+        );
+    }
 }
 
 void ADownfallCharacter::DeactivateRainVFX()
@@ -4213,6 +4271,19 @@ void ADownfallCharacter::ActivateBlizzardVFX()
     BlizzardElapsedSinceActivation = 0.0f;
     UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
 
+    // Stage 2 그립 제한 패널티: VFX 활성화 후 GripPenaltyDelayAfterVFX초 뒤에 발동
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(GripPenaltyDelayHandle);
+        World->GetTimerManager().SetTimer(
+            GripPenaltyDelayHandle,
+            this,
+            &ADownfallCharacter::ActivateGripLimitPenalty,
+            GripPenaltyDelayAfterVFX,
+            false
+        );
+    }
+
     // 미니맵 Color Tint: 차가운 파란색으로 전환
     StartMinimapTintLerp(MinimapBlizzardTint, BlizzardLerpDuration);
 }
@@ -4358,6 +4429,19 @@ void ADownfallCharacter::ActivateBloodMoonVFX()
     BloodMoonStartCloudColor = BloodMoonNormalCloudColor;
 
     UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
+
+    // Stage 3 Insanity 증폭 패널티: VFX 활성화 후 BloodMoonPenaltyDelayAfterVFX초 뒤에 발동
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(BloodMoonPenaltyDelayHandle);
+        World->GetTimerManager().SetTimer(
+            BloodMoonPenaltyDelayHandle,
+            this,
+            &ADownfallCharacter::ActivateBloodMoonInsanityPenalty,
+            BloodMoonPenaltyDelayAfterVFX,
+            false
+        );
+    }
 
     // 미니맵 Color Tint: 붉은색으로 전환 (BloodMoonLerpDuration과 동기화)
     StartMinimapTintLerp(MinimapBloodMoonTint, BloodMoonLerpDuration);
@@ -4572,8 +4656,7 @@ void ADownfallCharacter::StartMinimapTintLerp(const FLinearColor& TargetTint, fl
     bMinimapTintLerping = true;
 }
 
-void ADownfallCharacter::AutoConfigureMinimapCapture()
-{
+void ADownfallCharacter::AutoConfigureMinimapCapture(){
     if (!CachedSceneCapture.IsValid())
     {
         return;
@@ -4685,4 +4768,198 @@ void ADownfallCharacter::AutoConfigureMinimapCapture()
     CaptureComp->CaptureScene();
     UE_LOG(LogDownFall, Log, TEXT("Minimap: CaptureScene() 완료 [AutoDetect=%s]"),
         bAutoDetected ? TEXT("true") : TEXT("false"));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 기상 이벤트 패널티 구현
+// ─────────────────────────────────────────────────────────────────
+
+// STAGE 1: 비(Rain) 슬라이드 패널티
+void ADownfallCharacter::ActivateRainSlidePenalty()
+{
+    // 이미 활성 중이어도 패널티 자체는 활성화 (그립마다 슬라이드 발동)
+    bRainSlidePenaltyEnabled = true;
+
+    // BP 화면 피드백
+    OnRainSlidePenaltyStarted();
+
+    UE_LOG(LogDownFall, Warning, TEXT("RainSlidePenalty ENABLED (SlideDistanceCm=%.0f, SlideDuration=%.1fs)"),
+        SlideDistanceCm, SlideDuration);
+}
+
+void ADownfallCharacter::TriggerGripSlide(const FGripPointInfo& GripInfo)
+{
+    if (!bRainSlidePenaltyEnabled)
+    {
+        return;
+    }
+
+    if (CurrentSlide.bActive)
+    {
+        return; // 이전 슬라이드가 아직 진행 중이면 스킵
+    }
+
+    // 슬라이드 방향: 그립 노멀의 수직 방향, 최대한 -Z
+    // 노멀에서 -Z 성분을 최대화 → 노멀을 따라 아래로 미끄러짐
+    FVector SurfaceNormal = GripInfo.SurfaceNormal.GetSafeNormal();
+    if (SurfaceNormal.IsNearlyZero())
+    {
+        SurfaceNormal = -FVector::UpVector; // fallback
+    }
+
+    // 노멀의 수직 방향 중 -Z 성분이 가장 큰 방향 계산
+    // 노멀과 수직인 평면에서 -Z 방향에 가장 가까운 벡터
+    FVector GravityDir = FVector(0.f, 0.f, -1.f);
+    FVector SlideDir = GravityDir - SurfaceNormal * FVector::DotProduct(GravityDir, SurfaceNormal);
+    if (!SlideDir.Normalize())
+    {
+        // 노멀이 정확히 -Z인 경우 (천장) → 랜덤 수평 방향
+        SlideDir = FMath::VRand();
+        SlideDir.Z = 0.f;
+        SlideDir.Normalize();
+    }
+
+    CurrentSlide.Direction = SlideDir;
+    CurrentSlide.TargetDistanceCm = SlideDistanceCm;
+    CurrentSlide.Duration = SlideDuration;
+    CurrentSlide.Elapsed = 0.0f;
+    CurrentSlide.bActive = true;
+
+    UE_LOG(LogDownFall, Log,
+        TEXT("GripSlide triggered (Dir=%.2f,%.2f,%.2f, Dist=%.0fcm, %.1fs)"),
+        SlideDir.X, SlideDir.Y, SlideDir.Z, SlideDistanceCm, SlideDuration);
+}
+
+void ADownfallCharacter::TickRoadSlide(float DeltaTime)
+{
+    if (!CurrentSlide.bActive)
+    {
+        return;
+    }
+
+    CurrentSlide.Elapsed += DeltaTime;
+    const float Alpha = FMath::Clamp(CurrentSlide.Elapsed / CurrentSlide.Duration, 0.0f, 1.0f);
+
+    // 이동 속도: 총 거리를 지속 시간으로 나눈 속도로 이동
+    const float Speed = CurrentSlide.TargetDistanceCm / CurrentSlide.Duration;
+    const FVector SlideVelocity = CurrentSlide.Direction * Speed;
+
+    UCapsuleComponent* Capsule = GetCapsuleComponent();
+    if (Capsule)
+    {
+        if (bIsClimbing && Capsule->IsSimulatingPhysics())
+        {
+            // 등반 중: 물리 속도에 슬라이드 속도 추가
+            FVector CurrentVel = Capsule->GetPhysicsLinearVelocity();
+            CurrentVel += SlideVelocity * DeltaTime;
+            Capsule->SetPhysicsLinearVelocity(CurrentVel);
+        }
+        else if (!bIsClimbing)
+        {
+            // 비등반 중: CharacterMovement에 입력 추가
+            AddMovementInput(CurrentSlide.Direction, Speed * DeltaTime * 0.01f, true);
+        }
+    }
+
+    if (Alpha >= 1.0f)
+    {
+        CurrentSlide.bActive = false;
+        UE_LOG(LogDownFall, Log, TEXT("RainSlidePenalty: grip slide complete"));
+    }
+}
+
+// STAGE 2: 그립 카운트 제한 패널티
+void ADownfallCharacter::ActivateGripLimitPenalty()
+{
+    if (bGripPenaltyEnabled)
+    {
+        return;
+    }
+
+    bGripPenaltyEnabled = true;
+    GripCountInWindow = 0;
+    bGripWindowStarted = false;
+
+    // BP 화면 피드백
+    OnGripLimitPenaltyStarted();
+
+    UE_LOG(LogDownFall, Warning,
+        TEXT("GripLimitPenalty ACTIVATED (Window=%.1fs, Limit=%d, Cooldown=%.1fs)"),
+        GripCountWindow, GripCountLimit, GripCooldownDuration);
+}
+
+bool ADownfallCharacter::CheckGripLimitExceeded()
+{
+    if (!bGripPenaltyEnabled || bGripLimitActive)
+    {
+        return false;
+    }
+
+    // 첫 그립 시 윈도우 시작
+    if (!bGripWindowStarted)
+    {
+        bGripWindowStarted = true;
+        GripCountInWindow = 1;
+
+        // GripCountWindow 초 후 윈도우 리셋
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(GripWindowResetHandle);
+            World->GetTimerManager().SetTimer(
+                GripWindowResetHandle,
+                this,
+                &ADownfallCharacter::OnGripWindowReset,
+                GripCountWindow,
+                false
+            );
+        }
+
+        UE_LOG(LogDownFall, Log, TEXT("GripWindow started (Count: 1/%d)"), GripCountLimit);
+        return false;
+    }
+
+    // 윈도우 진행 중 카운트 누적
+    GripCountInWindow++;
+    UE_LOG(LogDownFall, Log, TEXT("GripWindow count: %d/%d"), GripCountInWindow, GripCountLimit);
+
+    // 제한 횟수 초과 시 쿨다운 발동
+    if (GripCountInWindow > GripCountLimit)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+void ADownfallCharacter::OnGripWindowReset()
+{
+    // 윈도우 종료 — 카운트 미초과 시 리셋
+    bGripWindowStarted = false;
+    GripCountInWindow = 0;
+    UE_LOG(LogDownFall, Log, TEXT("GripWindow reset (count did not exceed limit)"));
+}
+
+void ADownfallCharacter::OnGripCooldownEnded()
+{
+    bGripLimitActive = false;
+    GripTimestamps.Empty();
+    UE_LOG(LogDownFall, Warning, TEXT("GripLimitPenalty: cooldown ended, grip restored"));
+}
+
+// STAGE 3: BloodMoon Insanity 증폭 패널티
+void ADownfallCharacter::ActivateBloodMoonInsanityPenalty()
+{
+    if (bBloodMoonPenaltyActive)
+    {
+        return;
+    }
+
+    bBloodMoonPenaltyActive = true;
+
+    // BP 화면 피드백
+    OnBloodMoonPenaltyStarted();
+
+    UE_LOG(LogDownFall, Warning,
+        TEXT("BloodMoonInsanityPenalty ACTIVATED (GrowthRate=%.2f/s when Insanity>=%.1f)"),
+        BloodMoonInsanityGrowthRate, InsanityThreshold);
 }
