@@ -21,6 +21,7 @@
 #include "VoxelMesher.h"
 #include "MountainGenAutoTune.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 
 // ============================================================
 // Weld
@@ -874,6 +875,75 @@ void AMountainGenWorldActor::ToggleOnScreenMessages()
     }
 }
 
+
+static int32 MG_CountActorsByTags(UWorld* World, const FName GroupTag, const FName TypeTag)
+{
+    if (!World)
+    {
+        return 0;
+    }
+
+    TArray<AActor*> FoundActors;
+    UGameplayStatics::GetAllActorsWithTag(World, GroupTag, FoundActors);
+
+    int32 Count = 0;
+    for (AActor* Actor : FoundActors)
+    {
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        if (Actor->Tags.Contains(TypeTag))
+        {
+            ++Count;
+        }
+    }
+
+    return Count;
+}
+
+void AMountainGenWorldActor::PrintRuntimeSpawnDebug()
+{
+    UWorld* World = GetWorld();
+    if (!World || !GEngine)
+    {
+        return;
+    }
+
+    const int32 WallCrawlerCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedMonster")), FName(TEXT("WallCrawler")));
+    const int32 FlyingPlatformCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedMonster")), FName(TEXT("FlyingPlatform")));
+    const int32 FlyingAttackerCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedMonster")), FName(TEXT("FlyingAttacker")));
+    const int32 MonsterTotal = WallCrawlerCount + FlyingPlatformCount + FlyingAttackerCount;
+
+    const int32 AnchorCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedItem")), FName(TEXT("Anchor")));
+    const int32 BoltCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedItem")), FName(TEXT("Bolt")));
+    const int32 ChocoCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedItem")), FName(TEXT("Choco")));
+    const int32 LampCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedItem")), FName(TEXT("Lamp")));
+    const int32 ItemTotal = AnchorCount + BoltCount + ChocoCount + LampCount;
+
+    const FString MonsterLine = FString::Printf(
+        TEXT("Monsters: WallCrawler %d | FlyingPlatform %d | FlyingAttacker %d | Total %d"),
+        WallCrawlerCount,
+        FlyingPlatformCount,
+        FlyingAttackerCount,
+        MonsterTotal
+    );
+
+    const FString ItemLine = FString::Printf(
+        TEXT("Items: Anchor %d | Bolt %d | Choco %d | Lamp %d | Total %d"),
+        AnchorCount,
+        BoltCount,
+        ChocoCount,
+        LampCount,
+        ItemTotal
+    );
+
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, MonsterLine);
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, ItemLine);
+}
+
+
 void AMountainGenWorldActor::SetOnScreenMessagesEnabled(bool bEnabled)
 {
     bEnableOnScreenMessages = bEnabled;
@@ -1184,7 +1254,7 @@ void AMountainGenWorldActor::BeginPlay()
 
     if (bEnableOnScreenToggleKey)
     {
-        InputComponent->BindKey(EKeys::P, IE_Pressed, this, &AMountainGenWorldActor::ToggleOnScreenMessages);
+        InputComponent->BindKey(EKeys::P, IE_Pressed, this, &AMountainGenWorldActor::PrintRuntimeSpawnDebug);
     }
 }
 

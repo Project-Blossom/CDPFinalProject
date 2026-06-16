@@ -242,6 +242,9 @@ public:
     void ToggleOnScreenMessages();
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen|Debug")
+    void PrintRuntimeSpawnDebug();
+
+    UFUNCTION(BlueprintCallable, Category = "MountainGen|Debug")
     void SetOnScreenMessagesEnabled(bool bEnabled);
 
     UFUNCTION(BlueprintPure, Category = "MountainGen|Runtime")
@@ -344,21 +347,15 @@ public:
     int32 DebugPrintEveryNAttempt = 10;
 
     // ---------- Optimization ----------
-    // 선택 사항: Marching Cubes 직후 1차 Weld.
-    // 형상 자체를 많이 바꾸고 싶지 않으면 false로 두고, 아래 Seam Repair만 사용한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization")
     bool bEnablePostWeld = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization", meta = (ClampMin = "0.001"))
     float PostWeldEpsilonScale = 0.15f;
 
-    // 최종 출력 직전의 균열/슬랩 경계/중복 정점 보정용 Weld.
-    // 액터에 저장된 bEnablePostWeld 값이 false여도 이 값이 true면 마지막에 한 번 더 안전하게 정점을 통합한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization")
     bool bRepairMeshSeams = true;
 
-    // VoxelSizeCm에 곱해지는 최종 Seam Weld 거리.
-    // 0.02면 VoxelSize 100cm 기준 2cm로, 눈에 보이는 균열만 닫고 형상 손상은 줄인다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Optimization", meta = (ClampMin = "0.001", ClampMax = "0.25"))
     float MeshSeamWeldEpsilonScale = 0.02f;
 

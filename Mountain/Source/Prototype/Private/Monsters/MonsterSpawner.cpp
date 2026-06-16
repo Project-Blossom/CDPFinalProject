@@ -1143,6 +1143,8 @@ bool AMonsterSpawner::SpawnPreparedMonsters(
             return false;
         }
 
+        Spawned->Tags.AddUnique(FName(TEXT("MG_SpawnedMonster")));
+        Spawned->Tags.AddUnique(FName(TEXT("WallCrawler")));
         OutSpawnedMonsters.Add(Spawned);
 
         if (bShowDebugPoints)
@@ -1166,6 +1168,8 @@ bool AMonsterSpawner::SpawnPreparedMonsters(
             return false;
         }
 
+        Spawned->Tags.AddUnique(FName(TEXT("MG_SpawnedMonster")));
+        Spawned->Tags.AddUnique(FName(TEXT("FlyingPlatform")));
         OutSpawnedMonsters.Add(Spawned);
 
         if (bShowDebugPoints)
@@ -1189,6 +1193,8 @@ bool AMonsterSpawner::SpawnPreparedMonsters(
             return false;
         }
 
+        Spawned->Tags.AddUnique(FName(TEXT("MG_SpawnedMonster")));
+        Spawned->Tags.AddUnique(FName(TEXT("FlyingAttacker")));
         OutSpawnedMonsters.Add(Spawned);
 
         if (bShowDebugPoints)

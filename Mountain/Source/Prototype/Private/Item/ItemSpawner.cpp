@@ -383,6 +383,8 @@ void AItemSpawner::SpawnItems()
             if (Drop)
             {
                 Drop->InitializeDropWithMesh(Entry.ItemId, Entry.CountPerDrop, Entry.VisualMesh);
+                Drop->Tags.AddUnique(FName(TEXT("MG_SpawnedItem")));
+                Drop->Tags.AddUnique(Entry.ItemId);
                 SpawnedDrops.Add(Drop);
                 ++SpawnedCount;
             }
@@ -395,6 +397,86 @@ void AItemSpawner::SpawnItems()
         UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': spawned %d/%d random item drops, MountainSeed=%d"),
             *GetName(), SpawnedCount, TotalCount, MountainSeed);
     }
+}
+
+
+static bool MG_DropHasItemIdTag(const AItemDropActor* Drop, const TCHAR* ExpectedItemId)
+{
+    if (!IsValid(Drop) || !ExpectedItemId)
+    {
+        return false;
+    }
+
+    for (const FName& Tag : Drop->Tags)
+    {
+        if (Tag.ToString().Equals(ExpectedItemId, ESearchCase::IgnoreCase))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void AItemSpawner::GetCurrentItemCounts(
+    int32& OutAnchorCount,
+    int32& OutBoltCount,
+    int32& OutChocoCount,
+    int32& OutLampCount,
+    int32& OutTotalCount) const
+{
+    OutAnchorCount = 0;
+    OutBoltCount = 0;
+    OutChocoCount = 0;
+    OutLampCount = 0;
+    OutTotalCount = 0;
+
+    for (AItemDropActor* Drop : SpawnedDrops)
+    {
+        if (!IsValid(Drop))
+        {
+            continue;
+        }
+
+        ++OutTotalCount;
+
+        if (MG_DropHasItemIdTag(Drop, TEXT("Anchor")))
+        {
+            ++OutAnchorCount;
+        }
+        else if (MG_DropHasItemIdTag(Drop, TEXT("Bolt")))
+        {
+            ++OutBoltCount;
+        }
+        else if (MG_DropHasItemIdTag(Drop, TEXT("Choco")))
+        {
+            ++OutChocoCount;
+        }
+        else if (MG_DropHasItemIdTag(Drop, TEXT("Lamp")))
+        {
+            ++OutLampCount;
+        }
+    }
+}
+
+FString AItemSpawner::GetCurrentItemCountDebugText() const
+{
+    int32 AnchorCount = 0;
+    int32 BoltCount = 0;
+    int32 ChocoCount = 0;
+    int32 LampCount = 0;
+    int32 TotalCount = 0;
+
+    GetCurrentItemCounts(AnchorCount, BoltCount, ChocoCount, LampCount, TotalCount);
+
+    return FString::Printf(
+        TEXT("Items: Anchor %d | Bolt %d | Choco %d | Lamp %d | Total %d"),
+        AnchorCount,
+        BoltCount,
+        ChocoCount,
+        LampCount,
+        TotalCount
+    );
 }
 
 void AItemSpawner::RespawnItems()

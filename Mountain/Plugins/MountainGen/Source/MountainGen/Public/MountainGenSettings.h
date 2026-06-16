@@ -149,7 +149,7 @@ struct FMountainGenSettings
     float CliffHalfWidthCm = 40000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "1000.0"))
-    float CliffHeightCm = 80000.f;
+    float CliffHeightCm = 40000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MountainGen|Cliff", meta = (ClampMin = "200.0"))
     float CliffThicknessCm = 20000.f;

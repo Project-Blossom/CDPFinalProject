@@ -136,6 +136,17 @@ public:
     UFUNCTION(BlueprintPure, Category = "Spawner")
     int32 GetSpawnedDropCount() const { return SpawnedDrops.Num(); }
 
+    UFUNCTION(BlueprintCallable, Category = "Spawner|Debug")
+    void GetCurrentItemCounts(
+        int32& OutAnchorCount,
+        int32& OutBoltCount,
+        int32& OutChocoCount,
+        int32& OutLampCount,
+        int32& OutTotalCount) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Spawner|Debug")
+    FString GetCurrentItemCountDebugText() const;
+
     UFUNCTION()
     void HandleMountainGenerated(AActor* Generator);
 
