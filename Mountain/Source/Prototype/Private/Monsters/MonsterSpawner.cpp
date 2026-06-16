@@ -20,8 +20,7 @@
 
 AMonsterSpawner::AMonsterSpawner()
 {
-    PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.bStartWithTickEnabled = true;
+    PrimaryActorTick.bCanEverTick = false;
 }
 
 const TCHAR* AMonsterSpawner::GetFailReasonText(ESpawnFailReason Reason)
@@ -67,8 +66,6 @@ void AMonsterSpawner::BeginPlay()
 {
     Super::BeginPlay();
 
-    LastObservedPlacementSeed = PlacementSeed;
-
     ResolveMountain();
 
     if (TargetMountain && bSpawnOnlyAfterMountainGenerated)
@@ -78,7 +75,7 @@ void AMonsterSpawner::BeginPlay()
 
         if (bAutoSpawnOnBeginPlay && TargetMountain->HasGeneratedMesh())
         {
-            SpawnMonsters();
+            RequestDeferredRespawn(0.05f, false);
         }
         else if (bAutoSpawnOnBeginPlay && GetWorld())
         {
@@ -97,31 +94,6 @@ void AMonsterSpawner::BeginPlay()
     }
 }
 
-void AMonsterSpawner::Tick(float DeltaSeconds)
-{
-    Super::Tick(DeltaSeconds);
-
-    if (!bAutoRespawnWhenPlacementSeedChanges)
-    {
-        LastObservedPlacementSeed = PlacementSeed;
-        return;
-    }
-
-    if (LastObservedPlacementSeed == PlacementSeed)
-    {
-        return;
-    }
-
-    const int32 OldSeed = LastObservedPlacementSeed;
-    LastObservedPlacementSeed = PlacementSeed;
-
-    if (bVerboseLog)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[MonsterSpawner] PlacementSeed changed %d -> %d. Clear and respawn monsters."), OldSeed, PlacementSeed);
-    }
-
-    RespawnMonsters();
-}
 
 void AMonsterSpawner::TryInitialSpawnFallback()
 {
@@ -132,7 +104,57 @@ void AMonsterSpawner::TryInitialSpawnFallback()
 
     if (TargetMountain && TargetMountain->HasGeneratedMesh() && SpawnedMonsters.Num() == 0)
     {
-        SpawnMonsters();
+        RequestDeferredRespawn(0.05f, false);
+    }
+}
+
+void AMonsterSpawner::RequestDeferredRespawn(float DelaySeconds, bool bClearNow)
+{
+    if (!GetWorld())
+    {
+        return;
+    }
+
+    if (bClearNow && bClearExistingMonstersBeforeSpawn)
+    {
+        ClearSpawnedMonsters();
+    }
+
+    DeferredRespawnAttemptCount = 0;
+    GetWorld()->GetTimerManager().ClearTimer(DeferredRespawnTimer);
+    GetWorld()->GetTimerManager().SetTimer(
+        DeferredRespawnTimer,
+        this,
+        &AMonsterSpawner::TryDeferredRespawn,
+        FMath::Max(0.01f, DelaySeconds),
+        false
+    );
+}
+
+void AMonsterSpawner::TryDeferredRespawn()
+{
+    ++DeferredRespawnAttemptCount;
+
+    if (!TargetMountain)
+    {
+        ResolveMountain();
+    }
+
+    if (!TargetMountain || !TargetMountain->HasGeneratedMesh())
+    {
+        if (GetWorld() && DeferredRespawnAttemptCount < MaxDeferredRespawnAttempts)
+        {
+            GetWorld()->GetTimerManager().SetTimer(DeferredRespawnTimer, this, &AMonsterSpawner::TryDeferredRespawn, 0.15f, false);
+        }
+        return;
+    }
+
+    SpawnMonsters();
+
+    const int32 RequestedCount = WallCrawlerCount + FlyingPlatformCount + FlyingAttackerCount;
+    if (RequestedCount > 0 && SpawnedMonsters.Num() == 0 && GetWorld() && DeferredRespawnAttemptCount < MaxDeferredRespawnAttempts)
+    {
+        GetWorld()->GetTimerManager().SetTimer(DeferredRespawnTimer, this, &AMonsterSpawner::TryDeferredRespawn, 0.15f, false);
     }
 }
 
@@ -148,7 +170,7 @@ void AMonsterSpawner::HandleMountainGenerated(AActor* Generator)
         return;
     }
 
-    SpawnMonsters();
+    RequestDeferredRespawn(RespawnDelayAfterMountainGenerated, true);
 }
 
 bool AMonsterSpawner::ResolveMountain()
@@ -245,11 +267,11 @@ float AMonsterSpawner::GetMinDistanceForKind(EMonsterSpawnKind Kind) const
 
 int32 AMonsterSpawner::MakePlacementStreamSeed(EMonsterSpawnKind Kind) const
 {
-    uint32 Hash = GetTypeHash(PlacementSeed);
+    uint32 Hash = 0;
 
     if (TargetMountain)
     {
-        Hash = HashCombine(Hash, GetTypeHash(TargetMountain->Settings.Seed));
+        Hash = GetTypeHash(TargetMountain->Settings.Seed);
         Hash = HashCombine(Hash, GetTypeHash((uint8)TargetMountain->Settings.Difficulty));
     }
 
@@ -527,8 +549,6 @@ bool AMonsterSpawner::IsPointWithinFrontSpawnBand(const FVector& WorldPoint) con
         return false;
     }
 
-    // Mountain density makes the solid cliff extend toward -X.
-    // Therefore the actual front/playable air side is +X from GetFrontSurfaceWorldX().
     const float SignedFrontDepth = WorldPoint.X - TargetMountain->GetFrontSurfaceWorldX();
     if (SignedFrontDepth < -50.0f)
     {
@@ -632,8 +652,6 @@ bool AMonsterSpawner::SampleMountainSurface(FRandomStream& Stream, FHitResult& O
 
     bool bSawFrontBandReject = false;
 
-    // Do not shoot random rays through the whole mountain.
-    // Shoot only from +X front air toward -X, so the first hit is the visible front cliff.
     for (int32 Attempt = 0; Attempt < 128; ++Attempt)
     {
         const FVector Start(
@@ -784,9 +802,6 @@ bool AMonsterSpawner::FindWallCrawlerSpawn(FRandomStream& Stream, FSpawnProbeRes
         return false;
     }
 
-    // 단순화된 규칙:
-    // 1) 모든 몬스터는 먼저 절벽 앞면 표면을 찾는다.
-    // 2) WallCrawler는 그 표면에서 살짝 띄우고, 벽을 바라보게 회전한다.
     FHitResult SurfaceHit;
     if (!SampleMountainSurface(Stream, SurfaceHit, WallMinAbsNormalZ, WallMaxAbsNormalZ, &OutFailReason))
     {
@@ -930,8 +945,6 @@ bool AMonsterSpawner::FindFlyingAttackerSpawn(FRandomStream& Stream, FSpawnProbe
         return false;
     }
 
-    // 단순화된 규칙:
-    // FlyingAttacker도 절벽 앞면 표면을 기준으로 잡고, 벽에서 약 1m 이상만 떨어뜨린다.
     FHitResult SurfaceHit;
     if (!SampleMountainSurface(Stream, SurfaceHit, 0.0f, 1.0f, &OutFailReason))
     {
@@ -1208,18 +1221,14 @@ void AMonsterSpawner::SpawnMonsters()
         return;
     }
 
-    LastObservedPlacementSeed = PlacementSeed;
-
     TArray<AMonsterBase*> PreviousMonsters;
 
     if (bClearExistingMonstersBeforeSpawn)
     {
-        // ItemSpawner처럼 새 배치를 만들기 전에 기존 몬스터를 먼저 제거한다.
         ClearSpawnedMonsters();
     }
     else
     {
-        // 실패 시 기존 몬스터를 유지하고 싶을 때만 예전 방식으로 보관한다.
         PreviousMonsters = MoveTemp(SpawnedMonsters);
         SpawnedMonsters.Reset();
     }
@@ -1302,8 +1311,8 @@ void AMonsterSpawner::SpawnMonsters()
     UE_LOG(
         LogTemp,
         Warning,
-        TEXT("[MonsterSpawner] Final SpawnActor Result | PlacementSeed=%d | Wall %d/%d | Platform %d/%d | Attacker %d/%d | Total %d"),
-        PlacementSeed,
+        TEXT("[MonsterSpawner] Final SpawnActor Result | MountainSeed=%d | Wall %d/%d | Platform %d/%d | Attacker %d/%d | Total %d"),
+        TargetMountain ? TargetMountain->Settings.Seed : 0,
         WallResults.Num(), WallCrawlerCount,
         PlatformResults.Num(), FlyingPlatformCount,
         AttackerResults.Num(), FlyingAttackerCount,
@@ -1313,17 +1322,8 @@ void AMonsterSpawner::SpawnMonsters()
 
 void AMonsterSpawner::RespawnMonsters()
 {
-    ClearSpawnedMonsters();
-    SpawnMonsters();
+    RequestDeferredRespawn(0.05f, true);
 }
-
-void AMonsterSpawner::SetPlacementSeedAndRespawn(int32 NewPlacementSeed)
-{
-    PlacementSeed = NewPlacementSeed;
-    LastObservedPlacementSeed = NewPlacementSeed;
-    RespawnMonsters();
-}
-
 
 void AMonsterSpawner::GetCurrentMonsterCounts(
     int32& OutWallCrawlerCount,

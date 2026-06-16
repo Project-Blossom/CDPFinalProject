@@ -82,8 +82,11 @@ public:
     // Seeded Random Cliff Front Placement
     // =====================================================
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement|Seed")
-    int32 PlacementSeed = 12345;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement|Runtime Respawn", meta = (ClampMin = "0.0"))
+    float RespawnDelayAfterMountainGenerated = 0.25f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement|Runtime Respawn", meta = (ClampMin = "1", ClampMax = "30"))
+    int32 MaxDeferredRespawnAttempts = 10;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cliff Front Placement", meta = (ClampMin = "0.0"))
     float SideMarginCm = 300.0f;
@@ -125,6 +128,9 @@ public:
     void SpawnItems();
 
     UFUNCTION(BlueprintCallable, Category = "Spawner")
+    void RespawnItems();
+
+    UFUNCTION(BlueprintCallable, Category = "Spawner")
     void ClearSpawnedItems();
 
     UFUNCTION(BlueprintPure, Category = "Spawner")
@@ -142,10 +148,15 @@ private:
     int32 GetTotalRequestedDropCount() const;
     int32 MakeEntrySeed(int32 EntryIndex, int32 ItemIndexInEntry) const;
     void TryInitialSpawnFallback();
+    void RequestDeferredRespawn(float DelaySeconds, bool bClearNow);
+    void TryDeferredRespawn();
 
 private:
     UPROPERTY(Transient)
     TArray<TObjectPtr<AItemDropActor>> SpawnedDrops;
 
     FTimerHandle DeferredInitialSpawnTimer;
+    FTimerHandle DeferredRespawnTimer;
+
+    int32 DeferredRespawnAttemptCount = 0;
 };

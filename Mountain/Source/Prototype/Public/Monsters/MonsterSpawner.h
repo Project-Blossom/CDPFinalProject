@@ -78,7 +78,6 @@ class PROTOTYPE_API AMonsterSpawner : public AActor
 public:
     AMonsterSpawner();
     virtual void BeginPlay() override;
-    virtual void Tick(float DeltaSeconds) override;
 
 public:
     // =====================================================
@@ -111,16 +110,15 @@ public:
     // =====================================================
     // Seeded Placement
     // =====================================================
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Seeded Placement")
-    int32 PlacementSeed = 12345;
 
-    // PlacementSeed가 실행 중 변경되면 기존 몬스터를 제거하고 다시 스폰한다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Seeded Placement")
-    bool bAutoRespawnWhenPlacementSeedChanges = true;
-
-    // 아이템 스포너처럼 재스폰 전에 기존 몬스터를 먼저 제거한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Seeded Placement")
     bool bClearExistingMonstersBeforeSpawn = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Seeded Placement|Runtime", meta = (ClampMin = "0.0"))
+    float RespawnDelayAfterMountainGenerated = 0.25f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Seeded Placement|Runtime", meta = (ClampMin = "1", ClampMax = "30"))
+    int32 MaxDeferredRespawnAttempts = 10;
 
     // =====================================================
     // Same-Type Distribution Rules
@@ -152,8 +150,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "0.0"))
     float BoundsPadding = 1200.0f;
 
-    // 절벽 좌우 끝에서 이 거리만큼 안쪽 구간만 스폰 후보로 사용한다.
-    // 예: 50이면 Bounds.Min.Y + 50 ~ Bounds.Max.Y - 50 구간.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (ClampMin = "0.0"))
     float SideSpawnMarginCm = 50.0f;
 
@@ -302,9 +298,6 @@ public:
     void RespawnMonsters();
 
     UFUNCTION(BlueprintCallable, Category = "Spawning")
-    void SetPlacementSeedAndRespawn(int32 NewPlacementSeed);
-
-    UFUNCTION(BlueprintCallable, Category = "Spawning")
     void ClearSpawnedMonsters();
 
     // Insanity 80+ 조건 시 DownfallCharacter에서 호출
@@ -381,6 +374,9 @@ private:
     void LogFailStats(const TCHAR* Label, const FSpawnFailStats& Stats, int32 Spawned, int32 Target) const;
     void TryInitialSpawnFallback();
 
+    void RequestDeferredRespawn(float DelaySeconds, bool bClearNow);
+    void TryDeferredRespawn();
+
 private:
     UPROPERTY()
     TArray<AMonsterBase*> SpawnedMonsters;
@@ -388,8 +384,8 @@ private:
     UPROPERTY()
     TArray<AActor*> SpawnedGhosts;
 
-    UPROPERTY(Transient)
-    int32 LastObservedPlacementSeed = 12345;
-
     FTimerHandle DeferredInitialSpawnTimer;
+    FTimerHandle DeferredRespawnTimer;
+
+    int32 DeferredRespawnAttemptCount = 0;
 };

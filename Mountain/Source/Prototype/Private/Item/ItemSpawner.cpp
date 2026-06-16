@@ -32,7 +32,7 @@ void AItemSpawner::BeginPlay()
 
         if (bAutoSpawnOnBeginPlay && TargetMountain->HasGeneratedMesh())
         {
-            SpawnItems();
+            RequestDeferredRespawn(0.05f, false);
         }
         else if (bAutoSpawnOnBeginPlay && GetWorld())
         {
@@ -60,7 +60,58 @@ void AItemSpawner::TryInitialSpawnFallback()
 
     if (TargetMountain && TargetMountain->HasGeneratedMesh() && SpawnedDrops.Num() == 0)
     {
-        SpawnItems();
+        RequestDeferredRespawn(0.05f, false);
+    }
+}
+
+void AItemSpawner::RequestDeferredRespawn(float DelaySeconds, bool bClearNow)
+{
+    if (!GetWorld())
+    {
+        return;
+    }
+
+    if (bClearNow && bClearExistingDropsBeforeSpawn)
+    {
+        ClearSpawnedItems();
+    }
+
+    DeferredRespawnAttemptCount = 0;
+    GetWorld()->GetTimerManager().ClearTimer(DeferredRespawnTimer);
+    GetWorld()->GetTimerManager().SetTimer(
+        DeferredRespawnTimer,
+        this,
+        &AItemSpawner::TryDeferredRespawn,
+        FMath::Max(0.01f, DelaySeconds),
+        false
+    );
+}
+
+void AItemSpawner::TryDeferredRespawn()
+{
+    ++DeferredRespawnAttemptCount;
+
+    if (!TargetMountain)
+    {
+        ResolveMountain();
+    }
+
+    if (!TargetMountain || !TargetMountain->HasGeneratedMesh())
+    {
+        if (GetWorld() && DeferredRespawnAttemptCount < MaxDeferredRespawnAttempts)
+        {
+            GetWorld()->GetTimerManager().SetTimer(DeferredRespawnTimer, this, &AItemSpawner::TryDeferredRespawn, 0.15f, false);
+        }
+        return;
+    }
+
+    SpawnItems();
+
+    const bool bNeedAnyDrop = GetTotalRequestedDropCount() > 0;
+    if (bNeedAnyDrop && SpawnedDrops.Num() == 0 && GetWorld() && DeferredRespawnAttemptCount < MaxDeferredRespawnAttempts)
+    {
+        // ProceduralMesh async collision cooking 직후 라인트레이스 실패 방지용 재시도.
+        GetWorld()->GetTimerManager().SetTimer(DeferredRespawnTimer, this, &AItemSpawner::TryDeferredRespawn, 0.15f, false);
     }
 }
 
@@ -76,8 +127,7 @@ void AItemSpawner::HandleMountainGenerated(AActor* Generator)
         return;
     }
 
-    ClearSpawnedItems();
-    SpawnItems();
+    RequestDeferredRespawn(RespawnDelayAfterMountainGenerated, true);
 }
 
 bool AItemSpawner::ResolveMountain()
@@ -185,11 +235,11 @@ float AItemSpawner::CalculateSurfaceDistance(const FCliffItemSpawnEntry& Entry) 
 
 int32 AItemSpawner::MakeEntrySeed(int32 EntryIndex, int32 ItemIndexInEntry) const
 {
-    uint32 Hash = GetTypeHash(PlacementSeed);
+    uint32 Hash = 0;
 
     if (TargetMountain)
     {
-        Hash = HashCombine(Hash, GetTypeHash(TargetMountain->Settings.Seed));
+        Hash = GetTypeHash(TargetMountain->Settings.Seed);
         Hash = HashCombine(Hash, GetTypeHash((uint8)TargetMountain->Settings.Difficulty));
     }
 
@@ -317,8 +367,9 @@ void AItemSpawner::SpawnItems()
             {
                 if (bVerboseLog)
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': failed to place %s seed=%d entry=%d item=%d"),
-                        *GetName(), *Entry.ItemId.ToString(), PlacementSeed, EntryIndex, ItemIndex);
+                    const int32 MountainSeed = TargetMountain ? TargetMountain->Settings.Seed : 0;
+                    UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': failed to place %s MountainSeed=%d entry=%d item=%d"),
+                        *GetName(), *Entry.ItemId.ToString(), MountainSeed, EntryIndex, ItemIndex);
                 }
 
                 continue;
@@ -340,9 +391,15 @@ void AItemSpawner::SpawnItems()
 
     if (bVerboseLog)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': spawned %d/%d random item drops, PlacementSeed=%d"),
-            *GetName(), SpawnedCount, TotalCount, PlacementSeed);
+        const int32 MountainSeed = TargetMountain ? TargetMountain->Settings.Seed : 0;
+        UE_LOG(LogTemp, Warning, TEXT("ItemSpawner '%s': spawned %d/%d random item drops, MountainSeed=%d"),
+            *GetName(), SpawnedCount, TotalCount, MountainSeed);
     }
+}
+
+void AItemSpawner::RespawnItems()
+{
+    RequestDeferredRespawn(0.05f, true);
 }
 
 void AItemSpawner::ClearSpawnedItems()
