@@ -3,6 +3,8 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Item/InventoryComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 AItemDropActor::AItemDropActor()
 {
@@ -104,6 +106,19 @@ bool AItemDropActor::TryPickup(AActor* Picker)
 
     if (Inv->TryAdd(ItemId, Count))
     {
+        if (PickupSound)
+        {
+            const float Pitch = FMath::Max(0.01f, PickupSoundPitchMultiplier);
+            if (bPickupSound2D)
+            {
+                UGameplayStatics::PlaySound2D(this, PickupSound, 1.0f, Pitch);
+            }
+            else
+            {
+                UGameplayStatics::PlaySoundAtLocation(this, PickupSound, GetActorLocation(), 1.0f, Pitch);
+            }
+        }
+
         Destroy();
         return true;
     }

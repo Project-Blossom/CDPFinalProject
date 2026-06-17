@@ -30,6 +30,7 @@ class USplineMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
+class USoundBase;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
 
@@ -404,6 +405,32 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Cursor")
     float CursorRepeatInterval = 0.12f;
+
+    // Inventory / item feedback sounds.
+    // PitchMultiplier controls playback speed/pitch.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    TObjectPtr<USoundBase> InventoryOpenSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float InventoryOpenSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    TObjectPtr<USoundBase> InventoryCloseSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float InventoryCloseSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    TObjectPtr<USoundBase> InventoryCursorMoveSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float InventoryCursorMoveSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    TObjectPtr<USoundBase> EmptyHandSelectSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float EmptyHandSelectSoundPitchMultiplier = 1.0f;
 
     // Safety Line
     UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
@@ -1248,6 +1275,10 @@ protected:
     void ClearEquippedUtilitySlot();
     bool IsValidInventorySlotIndex(int32 Index) const;
     bool IsPlaceableSlot(int32 Index) const;
+    void PlayCharacterSound2D(USoundBase* Sound, float PitchMultiplier = 1.0f) const;
+    void PlayItemEquipSoundAtSlot(int32 SlotIndex) const;
+    void PlayItemUnequipSoundAtSlot(int32 SlotIndex) const;
+    void PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const;
 
     UPROPERTY()
     FTimerHandle MonsterSenseBlockTimerHandle;

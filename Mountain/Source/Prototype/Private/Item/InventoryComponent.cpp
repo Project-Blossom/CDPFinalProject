@@ -10,9 +10,33 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "DownfallCharacter.h"
 #include "Engine/Texture2D.h"
 #include "Components/SceneComponent.h"
+
+
+namespace
+{
+    static void PlayInventoryItemSound(AActor* User, USoundBase* Sound, float PitchMultiplier, bool bSpatial, const FVector& Location)
+    {
+        if (!User || !Sound)
+        {
+            return;
+        }
+
+        const float Pitch = FMath::Max(0.01f, PitchMultiplier);
+
+        if (bSpatial)
+        {
+            UGameplayStatics::PlaySoundAtLocation(User, Sound, Location, 1.0f, Pitch);
+        }
+        else
+        {
+            UGameplayStatics::PlaySound2D(User, Sound, 1.0f, Pitch);
+        }
+    }
+}
 
 UInventoryComponent::UInventoryComponent()
 {
@@ -720,6 +744,8 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
         }
 
         BP_OnConsume(User, Def, 1);
+        PlayInventoryItemSound(User, Def->UseSound, Def->UseSoundPitchMultiplier, Def->bUseSoundAtUserLocation, User->GetActorLocation());
+
 
         S.Count -= 1;
         if (S.Count <= 0) S.Reset();
@@ -745,6 +771,8 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             BP_OnUseFailed(User, FText::FromString(TEXT("Failed to place the item")));
             return false;
         }
+
+        PlayInventoryItemSound(User, Def->PlaceSound, Def->PlaceSoundPitchMultiplier, true, SpawnXform.GetLocation());
 
         SetPreviewEnabled(false);
         PreviewSlotIndex = INDEX_NONE;
@@ -772,6 +800,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 
         SanitizeReservedCenterSlot();
         BP_OnEquip(User, Def, S.Instance);
+        PlayInventoryItemSound(User, Def->EquipSound, Def->EquipSoundPitchMultiplier, false, User->GetActorLocation());
         return true;
     }
 
@@ -815,6 +844,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 
         SanitizeReservedCenterSlot();
         BP_OnEquip(User, Def, S.Instance);
+        PlayInventoryItemSound(User, Def->UseSound, Def->UseSoundPitchMultiplier, Def->bUseSoundAtUserLocation, User->GetActorLocation());
         return true;
     }
 
@@ -833,6 +863,8 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             BP_OnUseFailed(User, FText::FromString(TEXT("Look at an installed bolt to attach the safety line")));
             return false;
         }
+
+        PlayInventoryItemSound(User, Def->PlaceSound, Def->PlaceSoundPitchMultiplier, true, User->GetActorLocation());
 
         S.Count -= 1;
         if (S.Count <= 0)
@@ -950,6 +982,8 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
                 return false;
             }
         }
+
+        PlayInventoryItemSound(User, Def->PlaceSound, Def->PlaceSoundPitchMultiplier, true, SpawnTransform.GetLocation());
 
         SetPreviewEnabled(false);
         PreviewSlotIndex = INDEX_NONE;

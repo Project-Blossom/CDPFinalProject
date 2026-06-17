@@ -53,6 +53,7 @@
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/UnrealType.h"
+#include "Sound/SoundBase.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -1066,11 +1067,13 @@ bool ADownfallCharacter::BeginEquippingUtilitySlot(int32 SlotIndex)
     // Toggle off when the same slot is selected again.
     if (EquippedUtilitySlotIndex == SlotIndex)
     {
+        PlayItemUnequipSoundAtSlot(SlotIndex);
         ClearEquippedUtilitySlot();
         return true;
     }
 
     EquippedUtilitySlotIndex = SlotIndex;
+    PlayItemEquipSoundAtSlot(SlotIndex);
     RefreshInventoryUIState();
     return true;
 }
@@ -1327,6 +1330,7 @@ void ADownfallCharacter::UpdateSafetyLine(float DeltaTime)
         if (bLikelyFalling && bDroppedBelowAnchorLength)
         {
             bSafetyLineTriggered = true;
+            PlayItemActivateSoundAtSlot(ActiveUsingAnchorSlotIndex, SafetyLineAnchorWorld);
 
             if (Capsule)
             {
@@ -2328,7 +2332,7 @@ void ADownfallCharacter::EndMonsterSenseBlock()
 }
 
 void ADownfallCharacter::AddInsanity(float Amount)
-{   
+{
     const float PrevInsanity = Insanity;
     Insanity = FMath::Clamp(Insanity + Amount, 0.0f, MaxInsanity);
     // Insanity 80 임계값 상향 돌파 시 HallucinationGhost 소환
@@ -3145,6 +3149,66 @@ void ADownfallCharacter::UpdateVignetteEffect(float DeltaTime)
     );
 }
 
+
+void ADownfallCharacter::PlayCharacterSound2D(USoundBase* Sound, float PitchMultiplier) const
+{
+    if (!Sound)
+    {
+        return;
+    }
+
+    const float Pitch = FMath::Max(0.01f, PitchMultiplier);
+    UGameplayStatics::PlaySound2D(this, Sound, 1.0f, Pitch);
+}
+
+void ADownfallCharacter::PlayItemEquipSoundAtSlot(int32 SlotIndex) const
+{
+    if (!Inventory || !IsValidInventorySlotIndex(SlotIndex))
+    {
+        return;
+    }
+
+    UItemDefinition* Def = Inventory->GetItemDefinitionAt(SlotIndex);
+    if (!Def || !Def->EquipSound)
+    {
+        return;
+    }
+
+    UGameplayStatics::PlaySound2D(this, Def->EquipSound, 1.0f, FMath::Max(0.01f, Def->EquipSoundPitchMultiplier));
+}
+
+void ADownfallCharacter::PlayItemUnequipSoundAtSlot(int32 SlotIndex) const
+{
+    if (!Inventory || !IsValidInventorySlotIndex(SlotIndex))
+    {
+        return;
+    }
+
+    UItemDefinition* Def = Inventory->GetItemDefinitionAt(SlotIndex);
+    if (!Def || !Def->UnequipSound)
+    {
+        return;
+    }
+
+    UGameplayStatics::PlaySound2D(this, Def->UnequipSound, 1.0f, FMath::Max(0.01f, Def->UnequipSoundPitchMultiplier));
+}
+
+void ADownfallCharacter::PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const
+{
+    if (!Inventory || !IsValidInventorySlotIndex(SlotIndex))
+    {
+        return;
+    }
+
+    UItemDefinition* Def = Inventory->GetItemDefinitionAt(SlotIndex);
+    if (!Def || !Def->ActivateSound)
+    {
+        return;
+    }
+
+    UGameplayStatics::PlaySoundAtLocation(this, Def->ActivateSound, Location, 1.0f, FMath::Max(0.01f, Def->ActivateSoundPitchMultiplier));
+}
+
 void ADownfallCharacter::RefreshInventoryUIState()
 {
     const bool bInventoryOpen = (ItemUseState == EItemUseState::InventoryOpen);
@@ -3164,6 +3228,8 @@ void ADownfallCharacter::RefreshInventoryUIState()
 
 void ADownfallCharacter::MoveInventoryCursor(int32 DX, int32 DY)
 {
+    const int32 OldIndex = InventoryCursorIndex;
+
     int32 X = InventoryCursorIndex % 5;
     int32 Y = InventoryCursorIndex / 5;
 
@@ -3171,6 +3237,12 @@ void ADownfallCharacter::MoveInventoryCursor(int32 DX, int32 DY)
     Y = FMath::Clamp(Y + DY, 0, 4);
 
     InventoryCursorIndex = Y * 5 + X;
+
+    if (InventoryCursorIndex != OldIndex)
+    {
+        PlayCharacterSound2D(InventoryCursorMoveSound, InventoryCursorMoveSoundPitchMultiplier);
+    }
+
     RefreshInventoryUIState();
 }
 
@@ -3222,6 +3294,8 @@ bool ADownfallCharacter::TryMoveInventoryCursorFromInput(const FVector2D& Moveme
 
 void ADownfallCharacter::EnterInventoryFromCenter()
 {
+    PlayCharacterSound2D(InventoryOpenSound, InventoryOpenSoundPitchMultiplier);
+
     ItemUseState = EItemUseState::InventoryOpen;
     InventoryCursorIndex = 12;
     HeldSlotIndex = INDEX_NONE;
@@ -3236,6 +3310,8 @@ void ADownfallCharacter::EnterInventoryFromCenter()
 
 void ADownfallCharacter::EnterInventoryFromHeldSlot()
 {
+    PlayCharacterSound2D(InventoryOpenSound, InventoryOpenSoundPitchMultiplier);
+
     ItemUseState = EItemUseState::InventoryOpen;
 
     if (IsValidInventorySlotIndex(HeldSlotIndex))
@@ -3257,6 +3333,8 @@ void ADownfallCharacter::EnterInventoryFromHeldSlot()
 
 void ADownfallCharacter::CloseInventoryToEmptyHand()
 {
+    PlayCharacterSound2D(InventoryCloseSound, InventoryCloseSoundPitchMultiplier);
+
     InventoryCursorIndex = 12;
 
     if (Inventory)
@@ -3295,6 +3373,13 @@ bool ADownfallCharacter::TryPickHeldItemFromCursor()
 
     if (Inventory->IsReservedCenterSlot(InventoryCursorIndex))
     {
+        if (IsValidInventorySlotIndex(HeldSlotIndex))
+        {
+            PlayItemUnequipSoundAtSlot(HeldSlotIndex);
+        }
+
+        PlayCharacterSound2D(EmptyHandSelectSound, EmptyHandSelectSoundPitchMultiplier);
+
         HeldSlotIndex = INDEX_NONE;
         ItemUseState = EItemUseState::None;
 
@@ -3338,6 +3423,7 @@ bool ADownfallCharacter::TryPickHeldItemFromCursor()
 
     HeldSlotIndex = InventoryCursorIndex;
     ItemUseState = EItemUseState::HoldingItem;
+    PlayItemEquipSoundAtSlot(HeldSlotIndex);
     RefreshInventoryUIState();
     return true;
 }
@@ -4656,7 +4742,7 @@ void ADownfallCharacter::StartMinimapTintLerp(const FLinearColor& TargetTint, fl
     bMinimapTintLerping = true;
 }
 
-void ADownfallCharacter::AutoConfigureMinimapCapture(){
+void ADownfallCharacter::AutoConfigureMinimapCapture() {
     if (!CachedSceneCapture.IsValid())
     {
         return;
