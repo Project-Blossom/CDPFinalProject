@@ -55,21 +55,28 @@ void UAltitudeWidget::EnableGlitchMode()
 void UAltitudeWidget::DisableGlitchMode()
 {
 	if (!bGlitchMode)
-		return; // 이미 비활성화됨
+	{
+		return;
+	}
 
 	bGlitchMode = false;
 
-	// 정상 상태로 복원
+	// 마커 색상/투명도 복원
 	if (PlayerMarker)
 	{
-		// 색상/투명도 복원
 		PlayerMarker->SetColorAndOpacity(FLinearColor::White);
 
-		// 위치는 UpdateAltitude에서 자동 복원됨
 		FWidgetTransform Transform = PlayerMarker->GetRenderTransform();
-		Transform.Translation.X = 0.0f; // X 중앙으로
-		Transform.Translation.Y = NormalPositionY; // 저장된 정상 위치로
+		Transform.Translation = NormalMarkerPos;
 		PlayerMarker->SetRenderTransform(Transform);
+	}
+
+	// 텍스트 위치 복원
+	if (AltitudeText)
+	{
+		FWidgetTransform TextTransform = AltitudeText->GetRenderTransform();
+		TextTransform.Translation = NormalMarkerPos + TextOffset;
+		AltitudeText->SetRenderTransform(TextTransform);
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("AltitudeWidget: Glitch Mode DISABLED"));
@@ -77,35 +84,21 @@ void UAltitudeWidget::DisableGlitchMode()
 
 void UAltitudeWidget::UpdateAltitude(float CurrentZ, float GroundZ, float MaxHeight)
 {
-	// 지면 대비 상대 높이 계산
-	float RelativeHeight = CurrentZ - GroundZ;
-	RelativeHeight = FMath::Max(0.0f, RelativeHeight); // 음수 방지
+	float RelativeHeight = FMath::Max(0.0f, CurrentZ - GroundZ);
 
-	// 백분율 계산 (0~1)
 	float Percentage = 0.0f;
 	if (MaxHeight > 0.0f)
 	{
 		Percentage = FMath::Clamp(RelativeHeight / MaxHeight, 0.0f, 1.0f);
 	}
 
-	// 미터 변환 (cm → m)
 	float Meters = RelativeHeight / 100.0f;
 
-	// Glitch 모드가 아닐 때만 정상 위치/텍스트 업데이트
 	if (!bGlitchMode)
 	{
 		UpdateMarkerPosition(Percentage);
-		
-		// 정상 위치 저장 (Glitch 모드 종료 시 복원용)
-		if (PlayerMarker)
-		{
-			NormalPositionY = PlayerMarker->GetRenderTransform().Translation.Y;
-		}
-		
-		// 정상 고도 텍스트 업데이트
 		UpdateAltitudeText(Meters);
 	}
-	// Glitch 모드일 때는 UpdateGlitchEffect()에서 랜덤 값 처리
 }
 
 void UAltitudeWidget::UpdateGlitchEffect(float DeltaTime)
@@ -149,20 +142,25 @@ void UAltitudeWidget::UpdateGlitchEffect(float DeltaTime)
 void UAltitudeWidget::GlitchMarkerPosition()
 {
 	if (!PlayerMarker)
+	{
 		return;
+	}
 
-	// MountainImage 범위 내에서 랜덤 위치 생성
-	// Y: -MountainImageHeight/2 ~ +MountainImageHeight/2
-	float RandomY = FMath::RandRange(-MountainImageHeight * 0.5f, MountainImageHeight * 0.5f);
+	// 곡선 경로 위에서만 랜덤 위치 선택 (Alpha 0~1 랜덤)
+	float RandomAlpha = FMath::RandRange(0.0f, 1.0f);
+	FVector2D GlitchPos = CalcArcPosition(RandomAlpha);
 
-	// X: -MountainImageWidth/2 ~ +MountainImageWidth/2
-	float RandomX = FMath::RandRange(-MountainImageWidth * 0.5f, MountainImageWidth * 0.5f);
-
-	// Render Transform 업데이트
 	FWidgetTransform Transform = PlayerMarker->GetRenderTransform();
-	Transform.Translation.X = RandomX;
-	Transform.Translation.Y = RandomY;
+	Transform.Translation = GlitchPos;
 	PlayerMarker->SetRenderTransform(Transform);
+
+	// 텍스트도 함께 이동
+	if (AltitudeText)
+	{
+		FWidgetTransform TextTransform = AltitudeText->GetRenderTransform();
+		TextTransform.Translation = GlitchPos + TextOffset;
+		AltitudeText->SetRenderTransform(TextTransform);
+	}
 }
 
 void UAltitudeWidget::GlitchMarkerColor()
@@ -193,22 +191,44 @@ void UAltitudeWidget::GlitchAltitudeText()
 	AltitudeText->SetText(FText::FromString(GlitchString));
 }
 
+FVector2D UAltitudeWidget::CalcArcPosition(float Alpha) const
+{
+	// Alpha: 0 = 최저 고도(ArcEndAngle), 1 = 최고 고도(ArcStartAngle)
+	// 고도가 높을수록 ArcStartAngle(상단) 쪽으로 이동
+	float Theta = FMath::Lerp(ArcEndAngle, ArcStartAngle, Alpha);
+	float ThetaRad = FMath::DegreesToRadians(Theta);
+
+	// ) 형태 곡선: ArcCenter 기준 cos(θ)=X, sin(θ)=Y
+	FVector2D Pos;
+	Pos.X = ArcCenter.X + ArcRadius * FMath::Cos(ThetaRad);
+	Pos.Y = ArcCenter.Y + ArcRadius * FMath::Sin(ThetaRad);
+	return Pos;
+}
+
 void UAltitudeWidget::UpdateMarkerPosition(float Percentage)
 {
 	if (!PlayerMarker)
+	{
 		return;
-	
-	// 산 이미지 높이의 절반에서 시작 (중앙이 0)
-	float HalfHeight = MountainImageHeight * 0.5f;
-    
-	// Percentage: 0 = 바닥 (아래), 1 = 꼭대기 (위)
-	float YPosition = HalfHeight - (Percentage * MountainImageHeight);
+	}
 
-	// Render Transform 업데이트
+	FVector2D MarkerPos = CalcArcPosition(Percentage);
+
+	// 마커 위치 적용
 	FWidgetTransform Transform = PlayerMarker->GetRenderTransform();
-	Transform.Translation.Y = YPosition;
-	Transform.Translation.X = 0.0f; // X는 중앙 유지
+	Transform.Translation = MarkerPos;
 	PlayerMarker->SetRenderTransform(Transform);
+
+	// 정상 위치 저장 (Glitch 복원용)
+	NormalMarkerPos = MarkerPos;
+
+	// 고도 텍스트를 마커 오른쪽에 붙임
+	if (AltitudeText)
+	{
+		FWidgetTransform TextTransform = AltitudeText->GetRenderTransform();
+		TextTransform.Translation = MarkerPos + TextOffset;
+		AltitudeText->SetRenderTransform(TextTransform);
+	}
 }
 
 void UAltitudeWidget::UpdateAltitudeText(float Meters)
