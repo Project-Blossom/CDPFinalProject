@@ -7,6 +7,7 @@
 #include "Climbing/IClimbableSurface.h"
 #include "Engine/PostProcessVolume.h"
 #include "Item/InventoryComponent.h"
+#include "Item/ItemDefinition.h"
 #include "TimerManager.h"
 #include <limits>
 #include "DownfallCharacter.generated.h"
@@ -411,26 +412,50 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
     TObjectPtr<USoundBase> InventoryOpenSound = nullptr;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    TArray<FItemSoundVariant> InventoryOpenSoundVariants;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float InventoryOpenSoundPitchMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    EItemSoundPlaybackMode InventoryOpenSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
     TObjectPtr<USoundBase> InventoryCloseSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    TArray<FItemSoundVariant> InventoryCloseSoundVariants;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float InventoryCloseSoundPitchMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    EItemSoundPlaybackMode InventoryCloseSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
     TObjectPtr<USoundBase> InventoryCursorMoveSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    TArray<FItemSoundVariant> InventoryCursorMoveSoundVariants;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float InventoryCursorMoveSoundPitchMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    EItemSoundPlaybackMode InventoryCursorMoveSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
     TObjectPtr<USoundBase> EmptyHandSelectSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    TArray<FItemSoundVariant> EmptyHandSelectSoundVariants;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float EmptyHandSelectSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
+    EItemSoundPlaybackMode EmptyHandSelectSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
 
     // Safety Line
     UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
@@ -1275,7 +1300,8 @@ protected:
     void ClearEquippedUtilitySlot();
     bool IsValidInventorySlotIndex(int32 Index) const;
     bool IsPlaceableSlot(int32 Index) const;
-    void PlayCharacterSound2D(USoundBase* Sound, float PitchMultiplier = 1.0f) const;
+    void PlayCharacterSound(USoundBase* Sound, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const;
+    void PlayCharacterSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const;
     void PlayItemEquipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemUnequipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const;

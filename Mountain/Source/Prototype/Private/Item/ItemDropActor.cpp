@@ -6,6 +6,42 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 
+namespace
+{
+    struct FDropPickedSound
+    {
+        USoundBase* Sound = nullptr;
+        float PitchMultiplier = 1.0f;
+    };
+
+    static FDropPickedSound SelectDropSoundVariant(const TArray<FItemSoundVariant>& Variants, USoundBase* FallbackSound, float FallbackPitchMultiplier)
+    {
+        TArray<FDropPickedSound> ValidSounds;
+        ValidSounds.Reserve(Variants.Num() + 1);
+
+        if (FallbackSound)
+        {
+            ValidSounds.Add({ FallbackSound, FMath::Max(0.01f, FallbackPitchMultiplier) });
+        }
+
+        for (const FItemSoundVariant& Variant : Variants)
+        {
+            if (Variant.Sound)
+            {
+                ValidSounds.Add({ Variant.Sound.Get(), FMath::Max(0.01f, Variant.PitchMultiplier) });
+            }
+        }
+
+        if (ValidSounds.Num() > 0)
+        {
+            return ValidSounds[FMath::RandRange(0, ValidSounds.Num() - 1)];
+        }
+
+        return FDropPickedSound();
+    }
+}
+
+
 AItemDropActor::AItemDropActor()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -106,16 +142,23 @@ bool AItemDropActor::TryPickup(AActor* Picker)
 
     if (Inv->TryAdd(ItemId, Count))
     {
-        if (PickupSound)
+        const FDropPickedSound PickedSound = SelectDropSoundVariant(PickupSoundVariants, PickupSound, PickupSoundPitchMultiplier);
+        if (PickedSound.Sound)
         {
-            const float Pitch = FMath::Max(0.01f, PickupSoundPitchMultiplier);
-            if (bPickupSound2D)
+            switch (PickupSoundPlaybackMode)
             {
-                UGameplayStatics::PlaySound2D(this, PickupSound, 1.0f, Pitch);
-            }
-            else
-            {
-                UGameplayStatics::PlaySoundAtLocation(this, PickupSound, GetActorLocation(), 1.0f, Pitch);
+            case EItemSoundPlaybackMode::Play2D:
+                UGameplayStatics::PlaySound2D(this, PickedSound.Sound, 1.0f, PickedSound.PitchMultiplier);
+                break;
+
+            case EItemSoundPlaybackMode::UserLocation:
+                UGameplayStatics::PlaySoundAtLocation(this, PickedSound.Sound, Picker->GetActorLocation(), 1.0f, PickedSound.PitchMultiplier);
+                break;
+
+            case EItemSoundPlaybackMode::EventLocation:
+            default:
+                UGameplayStatics::PlaySoundAtLocation(this, PickedSound.Sound, GetActorLocation(), 1.0f, PickedSound.PitchMultiplier);
+                break;
             }
         }
 

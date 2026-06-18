@@ -57,6 +57,42 @@
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
+namespace
+{
+    struct FDFPickedSound
+    {
+        USoundBase* Sound = nullptr;
+        float PitchMultiplier = 1.0f;
+    };
+
+    static FDFPickedSound DF_SelectSoundVariant(const TArray<FItemSoundVariant>& Variants, USoundBase* FallbackSound, float FallbackPitchMultiplier)
+    {
+        TArray<FDFPickedSound> ValidSounds;
+        ValidSounds.Reserve(Variants.Num() + 1);
+
+        if (FallbackSound)
+        {
+            ValidSounds.Add({ FallbackSound, FMath::Max(0.01f, FallbackPitchMultiplier) });
+        }
+
+        for (const FItemSoundVariant& Variant : Variants)
+        {
+            if (Variant.Sound)
+            {
+                ValidSounds.Add({ Variant.Sound.Get(), FMath::Max(0.01f, Variant.PitchMultiplier) });
+            }
+        }
+
+        if (ValidSounds.Num() > 0)
+        {
+            return ValidSounds[FMath::RandRange(0, ValidSounds.Num() - 1)];
+        }
+
+        return FDFPickedSound();
+    }
+}
+
+
 ADownfallCharacter::ADownfallCharacter()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -3150,7 +3186,7 @@ void ADownfallCharacter::UpdateVignetteEffect(float DeltaTime)
 }
 
 
-void ADownfallCharacter::PlayCharacterSound2D(USoundBase* Sound, float PitchMultiplier) const
+void ADownfallCharacter::PlayCharacterSound(USoundBase* Sound, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const
 {
     if (!Sound)
     {
@@ -3158,7 +3194,27 @@ void ADownfallCharacter::PlayCharacterSound2D(USoundBase* Sound, float PitchMult
     }
 
     const float Pitch = FMath::Max(0.01f, PitchMultiplier);
-    UGameplayStatics::PlaySound2D(this, Sound, 1.0f, Pitch);
+    switch (PlaybackMode)
+    {
+    case EItemSoundPlaybackMode::Play2D:
+        UGameplayStatics::PlaySound2D(this, Sound, 1.0f, Pitch);
+        break;
+
+    case EItemSoundPlaybackMode::UserLocation:
+        UGameplayStatics::PlaySoundAtLocation(this, Sound, GetActorLocation(), 1.0f, Pitch);
+        break;
+
+    case EItemSoundPlaybackMode::EventLocation:
+    default:
+        UGameplayStatics::PlaySoundAtLocation(this, Sound, EventLocation, 1.0f, Pitch);
+        break;
+    }
+}
+
+void ADownfallCharacter::PlayCharacterSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const
+{
+    const FDFPickedSound Picked = DF_SelectSoundVariant(SoundVariants, FallbackSound, FallbackPitchMultiplier);
+    PlayCharacterSound(Picked.Sound, Picked.PitchMultiplier, PlaybackMode, EventLocation);
 }
 
 void ADownfallCharacter::PlayItemEquipSoundAtSlot(int32 SlotIndex) const
@@ -3169,12 +3225,18 @@ void ADownfallCharacter::PlayItemEquipSoundAtSlot(int32 SlotIndex) const
     }
 
     UItemDefinition* Def = Inventory->GetItemDefinitionAt(SlotIndex);
-    if (!Def || !Def->EquipSound)
+    if (!Def)
     {
         return;
     }
 
-    UGameplayStatics::PlaySound2D(this, Def->EquipSound, 1.0f, FMath::Max(0.01f, Def->EquipSoundPitchMultiplier));
+    const FDFPickedSound Picked = DF_SelectSoundVariant(Def->EquipSoundVariants, Def->EquipSound, Def->EquipSoundPitchMultiplier);
+    if (!Picked.Sound)
+    {
+        return;
+    }
+
+    PlayCharacterSound(Picked.Sound, Picked.PitchMultiplier, Def->EquipSoundPlaybackMode, GetActorLocation());
 }
 
 void ADownfallCharacter::PlayItemUnequipSoundAtSlot(int32 SlotIndex) const
@@ -3185,12 +3247,18 @@ void ADownfallCharacter::PlayItemUnequipSoundAtSlot(int32 SlotIndex) const
     }
 
     UItemDefinition* Def = Inventory->GetItemDefinitionAt(SlotIndex);
-    if (!Def || !Def->UnequipSound)
+    if (!Def)
     {
         return;
     }
 
-    UGameplayStatics::PlaySound2D(this, Def->UnequipSound, 1.0f, FMath::Max(0.01f, Def->UnequipSoundPitchMultiplier));
+    const FDFPickedSound Picked = DF_SelectSoundVariant(Def->UnequipSoundVariants, Def->UnequipSound, Def->UnequipSoundPitchMultiplier);
+    if (!Picked.Sound)
+    {
+        return;
+    }
+
+    PlayCharacterSound(Picked.Sound, Picked.PitchMultiplier, Def->UnequipSoundPlaybackMode, GetActorLocation());
 }
 
 void ADownfallCharacter::PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const
@@ -3201,12 +3269,18 @@ void ADownfallCharacter::PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVec
     }
 
     UItemDefinition* Def = Inventory->GetItemDefinitionAt(SlotIndex);
-    if (!Def || !Def->ActivateSound)
+    if (!Def)
     {
         return;
     }
 
-    UGameplayStatics::PlaySoundAtLocation(this, Def->ActivateSound, Location, 1.0f, FMath::Max(0.01f, Def->ActivateSoundPitchMultiplier));
+    const FDFPickedSound Picked = DF_SelectSoundVariant(Def->ActivateSoundVariants, Def->ActivateSound, Def->ActivateSoundPitchMultiplier);
+    if (!Picked.Sound)
+    {
+        return;
+    }
+
+    PlayCharacterSound(Picked.Sound, Picked.PitchMultiplier, Def->ActivateSoundPlaybackMode, Location);
 }
 
 void ADownfallCharacter::RefreshInventoryUIState()
@@ -3240,7 +3314,7 @@ void ADownfallCharacter::MoveInventoryCursor(int32 DX, int32 DY)
 
     if (InventoryCursorIndex != OldIndex)
     {
-        PlayCharacterSound2D(InventoryCursorMoveSound, InventoryCursorMoveSoundPitchMultiplier);
+        PlayCharacterSound(InventoryCursorMoveSoundVariants, InventoryCursorMoveSound, InventoryCursorMoveSoundPitchMultiplier, InventoryCursorMoveSoundPlaybackMode, GetActorLocation());
     }
 
     RefreshInventoryUIState();
@@ -3294,7 +3368,7 @@ bool ADownfallCharacter::TryMoveInventoryCursorFromInput(const FVector2D& Moveme
 
 void ADownfallCharacter::EnterInventoryFromCenter()
 {
-    PlayCharacterSound2D(InventoryOpenSound, InventoryOpenSoundPitchMultiplier);
+    PlayCharacterSound(InventoryOpenSoundVariants, InventoryOpenSound, InventoryOpenSoundPitchMultiplier, InventoryOpenSoundPlaybackMode, GetActorLocation());
 
     ItemUseState = EItemUseState::InventoryOpen;
     InventoryCursorIndex = 12;
@@ -3310,7 +3384,7 @@ void ADownfallCharacter::EnterInventoryFromCenter()
 
 void ADownfallCharacter::EnterInventoryFromHeldSlot()
 {
-    PlayCharacterSound2D(InventoryOpenSound, InventoryOpenSoundPitchMultiplier);
+    PlayCharacterSound(InventoryOpenSoundVariants, InventoryOpenSound, InventoryOpenSoundPitchMultiplier, InventoryOpenSoundPlaybackMode, GetActorLocation());
 
     ItemUseState = EItemUseState::InventoryOpen;
 
@@ -3333,7 +3407,7 @@ void ADownfallCharacter::EnterInventoryFromHeldSlot()
 
 void ADownfallCharacter::CloseInventoryToEmptyHand()
 {
-    PlayCharacterSound2D(InventoryCloseSound, InventoryCloseSoundPitchMultiplier);
+    PlayCharacterSound(InventoryCloseSoundVariants, InventoryCloseSound, InventoryCloseSoundPitchMultiplier, InventoryCloseSoundPlaybackMode, GetActorLocation());
 
     InventoryCursorIndex = 12;
 
@@ -3378,7 +3452,7 @@ bool ADownfallCharacter::TryPickHeldItemFromCursor()
             PlayItemUnequipSoundAtSlot(HeldSlotIndex);
         }
 
-        PlayCharacterSound2D(EmptyHandSelectSound, EmptyHandSelectSoundPitchMultiplier);
+        PlayCharacterSound(EmptyHandSelectSoundVariants, EmptyHandSelectSound, EmptyHandSelectSoundPitchMultiplier, EmptyHandSelectSoundPlaybackMode, GetActorLocation());
 
         HeldSlotIndex = INDEX_NONE;
         ItemUseState = EItemUseState::None;
