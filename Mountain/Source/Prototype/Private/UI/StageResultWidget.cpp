@@ -102,9 +102,26 @@ void UStageResultWidget::HandleNextStageClicked()
 {
     UE_LOG(LogTemp, Warning, TEXT("Next Stage clicked"));
 
-    // TODO: 다음 스테이지로 이동 (스테이지 목록 시스템이 만들어지면)
-    // FName NextStageName = GetNextStageName(CurrentStageId);
-    // UGameplayStatics::OpenLevel(this, NextStageName);
-    
-    UE_LOG(LogTemp, Warning, TEXT("Next Stage not implemented yet"));
+    UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(
+        UGameplayStatics::GetGameInstance(this));
+
+    if (!GI)
+    {
+        UE_LOG(LogTemp, Error, TEXT("StageResultWidget: GameInstance not found"));
+        return;
+    }
+
+    const int32 CurrentStageIndex = GI->GetCurrentStageIndex();
+
+    // Stage_3 이후는 Ending 미구현 — 현재는 메인 메뉴로
+    if (CurrentStageIndex >= 3)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("StageResult: All stages cleared, returning to Main Menu (Ending TBD)"));
+        UGameplayStatics::OpenLevel(this, FName("MainMenu"));
+        return;
+    }
+
+    // 다음은 CliffSelection 레벨 → 여기서 암벽 선택 후 다음 Stage로 진행
+    UE_LOG(LogTemp, Warning, TEXT("StageResult: → CliffSelection [CurrentStageIndex=%d]"), CurrentStageIndex);
+    UGameplayStatics::OpenLevel(this, FName("CliffSelection"));
 }

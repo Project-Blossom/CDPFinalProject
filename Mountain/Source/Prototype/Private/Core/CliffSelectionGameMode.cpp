@@ -209,6 +209,60 @@ void ACliffSelectionGameMode::HandleCliffGenerated(AActor* Generator)
     }
 }
 
+void ACliffSelectionGameMode::OnConfirmSelection(int32 SelectedCliffIndex)
+{
+    UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>();
+    if (!GI)
+    {
+        UE_LOG(LogTemp, Error, TEXT("CliffSelectionGameMode::OnConfirmSelection: GameInstance not found"));
+        return;
+    }
+
+    // 선택된 암벽의 Seed를 GameInstance에 저장
+    const TArray<int32>& Seeds = GI->GetGeneratedSeeds();
+    if (Seeds.IsValidIndex(SelectedCliffIndex))
+    {
+        GI->SetSelectedSeed(Seeds[SelectedCliffIndex]);
+        UE_LOG(LogTemp, Warning, TEXT("CliffSelection: Selected Seed=%d (Index=%d)"),
+            Seeds[SelectedCliffIndex], SelectedCliffIndex);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("CliffSelection: Invalid SelectedCliffIndex=%d"), SelectedCliffIndex);
+        return;
+    }
+
+    // CurrentStageIndex 증가 (CliffSelection 완료 → 다음 스테이지로)
+    const int32 NextStageIndex = GI->GetCurrentStageIndex() + 1;
+    GI->SetCurrentStageIndex(NextStageIndex);
+
+    // Loading UI 표시 플래그 설정
+    GI->SetShowLoadingUI(true);
+
+    // CurrentStageIndex 기준 다음 레벨 결정
+    // Stage_2 → Stage_3 순서
+    FName NextLevel;
+    if (NextStageIndex == 2)
+    {
+        NextLevel = FName("Stage_2");
+    }
+    else if (NextStageIndex == 3)
+    {
+        NextLevel = FName("Stage_3");
+    }
+    else
+    {
+        // Ending 미구현 — 현재는 Stage_3 유지
+        UE_LOG(LogTemp, Warning, TEXT("CliffSelection: StageIndex=%d, Ending not implemented yet"), NextStageIndex);
+        NextLevel = FName("Stage_3");
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("CliffSelection: → OpenLevel(%s) [StageIndex=%d]"),
+        *NextLevel.ToString(), NextStageIndex);
+
+    UGameplayStatics::OpenLevel(this, NextLevel);
+}
+
 void ACliffSelectionGameMode::RerollCliffs()
 {
     if (bRerollUsed)

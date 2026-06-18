@@ -163,6 +163,10 @@ void ACliffSelectionPawn::OnConfirmSelection(const FInputActionValue& Value)
 
     GI->SetSelectedSeed(Seeds[CurrentIndex]);
     GI->SetCurrentStageIndex(GI->GetCurrentStageIndex() + 1);
+    GI->SetShowLoadingUI(true);  // 다음 스테이지 BeginPlay에서 Loading UI 표시
+
+    UE_LOG(LogTemp, Warning, TEXT("CliffSelectionPawn: Confirmed Seed=%d Index=%d → NextStage=%s"),
+        Seeds[CurrentIndex], CurrentIndex, *NextStageLevelName.ToString());
 
     if (NextStageLevelName.IsNone())
     {

@@ -89,6 +89,16 @@ public:
     UFUNCTION(BlueprintPure, Category = "Stage")
     int32 GetCurrentStageIndex() const { return CurrentStageIndex; }
 
+    // ========== Level Transition Flags ==========
+
+    // 다음 스테이지 로드 시 Loading UI 표시 여부
+    // CliffSelection → Stage 전환 시 true로 설정, Stage BeginPlay에서 false로 리셋
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void SetShowLoadingUI(bool bShow) { bShowLoadingUI = bShow; }
+
+    UFUNCTION(BlueprintPure, Category = "UI")
+    bool ShouldShowLoadingUI() const { return bShowLoadingUI; }
+
     // ========== Cliff Selection ==========
 
     // CliffSelection 레벨 진입 시 호출 — 3개의 새 Seed 생성
@@ -118,6 +128,10 @@ protected:
 
     // NewGame 모드 플래그
     bool bIsNewGameMode = false;
+
+    // 레벨 전환 시 Loading UI 표시 여부
+    UPROPERTY(BlueprintReadOnly, Category = "UI")
+    bool bShowLoadingUI = false;
 
     // 현재 스테이지 인덱스 (1-based, 0 = 미설정)
     // VFX 분기, 난이도 조정 등에 활용

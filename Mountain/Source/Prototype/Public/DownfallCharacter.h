@@ -1322,6 +1322,13 @@ protected:
     void DrawDebugInfo();
 #endif
 
+    // ── Minimap 캡처 설정 (GameMode에서도 호출 가능하도록 public) ──────
+    // 암벽 바운드 자동 감지 → SceneCapture2D 위치/OrthoWidth 자동 설정
+    // CliffTotalWidth/Height가 기본값(50000)이면 바운드에서 자동 읽어 설정
+    // 중복 호출 방지: bMinimapCaptureConfigured가 true이면 스킵
+    UFUNCTION(BlueprintCallable, Category = "UI|Minimap")
+    void AutoConfigureMinimapCapture();
+
 private:
     void UpdateGlitchEffect();
     void UpdateGlitchPatternSwitch(float DeltaTime);
@@ -1444,7 +1451,6 @@ private:
     FLinearColor                           BloodMoonStartCloudColor = FLinearColor::White;
 
     // ── Minimap 내부 함수 ──────────────────────────────────────
-    // 암벽 바운드 자동 감지 → SceneCapture2D 위치/OrthoWidth 자동 설정
-    // CliffTotalWidth/Height가 기본값(50000)이면 바운드에서 자동 읽어 설정
-    void AutoConfigureMinimapCapture();
+    // 중복 AutoConfigure 방지 플래그
+    bool bMinimapCaptureConfigured = false;
 };

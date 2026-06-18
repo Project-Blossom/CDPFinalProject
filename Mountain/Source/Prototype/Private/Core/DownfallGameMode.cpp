@@ -3,6 +3,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "UI/FadeWidget.h"
 #include "TimerManager.h"
+#include "Blueprint/UserWidget.h"
+#include "MountainGenWorldActor.h"
+#include "EngineUtils.h"
 
 ADownfallGameMode::ADownfallGameMode()
 {
@@ -13,25 +16,61 @@ void ADownfallGameMode::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Fade In 효과 시작
-    if (FadeInWidgetClass)
+    UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(GetGameInstance());
+
+    // ── Loading UI 처리 ──────────────────────────────────────
+    // CliffSelection에서 넘어온 경우 Loading UI 표시 후 암벽 생성 완료 시 제거
+    if (GI && GI->ShouldShowLoadingUI() && LoadingWidgetClass)
     {
-        APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
-        if (PC)
+        APlayerController* LPPC = UGameplayStatics::GetPlayerController(this, 0);
+        if (LPPC)
         {
-            UFadeWidget* FadeWidget = CreateWidget<UFadeWidget>(PC, FadeInWidgetClass);
-            if (FadeWidget)
+            LoadingWidgetInstance = CreateWidget<UUserWidget>(LPPC, LoadingWidgetClass);
+            if (LoadingWidgetInstance)
             {
-                FadeWidget->AddToViewport(200);
-                FadeWidget->StartFadeIn(FadeInDuration);
-                
-                UE_LOG(LogTemp, Warning, TEXT("Stage Fade In started"));
+                LoadingWidgetInstance->AddToViewport(100);
+                UE_LOG(LogTemp, Warning, TEXT("StageGameMode: Loading UI displayed"));
             }
         }
+        GI->SetShowLoadingUI(false);
     }
 
-    // 자동으로 스테이지 시작
-    StartStage();
+    // ── Seed 동기화 ───────────────────────────────────────────
+    // GameInstance에 저장된 SelectedSeed로 레벨의 MountainGenWorldActor 재생성
+    if (GI && GI->GetSelectedSeed() > 0)
+    {
+        const int32 SelectedSeed = GI->GetSelectedSeed();
+        bool bFoundActor = false;
+
+        for (TActorIterator<AMountainGenWorldActor> It(GetWorld()); It; ++It)
+        {
+            AMountainGenWorldActor* MountainActor = *It;
+            if (MountainActor)
+            {
+                MountainActor->Settings.Seed = SelectedSeed;
+                MountainActor->OnMountainGenerated.AddDynamic(
+                    this, &ADownfallGameMode::OnCliffGenerationComplete);
+                MountainActor->Regenerate();
+                bFoundActor = true;
+
+                UE_LOG(LogTemp, Warning, TEXT("StageGameMode: MountainGenWorldActor Seed=%d → Regenerate()"), SelectedSeed);
+                break;
+            }
+        }
+
+        if (!bFoundActor)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("StageGameMode: MountainGenWorldActor not found, skipping Seed sync"));
+            HideLoadingWidget();
+            StartStageAfterLoading();
+        }
+    }
+    else
+    {
+        // Seed가 없으면 (직접 레벨 진입 등) 즉시 시작
+        HideLoadingWidget();
+        StartStageAfterLoading();
+    }
 }
 
 void ADownfallGameMode::Tick(float DeltaTime)
@@ -159,4 +198,45 @@ void ADownfallGameMode::OnFadeOutComplete()
 
     // 결과 화면 레벨로 전환
     UGameplayStatics::OpenLevel(this, ResultLevelName);
+}
+
+void ADownfallGameMode::OnCliffGenerationComplete(AActor* Generator)
+{
+    // 암벽 생성 완료 → Loading UI 제거 후 스테이지 시작
+    UE_LOG(LogTemp, Warning, TEXT("StageGameMode: Cliff generation complete, hiding loading UI"));
+
+    HideLoadingWidget();
+    StartStageAfterLoading();
+}
+
+void ADownfallGameMode::HideLoadingWidget()
+{
+    if (LoadingWidgetInstance)
+    {
+        LoadingWidgetInstance->RemoveFromParent();
+        LoadingWidgetInstance = nullptr;
+        UE_LOG(LogTemp, Warning, TEXT("StageGameMode: Loading UI hidden"));
+    }
+}
+
+void ADownfallGameMode::StartStageAfterLoading()
+{
+    // Fade In 효과
+    if (FadeInWidgetClass)
+    {
+        APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+        if (PC)
+        {
+            UFadeWidget* FadeWidget = CreateWidget<UFadeWidget>(PC, FadeInWidgetClass);
+            if (FadeWidget)
+            {
+                FadeWidget->AddToViewport(200);
+                FadeWidget->StartFadeIn(FadeInDuration);
+                UE_LOG(LogTemp, Warning, TEXT("StageGameMode: Fade In started"));
+            }
+        }
+    }
+
+    // 스테이지 시작
+    StartStage();
 }

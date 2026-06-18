@@ -48,6 +48,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "CliffSelection")
     bool IsAllCliffsGenerated() const { return CompletedCliffCount >= ExpectedCliffCount && ExpectedCliffCount > 0; }
 
+    // 플레이어가 암벽을 선택(Enter)했을 때 호출
+    // CurrentStageIndex 기준으로 다음 스테이지 레벨로 전환
+    UFUNCTION(BlueprintCallable, Category = "CliffSelection")
+    void OnConfirmSelection(int32 SelectedCliffIndex);
+
     // 3개 암벽의 배치 각도 (좌/중/우) - Pawn의 카메라 록온 회전에 사용
     UFUNCTION(BlueprintPure, Category = "CliffSelection")
     const TArray<float>& GetCliffAnglesDeg() const { return CliffAnglesDeg; }

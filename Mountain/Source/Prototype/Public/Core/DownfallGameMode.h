@@ -62,6 +62,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Stage")
     float FadeInDuration = 1.0f;
 
+    // 로딩 UI 위젯 클래스 (WBP_CliffSelectionLoading 재사용 또는 별도 위젯)
+    UPROPERTY(EditDefaultsOnly, Category = "Stage|Loading")
+    TSubclassOf<class UUserWidget> LoadingWidgetClass;
+
 private:
     bool bStageCompleted = false;
     
@@ -69,8 +73,22 @@ private:
     UPROPERTY()
     TObjectPtr<class UFadeWidget> FadeOutWidget;
 
+    // Loading Widget Instance
+    UPROPERTY()
+    TObjectPtr<class UUserWidget> LoadingWidgetInstance;
+
     void StartFadeOut();
     void OnFadeOutComplete();
+
+    // 암벽 생성 완료 콜백 — Loading UI 제거 후 스테이지 시작
+    UFUNCTION()
+    void OnCliffGenerationComplete(AActor* Generator);
+
+    // Loading UI 제거
+    void HideLoadingWidget();
+
+    // Fade In + StartStage 묶음
+    void StartStageAfterLoading();
 
 protected:
     // 스테이지 활성화 상태

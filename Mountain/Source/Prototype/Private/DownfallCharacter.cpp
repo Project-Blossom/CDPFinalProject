@@ -4928,6 +4928,9 @@ void ADownfallCharacter::AutoConfigureMinimapCapture() {
     CaptureComp->CaptureScene();
     UE_LOG(LogDownFall, Log, TEXT("Minimap: CaptureScene() 완료 [AutoDetect=%s]"),
         bAutoDetected ? TEXT("true") : TEXT("false"));
+
+    // 중복 호출 방지 플래그 설정
+    bMinimapCaptureConfigured = true;
 }
 
 // ─────────────────────────────────────────────────────────────────
