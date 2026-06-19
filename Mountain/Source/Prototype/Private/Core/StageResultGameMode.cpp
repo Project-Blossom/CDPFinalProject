@@ -28,9 +28,7 @@ void AStageResultGameMode::BeginPlay()
                 UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(GetGameInstance());
                 if (GI)
                 {
-                    // TODO: 어떤 스테이지를 클리어했는지 전달하는 시스템 필요
-                    // 지금은 임시로 "Stage1" 하드코딩
-                    FName StageId = FName("Stage1");
+                    FName StageId = GI->GetLastClearedStageId();
                     FStageTimeRecord Record = GI->GetStageRecord(StageId);
 
                     ResultWidgetInstance->SetStageInfo(

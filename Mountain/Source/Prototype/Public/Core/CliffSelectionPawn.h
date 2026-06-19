@@ -54,6 +54,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Input")
     TObjectPtr<UInputAction> ConfirmSelectionAction;
 
+    // R 키 - 암벽 리롤 (1회 한정, GameMode에서 처리)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Input")
+    TObjectPtr<UInputAction> RerollAction;
+
     // ========== Camera Rotate (Lock-on) ==========
 
     // 카메라 Yaw 회전 보간 속도
@@ -117,6 +121,9 @@ private:
 
     // Enter 확정 핸들러
     void OnConfirmSelection(const FInputActionValue& Value);
+
+    // R 키 리롤 핸들러
+    void OnRerollPressed(const FInputActionValue& Value);
 
     // CurrentIndex 변경 -> 목표 Yaw 설정 + 패닝 타겟 거리 갱신 + HUD 갱신
     void StartCameraRotateTo(int32 NewIndex);

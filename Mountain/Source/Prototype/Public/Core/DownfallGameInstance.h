@@ -89,6 +89,14 @@ public:
     UFUNCTION(BlueprintPure, Category = "Stage")
     int32 GetCurrentStageIndex() const { return CurrentStageIndex; }
 
+    // 마지막으로 클리어한 스테이지 ID 설정 (DownfallGameMode::CompleteStage에서 호출)
+    UFUNCTION(BlueprintCallable, Category = "Stage")
+    void SetLastClearedStageId(FName StageId) { LastClearedStageId = StageId; }
+
+    // 마지막으로 클리어한 스테이지 ID 반환 (StageResult 화면에서 사용)
+    UFUNCTION(BlueprintPure, Category = "Stage")
+    FName GetLastClearedStageId() const { return LastClearedStageId; }
+
     // ========== Level Transition Flags ==========
 
     // 다음 스테이지 로드 시 Loading UI 표시 여부
@@ -137,6 +145,10 @@ protected:
     // VFX 분기, 난이도 조정 등에 활용
     UPROPERTY(BlueprintReadOnly, Category = "Stage")
     int32 CurrentStageIndex = 0;
+
+    // 마지막으로 클리어한 스테이지 ID (StageResult 화면 표시용)
+    UPROPERTY(BlueprintReadOnly, Category = "Stage")
+    FName LastClearedStageId = NAME_None;
 
     // 세이브 슬롯 이름 생성
     FString GetSlotName(int32 SlotIndex) const;

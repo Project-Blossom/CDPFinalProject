@@ -39,6 +39,15 @@ void ACliffSelectionPawn::BeginPlay()
     PanStartZ = 0.f;
     PanCurrentDistance = 0.f;
 
+    // 이전 레벨(StageResult 등)에서 UIOnly 입력 모드로 전환된 채로 넘어온 경우를 대비해
+    // 게임 입력이 정상 작동하도록 GameOnly로 복구
+    if (APlayerController* InputPC = Cast<APlayerController>(GetController()))
+    {
+        FInputModeGameOnly GameOnlyMode;
+        InputPC->SetInputMode(GameOnlyMode);
+        InputPC->bShowMouseCursor = false;
+    }
+
     // 로딩 위젯 생성 (Pawn BeginPlay 시점 = PC 확보 후이므로 안전)
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
     {
@@ -109,6 +118,10 @@ void ACliffSelectionPawn::SetupPlayerInputComponent(UInputComponent* PlayerInput
         {
             EIC->BindAction(ConfirmSelectionAction, ETriggerEvent::Started, this, &ACliffSelectionPawn::OnConfirmSelection);
         }
+        if (RerollAction)
+        {
+            EIC->BindAction(RerollAction, ETriggerEvent::Started, this, &ACliffSelectionPawn::OnRerollPressed);
+        }
     }
 }
 
@@ -175,6 +188,21 @@ void ACliffSelectionPawn::OnConfirmSelection(const FInputActionValue& Value)
     }
 
     UGameplayStatics::OpenLevel(this, NextStageLevelName);
+}
+
+void ACliffSelectionPawn::OnRerollPressed(const FInputActionValue& Value)
+{
+    if (!bHasGeneratedComplete) return;
+
+    ACliffSelectionGameMode* GM = Cast<ACliffSelectionGameMode>(UGameplayStatics::GetGameMode(this));
+    if (!GM) return;
+
+    UE_LOG(LogTemp, Warning, TEXT("CliffSelectionPawn: Reroll requested"));
+
+    // 리롤 완료 시 GameMode가 OnAllCliffsGenerated를 다시 브로드캐스트하므로
+    // HandleAllCliffsGenerated에서 초기 록온/HUD가 자동으로 갱신됨
+    bHasGeneratedComplete = false;
+    GM->RerollCliffs();
 }
 
 void ACliffSelectionPawn::StartCameraRotateTo(int32 NewIndex)

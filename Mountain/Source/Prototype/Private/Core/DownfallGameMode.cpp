@@ -125,6 +125,7 @@ void ADownfallGameMode::CompleteStage()
     if (GI)
     {
         GI->RecordStageTime(CurrentStageId, FinalTime);
+        GI->SetLastClearedStageId(CurrentStageId);
     }
     else
     {
