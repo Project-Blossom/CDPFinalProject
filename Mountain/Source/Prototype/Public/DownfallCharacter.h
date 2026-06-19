@@ -31,7 +31,6 @@ class UStaticMesh;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class USoundBase;
-class USoundAttenuation;
 class UAudioComponent;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
@@ -1512,8 +1511,8 @@ protected:
     void ClearEquippedUtilitySlot();
     bool IsValidInventorySlotIndex(int32 Index) const;
     bool IsPlaceableSlot(int32 Index) const;
-    void PlayCharacterSound(USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation, USoundAttenuation* AttenuationSettings = nullptr) const;
-    void PlayCharacterSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float FallbackVolumeMultiplier, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation, USoundAttenuation* AttenuationSettings = nullptr) const;
+    void PlayCharacterSound(USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const;
+    void PlayCharacterSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float FallbackVolumeMultiplier, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const;
     void PlayItemEquipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemUnequipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const;
