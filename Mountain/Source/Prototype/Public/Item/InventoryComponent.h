@@ -31,11 +31,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
     int32 SlotCount = 25;
 
-    // ---------- hand  ----------
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "0"))
     int32 ReservedCenterSlotIndex = 12;
 
-    // ---------- Place settings ----------
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Place", meta = (ClampMin = "1.0"))
     float PlaceRangeCm = 200.f;
 
@@ -94,16 +92,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "Inventory")
     bool IsReservedCenterSlot(int32 Index) const { return Index == ReservedCenterSlotIndex; }
 
-    // ---- Save/Load ----
     UFUNCTION(BlueprintCallable, Category = "Inventory|Save")
     bool SaveToSlot(const FString& SlotName, int32 UserIndex = 0);
 
     UFUNCTION(BlueprintCallable, Category = "Inventory|Save")
     bool LoadFromSlot(const FString& SlotName, int32 UserIndex = 0);
 
-    // =========================================================
-    // Preview API
-    // =========================================================
 public:
     UFUNCTION(BlueprintCallable, Category = "Inventory|Preview")
     void SetPreviewEnabled(bool bEnabled);
@@ -127,7 +121,6 @@ public:
     bool GetLastPreviewState(bool& bOutValid, FText& OutReason) const;
 
 protected:
-    // ----- BP hooks -----
     UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Use")
     void BP_OnConsume(AActor* User, UItemDefinition* Def, int32 Count);
 
@@ -144,7 +137,6 @@ private:
     UPROPERTY()
     TArray<FItemStack> Slots;
 
-    // ----------------- Preview internals -----------------
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true"))
     TSubclassOf<AActor> DefaultPreviewActorClass;
 
@@ -166,8 +158,6 @@ private:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
     float PreviewUpdateInterval = 0.0f;
 
-    // 프리뷰 액터를 실제 설치 액터처럼 보이지 않게 만들기 위한 고스트 머티리얼.
-    // 비워두면 기존 머티리얼에 Opacity/Alpha 파라미터만 시도한다.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview|Ghost", meta = (AllowPrivateAccess = "true"))
     TObjectPtr<UMaterialInterface> PreviewGhostMaterial = nullptr;
 
@@ -187,7 +177,6 @@ private:
 
     void SanitizeReservedCenterSlot();
 
-    // ---- preview helpers ----
     bool ShouldRunPreview() const;
     AActor* GetPreviewUserActor() const;
     void EnsurePreviewActor();

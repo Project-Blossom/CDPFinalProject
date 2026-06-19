@@ -32,6 +32,7 @@ class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class USoundBase;
 class USoundAttenuation;
+class UAudioComponent;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
 
@@ -116,6 +117,24 @@ enum class EItemUseState : uint8
     PlacementPreview  UMETA(DisplayName = "PlacementPreview")
 };
 
+USTRUCT(BlueprintType)
+struct FStageBGMEntry
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM")
+    TObjectPtr<USoundBase> NormalBGM = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM")
+    TObjectPtr<USoundBase> InsanityBGM = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM", meta = (ClampMin = "0.0", ClampMax = "100.0", UIMin = "0.0", UIMax = "100.0"))
+    float InsanityBGMThreshold = 80.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float VolumeMultiplier = 1.0f;
+};
+
 UCLASS()
 class PROTOTYPE_API ADownfallCharacter : public ACharacter
 {
@@ -155,6 +174,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Inventory|UI")
     int32 GetDisplayedInventoryCountAt(int32 Index) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Sound|BGM")
+    void SetStageMusicIndex(int32 NewStageIndex);
 
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -477,6 +499,160 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
     EItemSoundPlaybackMode EmptyHandSelectSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
+
+    // Character state sounds
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Common")
+    bool bEnableCharacterStateSounds = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina")
+    TObjectPtr<USoundBase> LowStaminaSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina")
+    TArray<FItemSoundVariant> LowStaminaSoundVariants;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
+    float LowStaminaThreshold1 = 40.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
+    float LowStaminaThreshold2 = 20.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
+    float LowStaminaThreshold3 = 10.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
+    float LowStaminaInterval1 = 1.2f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
+    float LowStaminaInterval2 = 0.7f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
+    float LowStaminaInterval3 = 0.4f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float LowStaminaSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float LowStaminaSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity")
+    TObjectPtr<USoundBase> InsanityLoopSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity")
+    TArray<FItemSoundVariant> InsanityLoopSoundVariants;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
+    float InsanitySoundThreshold1 = 60.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
+    float InsanitySoundThreshold2 = 80.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
+    float InsanitySoundInterval1 = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
+    float InsanitySoundInterval2 = 0.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float InsanityLoopSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float InsanityLoopSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Movement")
+    TObjectPtr<USoundBase> WalkSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Movement")
+    TArray<FItemSoundVariant> WalkSoundVariants;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Movement", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "2.0"))
+    float WalkSoundInterval = 0.45f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Movement", meta = (ClampMin = "0.0"))
+    float WalkSoundMinSpeed = 120.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float WalkSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Movement", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float WalkSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Grip")
+    TObjectPtr<USoundBase> GripSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Grip")
+    TArray<FItemSoundVariant> GripSoundVariants;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Grip", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float GripSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Grip", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float GripSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Jump")
+    TObjectPtr<USoundBase> JumpSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Jump")
+    TArray<FItemSoundVariant> JumpSoundVariants;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Jump", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float JumpSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Jump", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float JumpSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Land")
+    TObjectPtr<USoundBase> LandSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Land")
+    TArray<FItemSoundVariant> LandSoundVariants;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Land", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float LandSoundMinVolumeMultiplier = 0.6f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Land", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "2.0"))
+    float LandSoundMaxVolumeMultiplier = 1.2f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Land", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float LandSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Land", meta = (ClampMin = "0.1", UIMin = "0.1", UIMax = "10.0"))
+    float LandSoundFullVolumeFallSeconds = 2.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall")
+    TObjectPtr<USoundBase> LongFallSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall")
+    TArray<FItemSoundVariant> LongFallSoundVariants;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "10.0"))
+    float LongFallSoundStartSeconds = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
+    float LongFallSoundInterval = 0.75f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float LongFallSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float LongFallSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM", meta = (ClampMin = "0", ClampMax = "2", UIMin = "0", UIMax = "2"))
+    int32 CurrentStageMusicIndex = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM")
+    bool bAutoPlayStageBGM = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM")
+    TArray<FStageBGMEntry> StageBGMs;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
+    float StageBGMFadeInSeconds = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
+    float StageBGMFadeOutSeconds = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
+    float StageBGMInsanityReturnMargin = 5.0f;
 
     // Safety Line
     UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
@@ -1341,6 +1517,11 @@ protected:
     void PlayItemEquipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemUnequipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const;
+    void UpdateCharacterStateSounds(float DeltaTime);
+    void PlayCharacterStateSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float VolumeMultiplier, float PitchMultiplier, const FVector& EventLocation);
+    void RefreshStageBGM(bool bForceRestart = false);
+    void StopStageBGM();
+    const FStageBGMEntry* GetCurrentStageBGMEntry() const;
 
     UPROPERTY()
     FTimerHandle MonsterSenseBlockTimerHandle;
@@ -1407,6 +1588,18 @@ private:
     TWeakObjectPtr<class AMountainGenWorldActor> CachedMountainActor;
     TWeakObjectPtr<class AMonsterSpawner>        CachedMonsterSpawner;
     bool bGhostSpawnedThisSession = false; // 세션당 1회 소환 방지
+
+    float LastLowStaminaSoundTime = -1000.0f;
+    float LastInsanityStateSoundTime = -1000.0f;
+    float LastWalkSoundTime = -1000.0f;
+    float LastLongFallSoundTime = -1000.0f;
+    float CharacterStateFallElapsedSeconds = 0.0f;
+    bool bCharacterStateWasFalling = false;
+    bool bStageBGMCurrentlyInsanity = false;
+    int32 PlayingStageMusicIndex = INDEX_NONE;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UAudioComponent> StageBGMComponent = nullptr;
 
     // Minimap SceneCapture2D 캐시
     TWeakObjectPtr<class ASceneCapture2D>  CachedSceneCapture;

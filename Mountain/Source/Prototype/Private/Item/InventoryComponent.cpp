@@ -11,7 +11,6 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
-#include "Sound/SoundAttenuation.h"
 #include "DownfallCharacter.h"
 #include "Engine/Texture2D.h"
 #include "Components/SceneComponent.h"
@@ -81,20 +80,25 @@ namespace
     {
         const float BaseVolume = FMath::Max(0.0f, VolumeMultiplier);
 
-        if (!User || PlaybackMode == EItemSoundPlaybackMode::Play2D)
+        // 2D and Player playback should keep their original volume here.
+        // Only World playback uses the manual distance rule below.
+        if (!User || PlaybackMode != EItemSoundPlaybackMode::EventLocation)
         {
             return BaseVolume;
         }
 
-        // Manual distance rule for Player / World sounds:
-        // 0m = original volume, 5m = 1 / 1.5, 10m = 1 / 2.
+        // Manual World distance rule:
+        // 0m = original volume, 5m = 1/2, 10m = 1/4, 15m = 1/8.
+        // Formula: volume *= pow(0.5, distanceMeters / 5).
         const FVector ListenerLoc = GetSoundListenerLocation(User);
         const float DistanceCm = FVector::Dist(ListenerLoc, EventLocation);
-        const float DistanceDenominator = 1.0f + (DistanceCm / 1000.0f);
-        return BaseVolume / FMath::Max(1.0f, DistanceDenominator);
+        const float HalfVolumeStepCm = 500.0f;
+        const float HalfSteps = DistanceCm / HalfVolumeStepCm;
+        const float DistanceVolume = FMath::Pow(0.5f, HalfSteps);
+        return BaseVolume * DistanceVolume;
     }
 
-    static void PlayInventoryItemSound(AActor* User, USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation, USoundAttenuation* AttenuationSettings)
+    static void PlayInventoryItemSound(AActor* User, USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation)
     {
         if (!User || !Sound)
         {
@@ -111,20 +115,20 @@ namespace
             break;
 
         case EItemSoundPlaybackMode::UserLocation:
-            UGameplayStatics::PlaySoundAtLocation(User, Sound, User->GetActorLocation(), Volume, Pitch, 0.0f, AttenuationSettings);
+            UGameplayStatics::PlaySoundAtLocation(User, Sound, User->GetActorLocation(), Volume, Pitch, 0.0f, nullptr);
             break;
 
         case EItemSoundPlaybackMode::EventLocation:
         default:
-            UGameplayStatics::PlaySoundAtLocation(User, Sound, EventLocation, Volume, Pitch, 0.0f, AttenuationSettings);
+            UGameplayStatics::PlaySoundAtLocation(User, Sound, EventLocation, Volume, Pitch, 0.0f, nullptr);
             break;
         }
     }
 
-    static void PlayInventoryItemSound(AActor* User, const TArray<FItemSoundVariant>& Variants, USoundBase* FallbackSound, float FallbackVolumeMultiplier, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation, USoundAttenuation* AttenuationSettings)
+    static void PlayInventoryItemSound(AActor* User, const TArray<FItemSoundVariant>& Variants, USoundBase* FallbackSound, float FallbackVolumeMultiplier, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation)
     {
         const FInventoryPickedSound Picked = SelectInventorySoundVariant(Variants, FallbackSound, FallbackVolumeMultiplier, FallbackPitchMultiplier);
-        PlayInventoryItemSound(User, Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, PlaybackMode, EventLocation, AttenuationSettings);
+        PlayInventoryItemSound(User, Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, PlaybackMode, EventLocation);
     }
 
     static bool HasAnyPlacementBlockTag(const AActor* Actor)
@@ -964,7 +968,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
         }
 
         BP_OnConsume(User, Def, 1);
-        PlayInventoryItemSound(User, Def->UseSoundVariants, Def->UseSound, Def->UseSoundVolumeMultiplier, Def->UseSoundPitchMultiplier, Def->UseSoundPlaybackMode, User->GetActorLocation(), Def->SpatialSoundAttenuation);
+        PlayInventoryItemSound(User, Def->UseSoundVariants, Def->UseSound, Def->UseSoundVolumeMultiplier, Def->UseSoundPitchMultiplier, Def->UseSoundPlaybackMode, User->GetActorLocation());
 
 
         S.Count -= 1;
@@ -992,7 +996,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             return false;
         }
 
-        PlayInventoryItemSound(User, Def->PlaceSoundVariants, Def->PlaceSound, Def->PlaceSoundVolumeMultiplier, Def->PlaceSoundPitchMultiplier, Def->PlaceSoundPlaybackMode, SpawnXform.GetLocation(), Def->SpatialSoundAttenuation);
+        PlayInventoryItemSound(User, Def->PlaceSoundVariants, Def->PlaceSound, Def->PlaceSoundVolumeMultiplier, Def->PlaceSoundPitchMultiplier, Def->PlaceSoundPlaybackMode, SpawnXform.GetLocation());
 
         SetPreviewEnabled(false);
         PreviewSlotIndex = INDEX_NONE;
@@ -1020,7 +1024,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 
         SanitizeReservedCenterSlot();
         BP_OnEquip(User, Def, S.Instance);
-        PlayInventoryItemSound(User, Def->EquipSoundVariants, Def->EquipSound, Def->EquipSoundVolumeMultiplier, Def->EquipSoundPitchMultiplier, Def->EquipSoundPlaybackMode, User->GetActorLocation(), Def->SpatialSoundAttenuation);
+        PlayInventoryItemSound(User, Def->EquipSoundVariants, Def->EquipSound, Def->EquipSoundVolumeMultiplier, Def->EquipSoundPitchMultiplier, Def->EquipSoundPlaybackMode, User->GetActorLocation());
         return true;
     }
 
@@ -1064,7 +1068,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
 
         SanitizeReservedCenterSlot();
         BP_OnEquip(User, Def, S.Instance);
-        PlayInventoryItemSound(User, Def->UseSoundVariants, Def->UseSound, Def->UseSoundVolumeMultiplier, Def->UseSoundPitchMultiplier, Def->UseSoundPlaybackMode, User->GetActorLocation(), Def->SpatialSoundAttenuation);
+        PlayInventoryItemSound(User, Def->UseSoundVariants, Def->UseSound, Def->UseSoundVolumeMultiplier, Def->UseSoundPitchMultiplier, Def->UseSoundPlaybackMode, User->GetActorLocation());
         return true;
     }
 
@@ -1096,7 +1100,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
                 AttachSoundLocation = DownfallCharForSound->SafetyLineAnchorWorld;
             }
         }
-        PlayInventoryItemSound(User, Def->PlaceSoundVariants, Def->PlaceSound, Def->PlaceSoundVolumeMultiplier, Def->PlaceSoundPitchMultiplier, Def->PlaceSoundPlaybackMode, AttachSoundLocation, Def->SpatialSoundAttenuation);
+        PlayInventoryItemSound(User, Def->PlaceSoundVariants, Def->PlaceSound, Def->PlaceSoundVolumeMultiplier, Def->PlaceSoundPitchMultiplier, Def->PlaceSoundPlaybackMode, AttachSoundLocation);
 
         S.Count -= 1;
         if (S.Count <= 0)
@@ -1215,7 +1219,7 @@ bool UInventoryComponent::UseItem(int32 Index, AActor* User)
             }
         }
 
-        PlayInventoryItemSound(User, Def->PlaceSoundVariants, Def->PlaceSound, Def->PlaceSoundVolumeMultiplier, Def->PlaceSoundPitchMultiplier, Def->PlaceSoundPlaybackMode, SpawnTransform.GetLocation(), Def->SpatialSoundAttenuation);
+        PlayInventoryItemSound(User, Def->PlaceSoundVariants, Def->PlaceSound, Def->PlaceSoundVolumeMultiplier, Def->PlaceSoundPitchMultiplier, Def->PlaceSoundPlaybackMode, SpawnTransform.GetLocation());
 
         SetPreviewEnabled(false);
         PreviewSlotIndex = INDEX_NONE;

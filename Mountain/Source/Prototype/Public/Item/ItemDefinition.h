@@ -7,7 +7,6 @@
 
 class UTexture2D;
 class USoundBase;
-class USoundAttenuation;
 class AActor;
 
 UENUM(BlueprintType)
@@ -77,24 +76,11 @@ public:
 
     // =====================================================
     // Sound
-    // - PitchMultiplier controls playback speed/pitch.
-    // - PlaybackMode controls where the sound is heard from.
-    //   Play2D: no distance attenuation.
-    //   UserLocation: plays at the player/user location.
-    //   EventLocation: plays at the actual action location, such as installed bolt/anchor position.
     // =====================================================
-
-    // World/Player 모드는 코드에서 거리별 볼륨 감쇠를 적용한다.
-    // 규칙: 0m = 원본, 5m = 1/1.5, 10m = 1/2, 20m = 1/3.
-    // 필요하면 추가로 Sound Attenuation 에셋을 넣어 공간감 설정을 보완할 수 있다.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Spatial")
-    TObjectPtr<USoundAttenuation> SpatialSoundAttenuation = nullptr;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Use")
     TObjectPtr<USoundBase> UseSound = nullptr;
 
-    // 여기에 추가 후보를 넣으면 기본 UseSound까지 포함해서 동일 확률로 하나를 고른다.
-    // 각 후보는 사운드와 PitchMultiplier를 따로 가진다.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Use")
     TArray<FItemSoundVariant> UseSoundVariants;
 
@@ -106,7 +92,6 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Use")
     EItemSoundPlaybackMode UseSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
-
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Equip")
     TObjectPtr<USoundBase> EquipSound = nullptr;
@@ -138,7 +123,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Equip")
     EItemSoundPlaybackMode UnequipSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
 
-    // 볼트 설치 / 앵커를 볼트에 설치할 때 사용한다.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Place")
     TObjectPtr<USoundBase> PlaceSound = nullptr;
 
@@ -154,7 +138,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Place")
     EItemSoundPlaybackMode PlaceSoundPlaybackMode = EItemSoundPlaybackMode::EventLocation;
 
-    // 앵커 로프가 실제로 발동되는 순간에 사용한다.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Activate")
     TObjectPtr<USoundBase> ActivateSound = nullptr;
 

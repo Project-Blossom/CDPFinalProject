@@ -54,7 +54,7 @@
 #include "Materials/MaterialInterface.h"
 #include "UObject/UnrealType.h"
 #include "Sound/SoundBase.h"
-#include "Sound/SoundAttenuation.h"
+#include "Components/AudioComponent.h"
 
 DEFINE_LOG_CATEGORY(LogDownFall);
 
@@ -179,6 +179,8 @@ ADownfallCharacter::ADownfallCharacter()
 
     // Inventory
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
+
+    StageBGMs.SetNum(3);
 }
 
 void ADownfallCharacter::BeginPlay()
@@ -607,6 +609,11 @@ void ADownfallCharacter::BeginPlay()
 
     StartLowFrequencyUpdatesIfNeeded();
 
+    if (bAutoPlayStageBGM)
+    {
+        RefreshStageBGM(true);
+    }
+
     // PostProcessComp에서 Motion Blur Override
     // PostProcessVolume보다 우선순위가 높아 플레이어 시점의 Motion Blur를 차단
     // 현재는 임시로 주석처리 차후 PostProcess 관리에 사용될 여지있음.
@@ -657,6 +664,8 @@ void ADownfallCharacter::Tick(float DeltaTime)
 
     StartLowFrequencyUpdatesIfNeeded();
     StopLowFrequencyUpdatesIfPossible();
+
+    UpdateCharacterStateSounds(DeltaTime);
 
     if (bDebugFlyMode)
     {
@@ -1698,6 +1707,8 @@ void ADownfallCharacter::OnJumpStarted(const FInputActionValue& Value)
         return;
     }
 
+    PlayCharacterStateSound(JumpSoundVariants, JumpSound, JumpSoundVolumeMultiplier, JumpSoundPitchMultiplier, GetActorLocation());
+
     // 등반 중이면 양손 놓고 점프
     if (bIsClimbing)
     {
@@ -2102,6 +2113,7 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
 
     // 9. 이벤트 발생
     OnHandGripped(bIsLeftHand, GripInfo);
+    PlayCharacterStateSound(GripSoundVariants, GripSound, GripSoundVolumeMultiplier, GripSoundPitchMultiplier, GripInfo.WorldLocation);
 
     if (bSafetyLineAttached && bSafetyLineTriggered)
     {
@@ -3241,7 +3253,7 @@ void ADownfallCharacter::UpdateVignetteEffect(float DeltaTime)
 }
 
 
-void ADownfallCharacter::PlayCharacterSound(USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation, USoundAttenuation* AttenuationSettings) const
+void ADownfallCharacter::PlayCharacterSound(USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const
 {
     if (!Sound)
     {
@@ -3277,20 +3289,20 @@ void ADownfallCharacter::PlayCharacterSound(USoundBase* Sound, float VolumeMulti
         break;
 
     case EItemSoundPlaybackMode::UserLocation:
-        UGameplayStatics::PlaySoundAtLocation(this, Sound, ListenerLoc, Volume, Pitch, 0.0f, AttenuationSettings);
+        UGameplayStatics::PlaySoundAtLocation(this, Sound, ListenerLoc, Volume, Pitch, 0.0f, nullptr);
         break;
 
     case EItemSoundPlaybackMode::EventLocation:
     default:
-        UGameplayStatics::PlaySoundAtLocation(this, Sound, EventLocation, Volume, Pitch, 0.0f, AttenuationSettings);
+        UGameplayStatics::PlaySoundAtLocation(this, Sound, EventLocation, Volume, Pitch, 0.0f, nullptr);
         break;
     }
 }
 
-void ADownfallCharacter::PlayCharacterSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float FallbackVolumeMultiplier, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation, USoundAttenuation* AttenuationSettings) const
+void ADownfallCharacter::PlayCharacterSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float FallbackVolumeMultiplier, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const
 {
     const FDFPickedSound Picked = DF_SelectSoundVariant(SoundVariants, FallbackSound, FallbackVolumeMultiplier, FallbackPitchMultiplier);
-    PlayCharacterSound(Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, PlaybackMode, EventLocation, AttenuationSettings);
+    PlayCharacterSound(Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, PlaybackMode, EventLocation);
 }
 
 void ADownfallCharacter::PlayItemEquipSoundAtSlot(int32 SlotIndex) const
@@ -3312,7 +3324,7 @@ void ADownfallCharacter::PlayItemEquipSoundAtSlot(int32 SlotIndex) const
         return;
     }
 
-    PlayCharacterSound(Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, Def->EquipSoundPlaybackMode, GetActorLocation(), Def->SpatialSoundAttenuation);
+    PlayCharacterSound(Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, Def->EquipSoundPlaybackMode, GetActorLocation());
 }
 
 void ADownfallCharacter::PlayItemUnequipSoundAtSlot(int32 SlotIndex) const
@@ -3334,7 +3346,7 @@ void ADownfallCharacter::PlayItemUnequipSoundAtSlot(int32 SlotIndex) const
         return;
     }
 
-    PlayCharacterSound(Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, Def->UnequipSoundPlaybackMode, GetActorLocation(), Def->SpatialSoundAttenuation);
+    PlayCharacterSound(Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, Def->UnequipSoundPlaybackMode, GetActorLocation());
 }
 
 void ADownfallCharacter::PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const
@@ -3356,7 +3368,241 @@ void ADownfallCharacter::PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVec
         return;
     }
 
-    PlayCharacterSound(Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, Def->ActivateSoundPlaybackMode, Location, Def->SpatialSoundAttenuation);
+    PlayCharacterSound(Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, Def->ActivateSoundPlaybackMode, Location);
+}
+
+
+void ADownfallCharacter::PlayCharacterStateSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float VolumeMultiplier, float PitchMultiplier, const FVector& EventLocation)
+{
+    if (!bEnableCharacterStateSounds)
+    {
+        return;
+    }
+
+    PlayCharacterSound(SoundVariants, FallbackSound, VolumeMultiplier, PitchMultiplier, EItemSoundPlaybackMode::Play2D, EventLocation);
+}
+
+const FStageBGMEntry* ADownfallCharacter::GetCurrentStageBGMEntry() const
+{
+    if (!StageBGMs.IsValidIndex(CurrentStageMusicIndex))
+    {
+        return nullptr;
+    }
+
+    return &StageBGMs[CurrentStageMusicIndex];
+}
+
+void ADownfallCharacter::SetStageMusicIndex(int32 NewStageIndex)
+{
+    CurrentStageMusicIndex = FMath::Clamp(NewStageIndex, 0, 2);
+    RefreshStageBGM(true);
+}
+
+void ADownfallCharacter::StopStageBGM()
+{
+    if (StageBGMComponent && IsValid(StageBGMComponent))
+    {
+        StageBGMComponent->Stop();
+        StageBGMComponent->DestroyComponent();
+    }
+
+    StageBGMComponent = nullptr;
+    PlayingStageMusicIndex = INDEX_NONE;
+    bStageBGMCurrentlyInsanity = false;
+}
+
+void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
+{
+    if (!bAutoPlayStageBGM)
+    {
+        StopStageBGM();
+        return;
+    }
+
+    const FStageBGMEntry* Entry = GetCurrentStageBGMEntry();
+    if (!Entry)
+    {
+        StopStageBGM();
+        return;
+    }
+
+    bool bWantInsanityBGM = false;
+    if (Entry->InsanityBGM)
+    {
+        if (bStageBGMCurrentlyInsanity)
+        {
+            bWantInsanityBGM = Insanity >= FMath::Max(0.0f, Entry->InsanityBGMThreshold - StageBGMInsanityReturnMargin);
+        }
+        else
+        {
+            bWantInsanityBGM = Insanity >= Entry->InsanityBGMThreshold;
+        }
+    }
+
+    USoundBase* TargetBGM = bWantInsanityBGM ? Entry->InsanityBGM.Get() : Entry->NormalBGM.Get();
+    const float TargetVolume = FMath::Max(0.0f, Entry->VolumeMultiplier);
+
+    if (!TargetBGM)
+    {
+        StopStageBGM();
+        return;
+    }
+
+    if (!bForceRestart && StageBGMComponent && IsValid(StageBGMComponent) &&
+        StageBGMComponent->Sound == TargetBGM &&
+        PlayingStageMusicIndex == CurrentStageMusicIndex &&
+        bStageBGMCurrentlyInsanity == bWantInsanityBGM)
+    {
+        return;
+    }
+
+    if (StageBGMComponent && IsValid(StageBGMComponent))
+    {
+        StageBGMComponent->Stop();
+        StageBGMComponent->DestroyComponent();
+        StageBGMComponent = nullptr;
+    }
+
+    StageBGMComponent = UGameplayStatics::SpawnSound2D(this, TargetBGM, TargetVolume, 1.0f, 0.0f, nullptr, false, false);
+    if (StageBGMComponent && IsValid(StageBGMComponent))
+    {
+        StageBGMComponent->bAutoDestroy = false;
+        if (StageBGMFadeInSeconds > 0.0f)
+        {
+            StageBGMComponent->FadeIn(StageBGMFadeInSeconds, TargetVolume, 0.0f);
+        }
+        else
+        {
+            StageBGMComponent->SetVolumeMultiplier(TargetVolume);
+            StageBGMComponent->Play(0.0f);
+        }
+    }
+
+    PlayingStageMusicIndex = CurrentStageMusicIndex;
+    bStageBGMCurrentlyInsanity = bWantInsanityBGM;
+}
+
+void ADownfallCharacter::UpdateCharacterStateSounds(float DeltaTime)
+{
+    if (!bEnableCharacterStateSounds)
+    {
+        RefreshStageBGM(false);
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    const float Now = World->GetTimeSeconds();
+    UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+    UCapsuleComponent* Capsule = GetCapsuleComponent();
+
+    const bool bLeftGripping = LeftHand.State == EHandState::Gripping;
+    const bool bRightGripping = RightHand.State == EHandState::Gripping;
+    const bool bAnyHandGripping = bLeftGripping || bRightGripping;
+
+    if (bAnyHandGripping)
+    {
+        float ActiveStamina = MaxStamina;
+        bool bHasStaminaSource = false;
+
+        if (bLeftGripping)
+        {
+            ActiveStamina = LeftHand.Stamina;
+            bHasStaminaSource = true;
+        }
+
+        if (bRightGripping)
+        {
+            ActiveStamina = bHasStaminaSource ? FMath::Min(ActiveStamina, RightHand.Stamina) : RightHand.Stamina;
+            bHasStaminaSource = true;
+        }
+
+        float TargetInterval = 0.0f;
+        if (ActiveStamina <= LowStaminaThreshold3)
+        {
+            TargetInterval = LowStaminaInterval3;
+        }
+        else if (ActiveStamina <= LowStaminaThreshold2)
+        {
+            TargetInterval = LowStaminaInterval2;
+        }
+        else if (ActiveStamina <= LowStaminaThreshold1)
+        {
+            TargetInterval = LowStaminaInterval1;
+        }
+
+        if (TargetInterval > 0.0f && (Now - LastLowStaminaSoundTime) >= TargetInterval)
+        {
+            LastLowStaminaSoundTime = Now;
+            PlayCharacterStateSound(LowStaminaSoundVariants, LowStaminaSound, LowStaminaSoundVolumeMultiplier, LowStaminaSoundPitchMultiplier, GetActorLocation());
+        }
+    }
+
+    float InsanityInterval = 0.0f;
+    if (Insanity >= InsanitySoundThreshold2)
+    {
+        InsanityInterval = InsanitySoundInterval2;
+    }
+    else if (Insanity >= InsanitySoundThreshold1)
+    {
+        InsanityInterval = InsanitySoundInterval1;
+    }
+
+    if (InsanityInterval > 0.0f && (Now - LastInsanityStateSoundTime) >= InsanityInterval)
+    {
+        LastInsanityStateSoundTime = Now;
+        PlayCharacterStateSound(InsanityLoopSoundVariants, InsanityLoopSound, InsanityLoopSoundVolumeMultiplier, InsanityLoopSoundPitchMultiplier, GetActorLocation());
+    }
+
+    const FVector CurrentVelocity = Capsule && Capsule->IsSimulatingPhysics()
+        ? Capsule->GetPhysicsLinearVelocity()
+        : GetVelocity();
+
+    const float GroundSpeed = FVector(CurrentVelocity.X, CurrentVelocity.Y, 0.0f).Size();
+    const bool bOnGround = MoveComp && MoveComp->IsMovingOnGround();
+    const bool bCanPlayWalkSound = bOnGround && !bIsClimbing && GroundSpeed >= WalkSoundMinSpeed;
+
+    if (bCanPlayWalkSound && (Now - LastWalkSoundTime) >= WalkSoundInterval)
+    {
+        LastWalkSoundTime = Now;
+        PlayCharacterStateSound(WalkSoundVariants, WalkSound, WalkSoundVolumeMultiplier, WalkSoundPitchMultiplier, GetActorLocation());
+    }
+
+    const bool bMovementFalling = MoveComp && MoveComp->IsFalling();
+    const bool bPhysicsFalling = Capsule && Capsule->IsSimulatingPhysics() && !bIsClimbing && CurrentVelocity.Z < -50.0f;
+    const bool bCurrentlyFalling = bMovementFalling || bPhysicsFalling;
+    const bool bAnchorInUse = bSafetyLineAttached || bSafetyLineTriggered || bSafetyLineConstraintEngaged || ActiveUsingAnchorSlotIndex != INDEX_NONE;
+
+    if (bCurrentlyFalling)
+    {
+        CharacterStateFallElapsedSeconds += DeltaTime;
+
+        if (!bAnchorInUse && CharacterStateFallElapsedSeconds >= LongFallSoundStartSeconds &&
+            (Now - LastLongFallSoundTime) >= LongFallSoundInterval)
+        {
+            LastLongFallSoundTime = Now;
+            PlayCharacterStateSound(LongFallSoundVariants, LongFallSound, LongFallSoundVolumeMultiplier, LongFallSoundPitchMultiplier, GetActorLocation());
+        }
+    }
+    else
+    {
+        if (bCharacterStateWasFalling && CharacterStateFallElapsedSeconds > 0.05f)
+        {
+            const float Alpha = FMath::Clamp(CharacterStateFallElapsedSeconds / FMath::Max(0.01f, LandSoundFullVolumeFallSeconds), 0.0f, 1.0f);
+            const float LandVolume = FMath::Lerp(LandSoundMinVolumeMultiplier, LandSoundMaxVolumeMultiplier, Alpha);
+            PlayCharacterStateSound(LandSoundVariants, LandSound, LandVolume, LandSoundPitchMultiplier, GetActorLocation());
+        }
+
+        CharacterStateFallElapsedSeconds = 0.0f;
+    }
+
+    bCharacterStateWasFalling = bCurrentlyFalling;
+
+    RefreshStageBGM(false);
 }
 
 void ADownfallCharacter::RefreshInventoryUIState()
