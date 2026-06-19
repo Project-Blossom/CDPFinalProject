@@ -1150,6 +1150,13 @@ public:
     UPROPERTY()
     TObjectPtr<UAltitudeWidget> AltitudeWidget;
 
+    // ── Insanity Gauge UI ───────────────────────────────────────
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Insanity")
+    TSubclassOf<class UInsanityWidget> InsanityWidgetClass;
+
+    UPROPERTY()
+    TObjectPtr<class UInsanityWidget> InsanityWidget;
+
     // ── Wireframe Minimap (WBP_AltitudeIndicator 대체) ─────────
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Minimap")
     TSubclassOf<class UMinimapWidget> MinimapWidgetClass;

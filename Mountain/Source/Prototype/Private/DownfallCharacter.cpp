@@ -26,6 +26,7 @@
 #include "Item/ItemSubsystem.h"
 #include "Item/ItemDefinition.h"
 #include "UI/AltitudeWidget.h"
+#include "UI/InsanityWidget.h"
 #include "UI/PauseMenuWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "MountainGenWorldActor.h"
@@ -521,7 +522,6 @@ void ADownfallCharacter::BeginPlay()
         {
             AltitudeWidget->AddToViewport();
             UE_LOG(LogDownFall, Log, TEXT("Altitude Widget created and added to viewport"));
-
             // ── WBP_Minimap 생성 및 뷰포트 추가 ──────────────────────────
             if (MinimapWidgetClass)
             {
@@ -584,10 +584,24 @@ void ADownfallCharacter::BeginPlay()
         UE_LOG(LogDownFall, Warning, TEXT("AltitudeWidgetClass not assigned"));
     }
 
+    // Insanity Widget
+    if (InsanityWidgetClass)
+    {
+        InsanityWidget = CreateWidget<UInsanityWidget>(GetWorld(), InsanityWidgetClass);
+        if (InsanityWidget)
+        {
+            InsanityWidget->AddToViewport();
+            UE_LOG(LogDownFall, Log, TEXT("Insanity Widget created and added to viewport"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogDownFall, Warning, TEXT("InsanityWidgetClass not assigned - set in BP_DownfallCharacter (UI|Insanity)"));
+    }
+
     ApplyDirtMaskParameters(true);
     ApplyEdgeBlurParameters(true);
     UpdateAltitudeUI();
-
     InitialGroundHeight = GetGroundHeight();
     UE_LOG(LogDownFall, Log, TEXT("Initial ground height: %.2f"), InitialGroundHeight);
 
@@ -616,6 +630,13 @@ void ADownfallCharacter::Tick(float DeltaTime)
 
     UpdateStamina(DeltaTime);
     UpdateInsanity(DeltaTime);
+
+    // Insanity Gauge UI 갱신 (매 프레임 — Tick 기반 자연 증감 반영)
+    if (InsanityWidget)
+    {
+        InsanityWidget->UpdateInsanityGauge(Insanity, MaxInsanity);
+    }
+
     TickRoadSlide(DeltaTime);
     UpdateClimbingState();
     UpdateSafetyLine(DeltaTime);
@@ -2413,12 +2434,20 @@ void ADownfallCharacter::AddInsanity(float Amount)
             {
                 // 80 이상으로 변경됨
                 AltitudeWidget->EnableGlitchMode();
+                if (InsanityWidget)
+                {
+                    InsanityWidget->EnableGlitchMode();
+                }
                 UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f (+%.1f): Altitude Glitch ENABLED"), Insanity, Amount);
             }
             else
             {
                 // 80 미만으로 변경됨 (음수로 감소 시)
                 AltitudeWidget->DisableGlitchMode();
+                if (InsanityWidget)
+                {
+                    InsanityWidget->DisableGlitchMode();
+                }
                 UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f (+%.1f): Altitude Glitch DISABLED"), Insanity, Amount);
             }
 
@@ -2465,12 +2494,20 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
             {
                 // 80 이상으로 변경됨
                 AltitudeWidget->EnableGlitchMode();
+                if (InsanityWidget)
+                {
+                    InsanityWidget->EnableGlitchMode();
+                }
                 UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f: Altitude Glitch ENABLED"), Insanity);
             }
             else
             {
                 // 80 미만으로 변경됨
                 AltitudeWidget->DisableGlitchMode();
+                if (InsanityWidget)
+                {
+                    InsanityWidget->DisableGlitchMode();
+                }
                 UE_LOG(LogDownFall, Warning, TEXT("Insanity %.1f: Altitude Glitch DISABLED"), Insanity);
             }
 
