@@ -1178,6 +1178,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
     bool bCaptureWithWireframeShowFlag = false;
 
+    // SceneCapture2D의 위치/회전을 코드에서 자동 계산하지 않고
+    // 에디터에서 배치한 값을 그대로 사용할지 여부.
+    // true로 설정하면 AutoConfigureMinimapCapture()는 OrthoWidth, ShowFlags,
+    // CaptureScene()만 처리하고 Transform은 건드리지 않는다.
+    // 레벨마다 암벽 위치/방향이 달라 자동 계산이 어긋나는 경우 사용.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    bool bUseManualSceneCaptureTransform = false;
+
     // 캡처 시 조명 영향 여부 (false = Unlit, 와이어프레임 미니맵에 권장)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
     bool bCaptureWithLighting = false;

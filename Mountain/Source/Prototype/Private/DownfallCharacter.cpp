@@ -4894,16 +4894,42 @@ void ADownfallCharacter::AutoConfigureMinimapCapture() {
                 CliffTotalHeight = DetectedHeight;
             }
 
-            // 암벽 전면(X+ 방향) 기준 5000cm 앞에 배치 — 암벽 내부 방지
-            const FVector CliffCenter = Origin;
-            const FVector CapturePos = CliffCenter + FVector(-(BoxExtent.X + 5000.f), 0.f, 0.f);
-            const FRotator CaptureRot = FRotator(0.f, 0.f, 0.f);
-
-            CachedSceneCapture->SetActorLocationAndRotation(CapturePos, CaptureRot);
-
-            // OrthoWidth: 폭과 높이 중 큰 값으로 설정 (전체 암벽 커버)
             const float OrthoWidth = FMath::Max(DetectedWidth, DetectedHeight);
-            CaptureComp->OrthoWidth = OrthoWidth;
+
+            if (bUseManualSceneCaptureTransform)
+            {
+                // 에디터에서 배치한 SceneCapture2D의 위치/회전을 그대로 사용.
+                // 암벽 위치/방향이 레벨마다 다를 때 강제 덮어쓰기로 인한
+                // 엉뚱한 캡처를 방지하기 위함.
+                CaptureComp->OrthoWidth = OrthoWidth;
+
+                UE_LOG(LogDownFall, Log,
+                    TEXT("Minimap: Manual Transform 모드 — OrthoWidth=%.0f만 적용, 위치/회전은 에디터 값 유지 (Pos=%s, Rot=%s)"),
+                    OrthoWidth,
+                    *CachedSceneCapture->GetActorLocation().ToString(),
+                    *CachedSceneCapture->GetActorRotation().ToString());
+            }
+            else
+            {
+                // 암벽 전면을 향하도록 SceneCapture를 자동 배치.
+                // 암벽의 ForwardVector를 기준으로 계산하여, 암벽이 어느 방향을
+                // 보고 있더라도 카메라가 정면에서 마주보도록 한다.
+                const FVector CliffCenter = Origin;
+                const FVector CliffForward = CachedMountainActor->GetActorForwardVector();
+
+                // 암벽 정면 반대쪽(카메라가 암벽을 바라보는 위치)으로 이동
+                const FVector CapturePos = CliffCenter - CliffForward * (BoxExtent.X + 5000.f);
+
+                // 암벽을 정면으로 바라보도록 회전 계산 (카메라 → 암벽 중심 방향)
+                const FRotator CaptureRot = (CliffCenter - CapturePos).Rotation();
+
+                CachedSceneCapture->SetActorLocationAndRotation(CapturePos, CaptureRot);
+                CaptureComp->OrthoWidth = OrthoWidth;
+
+                UE_LOG(LogDownFall, Log,
+                    TEXT("Minimap: Auto Transform — CliffForward=%s CapturePos=%s CaptureRot=%s"),
+                    *CliffForward.ToString(), *CapturePos.ToString(), *CaptureRot.ToString());
+            }
 
             // ── M_MinimapCliff DMI에 CliffFrontX/BackX 자동 설정 ──
             // Origin.X ± BoxExtent.X = 암벽 전면/후면 X 좌표
@@ -4935,8 +4961,8 @@ void ADownfallCharacter::AutoConfigureMinimapCapture() {
 
             bAutoDetected = true;
             UE_LOG(LogDownFall, Log,
-                TEXT("Minimap: AutoConfig — Width=%.0f Height=%.0f OrthoWidth=%.0f CapturePos=%s"),
-                CliffTotalWidth, CliffTotalHeight, OrthoWidth, *CapturePos.ToString());
+                TEXT("Minimap: AutoConfig — Width=%.0f Height=%.0f OrthoWidth=%.0f"),
+                CliffTotalWidth, CliffTotalHeight, OrthoWidth);
         }
     }
 
@@ -4965,8 +4991,9 @@ void ADownfallCharacter::AutoConfigureMinimapCapture() {
         bCaptureWithWireframeShowFlag ? TEXT("ON") : TEXT("OFF"));
 
     CaptureComp->CaptureScene();
-    UE_LOG(LogDownFall, Log, TEXT("Minimap: CaptureScene() 완료 [AutoDetect=%s]"),
-        bAutoDetected ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogDownFall, Log, TEXT("Minimap: CaptureScene() 완료 [AutoDetect=%s, ManualTransform=%s]"),
+        bAutoDetected ? TEXT("true") : TEXT("false"),
+        bUseManualSceneCaptureTransform ? TEXT("true") : TEXT("false"));
 
     // 중복 호출 방지 플래그 설정
     bMinimapCaptureConfigured = true;
