@@ -10,6 +10,7 @@ class UStaticMeshComponent;
 class UPrimitiveComponent;
 class UStaticMesh;
 class USoundBase;
+class USoundAttenuation;
 
 UCLASS(Blueprintable)
 class PROTOTYPE_API AItemDropActor : public AActor
@@ -44,6 +45,9 @@ public:
     bool bAutoPickupOnOverlap = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drop|Sound")
+    TObjectPtr<USoundAttenuation> PickupSoundAttenuation = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drop|Sound")
     TObjectPtr<USoundBase> PickupSound = nullptr;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drop|Sound")
@@ -52,12 +56,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drop|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float PickupSoundPitchMultiplier = 1.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drop|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float PickupSoundVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drop|Sound")
     EItemSoundPlaybackMode PickupSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
 
-    // 이전 버전 호환용. 새 설정은 PickupSoundPlaybackMode를 사용한다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drop|Sound")
-    bool bPickupSound2D = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Drop|Visual")
     bool bRotateInWorld = true;

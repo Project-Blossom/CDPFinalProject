@@ -5,30 +5,32 @@
 #include "Item/InventoryComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
+#include "Sound/SoundAttenuation.h"
 
 namespace
 {
     struct FDropPickedSound
     {
         USoundBase* Sound = nullptr;
+        float VolumeMultiplier = 1.0f;
         float PitchMultiplier = 1.0f;
     };
 
-    static FDropPickedSound SelectDropSoundVariant(const TArray<FItemSoundVariant>& Variants, USoundBase* FallbackSound, float FallbackPitchMultiplier)
+    static FDropPickedSound SelectDropSoundVariant(const TArray<FItemSoundVariant>& Variants, USoundBase* FallbackSound, float FallbackVolumeMultiplier, float FallbackPitchMultiplier)
     {
         TArray<FDropPickedSound> ValidSounds;
         ValidSounds.Reserve(Variants.Num() + 1);
 
         if (FallbackSound)
         {
-            ValidSounds.Add({ FallbackSound, FMath::Max(0.01f, FallbackPitchMultiplier) });
+            ValidSounds.Add({ FallbackSound, FMath::Max(0.0f, FallbackVolumeMultiplier), FMath::Max(0.01f, FallbackPitchMultiplier) });
         }
 
         for (const FItemSoundVariant& Variant : Variants)
         {
             if (Variant.Sound)
             {
-                ValidSounds.Add({ Variant.Sound.Get(), FMath::Max(0.01f, Variant.PitchMultiplier) });
+                ValidSounds.Add({ Variant.Sound.Get(), FMath::Max(0.0f, Variant.VolumeMultiplier), FMath::Max(0.01f, Variant.PitchMultiplier) });
             }
         }
 
@@ -38,6 +40,20 @@ namespace
         }
 
         return FDropPickedSound();
+    }
+
+    static float ApplyDropManualDistanceVolume(const AActor* ListenerActor, float VolumeMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation)
+    {
+        const float BaseVolume = FMath::Max(0.0f, VolumeMultiplier);
+
+        if (!ListenerActor || PlaybackMode == EItemSoundPlaybackMode::Play2D)
+        {
+            return BaseVolume;
+        }
+
+        const float DistanceCm = FVector::Dist(ListenerActor->GetActorLocation(), EventLocation);
+        const float DistanceDenominator = 1.0f + (DistanceCm / 1000.0f);
+        return BaseVolume / FMath::Max(1.0f, DistanceDenominator);
     }
 }
 
@@ -142,22 +158,25 @@ bool AItemDropActor::TryPickup(AActor* Picker)
 
     if (Inv->TryAdd(ItemId, Count))
     {
-        const FDropPickedSound PickedSound = SelectDropSoundVariant(PickupSoundVariants, PickupSound, PickupSoundPitchMultiplier);
+        const FDropPickedSound PickedSound = SelectDropSoundVariant(PickupSoundVariants, PickupSound, PickupSoundVolumeMultiplier, PickupSoundPitchMultiplier);
         if (PickedSound.Sound)
         {
+            const FVector EventLocation = GetActorLocation();
+            const float FinalVolume = ApplyDropManualDistanceVolume(Picker, PickedSound.VolumeMultiplier, PickupSoundPlaybackMode, EventLocation);
+
             switch (PickupSoundPlaybackMode)
             {
             case EItemSoundPlaybackMode::Play2D:
-                UGameplayStatics::PlaySound2D(this, PickedSound.Sound, 1.0f, PickedSound.PitchMultiplier);
+                UGameplayStatics::PlaySound2D(this, PickedSound.Sound, FinalVolume, PickedSound.PitchMultiplier);
                 break;
 
             case EItemSoundPlaybackMode::UserLocation:
-                UGameplayStatics::PlaySoundAtLocation(this, PickedSound.Sound, Picker->GetActorLocation(), 1.0f, PickedSound.PitchMultiplier);
+                UGameplayStatics::PlaySoundAtLocation(this, PickedSound.Sound, Picker->GetActorLocation(), FinalVolume, PickedSound.PitchMultiplier, 0.0f, PickupSoundAttenuation);
                 break;
 
             case EItemSoundPlaybackMode::EventLocation:
             default:
-                UGameplayStatics::PlaySoundAtLocation(this, PickedSound.Sound, GetActorLocation(), 1.0f, PickedSound.PitchMultiplier);
+                UGameplayStatics::PlaySoundAtLocation(this, PickedSound.Sound, EventLocation, FinalVolume, PickedSound.PitchMultiplier, 0.0f, PickupSoundAttenuation);
                 break;
             }
         }

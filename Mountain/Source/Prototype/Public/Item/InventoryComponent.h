@@ -8,6 +8,7 @@
 class UItemDefinition;
 class UTexture2D;
 class USceneComponent;
+class UMaterialInterface;
 class AActor;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
@@ -165,6 +166,14 @@ private:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
     float PreviewUpdateInterval = 0.0f;
 
+    // 프리뷰 액터를 실제 설치 액터처럼 보이지 않게 만들기 위한 고스트 머티리얼.
+    // 비워두면 기존 머티리얼에 Opacity/Alpha 파라미터만 시도한다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview|Ghost", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UMaterialInterface> PreviewGhostMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Preview|Ghost", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+    float PreviewGhostOpacity = 0.35f;
+
     float PreviewAccum = 0.0f;
 
 private:
@@ -182,6 +191,7 @@ private:
     bool ShouldRunPreview() const;
     AActor* GetPreviewUserActor() const;
     void EnsurePreviewActor();
+    void ApplyPreviewGhostVisuals(AActor* InPreviewActor);
     void DestroyPreviewActor();
     void UpdatePreview(float DeltaTime);
     bool ComputePreviewTransform(int32 Index, AActor* User, FTransform& OutXform, FText& OutFailReason) const;

@@ -1,4 +1,3 @@
-// File: Source/prototype/Public/DownfallCharacter.h
 #pragma once
 
 #include "CoreMinimal.h"
@@ -32,6 +31,7 @@ class UStaticMesh;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class USoundBase;
+class USoundAttenuation;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDownFall, Log, All);
 
@@ -395,6 +395,15 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
     int32 HeldSlotIndex = INDEX_NONE;
 
+    UPROPERTY(Transient)
+    bool bIsConfirmingPlacement = false;
+
+    UPROPERTY(Transient)
+    float LastPlacementConfirmTime = -1000.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Placement", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "0.3"))
+    float PlacementConfirmInputLockSeconds = 0.08f;
+
     UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
     int32 ActiveUsingAnchorSlotIndex = INDEX_NONE;
 
@@ -418,6 +427,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float InventoryOpenSoundPitchMultiplier = 1.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float InventoryOpenSoundVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
     EItemSoundPlaybackMode InventoryOpenSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
 
@@ -429,6 +441,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float InventoryCloseSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float InventoryCloseSoundVolumeMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
     EItemSoundPlaybackMode InventoryCloseSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
@@ -442,6 +457,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float InventoryCursorMoveSoundPitchMultiplier = 1.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float InventoryCursorMoveSoundVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
     EItemSoundPlaybackMode InventoryCursorMoveSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
 
@@ -453,6 +471,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float EmptyHandSelectSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float EmptyHandSelectSoundVolumeMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Sound")
     EItemSoundPlaybackMode EmptyHandSelectSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
@@ -1300,8 +1321,8 @@ protected:
     void ClearEquippedUtilitySlot();
     bool IsValidInventorySlotIndex(int32 Index) const;
     bool IsPlaceableSlot(int32 Index) const;
-    void PlayCharacterSound(USoundBase* Sound, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const;
-    void PlayCharacterSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation) const;
+    void PlayCharacterSound(USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation, USoundAttenuation* AttenuationSettings = nullptr) const;
+    void PlayCharacterSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float FallbackVolumeMultiplier, float FallbackPitchMultiplier, EItemSoundPlaybackMode PlaybackMode, const FVector& EventLocation, USoundAttenuation* AttenuationSettings = nullptr) const;
     void PlayItemEquipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemUnequipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const;

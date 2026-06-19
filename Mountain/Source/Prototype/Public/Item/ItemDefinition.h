@@ -7,14 +7,15 @@
 
 class UTexture2D;
 class USoundBase;
+class USoundAttenuation;
 class AActor;
 
 UENUM(BlueprintType)
 enum class EItemSoundPlaybackMode : uint8
 {
     Play2D        UMETA(DisplayName = "2D"),
-    UserLocation  UMETA(DisplayName = "User / Player Location"),
-    EventLocation UMETA(DisplayName = "Event / World Location")
+    UserLocation  UMETA(DisplayName = "Player"),
+    EventLocation UMETA(DisplayName = "World")
 };
 
 USTRUCT(BlueprintType)
@@ -24,6 +25,9 @@ struct FItemSoundVariant
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
     TObjectPtr<USoundBase> Sound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float VolumeMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float PitchMultiplier = 1.0f;
@@ -80,6 +84,12 @@ public:
     //   EventLocation: plays at the actual action location, such as installed bolt/anchor position.
     // =====================================================
 
+    // World/Player 모드는 코드에서 거리별 볼륨 감쇠를 적용한다.
+    // 규칙: 0m = 원본, 5m = 1/1.5, 10m = 1/2, 20m = 1/3.
+    // 필요하면 추가로 Sound Attenuation 에셋을 넣어 공간감 설정을 보완할 수 있다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Spatial")
+    TObjectPtr<USoundAttenuation> SpatialSoundAttenuation = nullptr;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Use")
     TObjectPtr<USoundBase> UseSound = nullptr;
 
@@ -91,12 +101,12 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Use", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float UseSoundPitchMultiplier = 1.0f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Use", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float UseSoundVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Use")
     EItemSoundPlaybackMode UseSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
 
-    // 이전 버전 호환용. 새 설정은 UseSoundPlaybackMode를 사용한다.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Use")
-    bool bUseSoundAtUserLocation = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Equip")
     TObjectPtr<USoundBase> EquipSound = nullptr;
@@ -106,6 +116,9 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Equip", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float EquipSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Equip", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float EquipSoundVolumeMultiplier = 1.0f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Equip")
     EItemSoundPlaybackMode EquipSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
@@ -118,6 +131,9 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Equip", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float UnequipSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Equip", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float UnequipSoundVolumeMultiplier = 1.0f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Equip")
     EItemSoundPlaybackMode UnequipSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
@@ -132,6 +148,9 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Place", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float PlaceSoundPitchMultiplier = 1.0f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Place", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float PlaceSoundVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Place")
     EItemSoundPlaybackMode PlaceSoundPlaybackMode = EItemSoundPlaybackMode::EventLocation;
 
@@ -145,6 +164,9 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Activate", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float ActivateSoundPitchMultiplier = 1.0f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Activate", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float ActivateSoundVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Activate")
     EItemSoundPlaybackMode ActivateSoundPlaybackMode = EItemSoundPlaybackMode::EventLocation;
 
@@ -153,4 +175,10 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Place", meta = (EditCondition = "UseType==EItemUseType::PlaceActor || UseType==EItemUseType::AttachAnchorToBolt"))
     TSubclassOf<AActor> PlaceActorClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Place|Preview", meta = (EditCondition = "UseType==EItemUseType::PlaceActor || UseType==EItemUseType::AttachAnchorToBolt"))
+    TSubclassOf<AActor> PreviewActorClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Place|Restriction", meta = (EditCondition = "UseType==EItemUseType::PlaceActor"))
+    bool bPlaceOnlyOnCliffSurface = true;
 };
