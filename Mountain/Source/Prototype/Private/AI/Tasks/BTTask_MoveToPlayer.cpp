@@ -34,6 +34,23 @@ EBTNodeResult::Type UBTTask_MoveToPlayer::ExecuteTask(UBehaviorTreeComponent& Ow
         return EBTNodeResult::Failed;
     }
 
+    // 시작 시점에 이미 추적 한계 거리를 벗어나 있으면 즉시 실패
+    if (MaxTrackingDistance > 0.0f)
+    {
+        AAIController* StartController = OwnerComp.GetAIOwner();
+        APawn* StartPawn = StartController ? StartController->GetPawn() : nullptr;
+        if (StartPawn)
+        {
+            const float StartDistance = FVector::Dist(StartPawn->GetActorLocation(), TargetPlayer->GetActorLocation());
+            if (StartDistance > MaxTrackingDistance)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("BTTask_MoveToPlayer: Player out of tracking range (%.0f > %.0f) - FAILED"),
+                    StartDistance, MaxTrackingDistance);
+                return EBTNodeResult::Failed;
+            }
+        }
+    }
+
     return EBTNodeResult::InProgress;
 }
 
@@ -69,6 +86,15 @@ void UBTTask_MoveToPlayer::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
 
     FVector PlayerLocation = TargetPlayer->GetActorLocation();
     float Distance = FVector::Dist(Monster->GetActorLocation(), PlayerLocation);
+
+    // 추적 도중 한계 거리를 벗어나면 포기 (FlyingPlatform 운반 중 무한 추적 방지)
+    if (MaxTrackingDistance > 0.0f && Distance > MaxTrackingDistance)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("%s lost player - out of tracking range (%.0f > %.0f)"),
+            *Monster->GetName(), Distance, MaxTrackingDistance);
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
+    }
     
     // [DEBUG] 추적 상태 시각화
 #if !UE_BUILD_SHIPPING

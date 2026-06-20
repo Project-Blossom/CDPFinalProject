@@ -24,4 +24,10 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "Movement")
     float MovementSpeed = 400.0f;
+
+    // 플레이어까지의 거리가 이 값을 초과하면 추적을 포기하고 Failed를 반환한다.
+    // 0 이하로 두면 기존과 동일하게 거리 제한 없이 무한 추적한다.
+    // FlyingPlatform이 WallCrawler를 운반하며 플레이어를 어디서든 쫓아가는 문제를 막기 위해 추가.
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float MaxTrackingDistance = 0.0f;
 };
