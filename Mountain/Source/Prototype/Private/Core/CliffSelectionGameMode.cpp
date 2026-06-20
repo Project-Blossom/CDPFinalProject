@@ -209,6 +209,9 @@ void ACliffSelectionGameMode::HandleCliffGenerated(AActor* Generator)
     }
 }
 
+/*
+// [DEAD CODE] 실제 선택 확정 흐름은 ACliffSelectionPawn::OnConfirmSelection에서 처리됨.
+// 이 GameMode 버전은 어디서도 호출되지 않아 주석 처리함.
 void ACliffSelectionGameMode::OnConfirmSelection(int32 SelectedCliffIndex)
 {
     UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>();
@@ -262,6 +265,7 @@ void ACliffSelectionGameMode::OnConfirmSelection(int32 SelectedCliffIndex)
 
     UGameplayStatics::OpenLevel(this, NextLevel);
 }
+*/
 
 void ACliffSelectionGameMode::RerollCliffs()
 {

@@ -48,10 +48,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "CliffSelection")
     bool IsAllCliffsGenerated() const { return CompletedCliffCount >= ExpectedCliffCount && ExpectedCliffCount > 0; }
 
-    // 플레이어가 암벽을 선택(Enter)했을 때 호출
-    // CurrentStageIndex 기준으로 다음 스테이지 레벨로 전환
-    UFUNCTION(BlueprintCallable, Category = "CliffSelection")
-    void OnConfirmSelection(int32 SelectedCliffIndex);
+    // [DEAD CODE] 실제 선택 확정 흐름은 ACliffSelectionPawn::OnConfirmSelection에서 처리됨
+    // (Seed 저장 -> CurrentStageIndex 증가 -> LoadingUI 플래그 -> OpenLevel 모두 Pawn 쪽에서 수행).
+    // 이 GameMode 버전은 어디서도 호출되지 않아 주석 처리함.
+    //UFUNCTION(BlueprintCallable, Category = "CliffSelection")
+    //void OnConfirmSelection(int32 SelectedCliffIndex);
 
     // 3개 암벽의 배치 각도 (좌/중/우) - Pawn의 카메라 록온 회전에 사용
     UFUNCTION(BlueprintPure, Category = "CliffSelection")
