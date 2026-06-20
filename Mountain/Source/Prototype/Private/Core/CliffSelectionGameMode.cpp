@@ -203,6 +203,20 @@ void ACliffSelectionGameMode::HandleCliffGenerated(AActor* Generator)
         CompletedCliffCount, ExpectedCliffCount,
         *Generator->GetName());
 
+    // [DEBUG] CliffSelection<->Stage Seed 동기화 검증용.
+    // Cliff->Settings.Seed는 ApplyGeneratedMeshResult에서 SeedSearch 이후 FinalSeed로 덮어써진 값.
+    // GI에 저장된 원본 GeneratedSeeds[index]와 비교해 CliffSelection 단계에서부터 이미
+    // 요청 Seed와 실제 렌더링된 Seed가 어긋나는지 확인한다.
+    {
+        const int32 Index = SpawnedCliffs.IndexOfByKey(Cliff);
+        UDownfallGameInstance* GIDebug = GetGameInstance<UDownfallGameInstance>();
+        const TArray<int32>& DebugSeeds = GIDebug ? GIDebug->GetGeneratedSeeds() : TArray<int32>();
+        const int32 RequestedSeed = DebugSeeds.IsValidIndex(Index) ? DebugSeeds[Index] : -1;
+        UE_LOG(LogTemp, Warning, TEXT("CliffSelectionGameMode: SeedCheck Index=%d RequestedSeed=%d ActualRenderedSeed=%d %s"),
+            Index, RequestedSeed, Cliff->Settings.Seed,
+            (RequestedSeed == Cliff->Settings.Seed) ? TEXT("MATCH") : TEXT("MISMATCH"));
+    }
+
     if (CompletedCliffCount >= ExpectedCliffCount)
     {
         OnAllCliffsGenerated.Broadcast();

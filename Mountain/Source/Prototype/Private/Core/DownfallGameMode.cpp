@@ -206,6 +206,19 @@ void ADownfallGameMode::OnCliffGenerationComplete(AActor* Generator)
     // 암벽 생성 완료 → Loading UI 제거 후 스테이지 시작
     UE_LOG(LogTemp, Warning, TEXT("StageGameMode: Cliff generation complete, hiding loading UI"));
 
+    // [DEBUG] CliffSelection<->Stage Seed 동기화 검증용. GI->GetSelectedSeed()는
+    // CliffSelection에서 확정한 요청 Seed, MountainActor->Settings.Seed는
+    // 이 콜백 시점에 실제로 적용된(SeedSearch 이후일 수 있는) 최종 Seed.
+    {
+        UDownfallGameInstance* GIDebug = Cast<UDownfallGameInstance>(GetGameInstance());
+        AMountainGenWorldActor* MountainActorDebug = Cast<AMountainGenWorldActor>(Generator);
+        const int32 RequestedSeed = GIDebug ? GIDebug->GetSelectedSeed() : -1;
+        const int32 ActualSeed = MountainActorDebug ? MountainActorDebug->Settings.Seed : -1;
+        UE_LOG(LogTemp, Warning, TEXT("StageGameMode: SeedCheck RequestedSeed(GI)=%d ActualSeed(Mountain)=%d %s"),
+            RequestedSeed, ActualSeed,
+            (RequestedSeed == ActualSeed) ? TEXT("MATCH") : TEXT("MISMATCH"));
+    }
+
     HideLoadingWidget();
     StartStageAfterLoading();
 }

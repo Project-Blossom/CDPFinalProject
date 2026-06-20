@@ -1307,6 +1307,12 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
     UE_LOG(LogTemp, Warning, TEXT("[MountainGen][%s] ApplyGeneratedMeshResult: MeshData OK (V=%d T=%d), ActorLocation=%s"),
         *GetName(), Result.MeshData.Vertices.Num(), Result.MeshData.Triangles.Num(), *GetActorLocation().ToString());
 
+    // [DEBUG] CliffSelection<->Stage Seed 동기화 검증용. Settings.Seed는 아래에서 Result.FinalSettings.Seed로
+    // 덮어써지기 전까지는 호출 시점에 요청된(Regenerate 전 설정된) Seed 값을 그대로 보존하고 있다.
+    UE_LOG(LogTemp, Warning, TEXT("[MountainGen][%s] SeedCheck(Runtime): RequestedSeed=%d FinalSeed=%d %s"),
+        *GetName(), Settings.Seed, Result.FinalSettings.Seed,
+        (Settings.Seed == Result.FinalSettings.Seed) ? TEXT("MATCH") : TEXT("MISMATCH"));
+
     // Build shared surface metadata/report for runtime-generated results.
     GeneratedSurfaceSamples.Reset();
     LastGenerationReport = FMGGenerationReport();
@@ -1759,6 +1765,10 @@ void AMountainGenWorldActor::BuildChunkAndMesh()
         ApplyVoxelMaterialParameters();
 
         Settings.Seed = S.Seed;
+
+        UE_LOG(LogTemp, Warning, TEXT("[MountainGen][%s] SeedCheck(EditorSync): RequestedSeed=%d FinalSeed=%d %s"),
+            *GetName(), InputSeed, S.Seed,
+            (InputSeed == S.Seed) ? TEXT("MATCH") : TEXT("MISMATCH"));
 
         UpdateGeneratedMeshStateAndBroadcast();
 

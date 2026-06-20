@@ -175,19 +175,35 @@ void ACliffSelectionPawn::OnConfirmSelection(const FInputActionValue& Value)
     }
 
     GI->SetSelectedSeed(Seeds[CurrentIndex]);
-    GI->SetCurrentStageIndex(GI->GetCurrentStageIndex() + 1);
+    const int32 NextStageIndex = GI->GetCurrentStageIndex() + 1;
+    GI->SetCurrentStageIndex(NextStageIndex);
     GI->SetShowLoadingUI(true);  // 다음 스테이지 BeginPlay에서 Loading UI 표시
 
-    UE_LOG(LogTemp, Warning, TEXT("CliffSelectionPawn: Confirmed Seed=%d Index=%d → NextStage=%s"),
-        Seeds[CurrentIndex], CurrentIndex, *NextStageLevelName.ToString());
-
-    if (NextStageLevelName.IsNone())
+    // CurrentStageIndex 기준으로 다음 레벨을 동적으로 결정.
+    // NextStageLevelName(BP 고정값)을 그대로 쓰면 CliffSelection 레벨을 여러 스테이지가
+    // 공유하는 구조상 항상 같은 레벨로만 이동하는 문제가 생기므로 StageIndex 기반으로 계산한다.
+    FName ResolvedNextLevel;
+    if (NextStageIndex == 2)
     {
-        UE_LOG(LogTemp, Error, TEXT("CliffSelectionPawn: NextStageLevelName not set"));
-        return;
+        ResolvedNextLevel = FName("Stage_2");
+    }
+    else if (NextStageIndex == 3)
+    {
+        ResolvedNextLevel = FName("Stage_3");
+    }
+    else
+    {
+        // Ending 미구현 — 현재는 Stage_3 유지. BP에서 NextStageLevelName을 별도로
+        // 지정해둔 경우 그 값을 우선 사용할 수 있도록 폴백 처리.
+        ResolvedNextLevel = NextStageLevelName.IsNone() ? FName("Stage_3") : NextStageLevelName;
+        UE_LOG(LogTemp, Warning, TEXT("CliffSelectionPawn: StageIndex=%d, Ending not implemented yet -> %s"),
+            NextStageIndex, *ResolvedNextLevel.ToString());
     }
 
-    UGameplayStatics::OpenLevel(this, NextStageLevelName);
+    UE_LOG(LogTemp, Warning, TEXT("CliffSelectionPawn: Confirmed Seed=%d Index=%d → NextStage=%s [StageIndex=%d]"),
+        Seeds[CurrentIndex], CurrentIndex, *ResolvedNextLevel.ToString(), NextStageIndex);
+
+    UGameplayStatics::OpenLevel(this, ResolvedNextLevel);
 }
 
 void ACliffSelectionPawn::OnRerollPressed(const FInputActionValue& Value)
