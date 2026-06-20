@@ -242,9 +242,6 @@ public:
     void ToggleOnScreenMessages();
 
     UFUNCTION(BlueprintCallable, Category = "MountainGen|Debug")
-    void PrintRuntimeSpawnDebug();
-
-    UFUNCTION(BlueprintCallable, Category = "MountainGen|Debug")
     void SetOnScreenMessagesEnabled(bool bEnabled);
 
     UFUNCTION(BlueprintPure, Category = "MountainGen|Runtime")

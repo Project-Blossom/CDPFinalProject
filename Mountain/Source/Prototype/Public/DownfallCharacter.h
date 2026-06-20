@@ -1516,6 +1516,7 @@ protected:
     void PlayItemEquipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemUnequipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const;
+    void PlayItemAnchorRetrieveSoundAtSlot(int32 SlotIndex, const FVector& Location) const;
     void UpdateCharacterStateSounds(float DeltaTime);
     void PlayCharacterStateSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float VolumeMultiplier, float PitchMultiplier, const FVector& EventLocation);
     void RefreshStageBGM(bool bForceRestart = false);

@@ -88,11 +88,11 @@ namespace
         }
 
         // Manual World distance rule:
-        // 0m = original volume, 5m = 1/2, 10m = 1/4, 15m = 1/8.
-        // Formula: volume *= pow(0.5, distanceMeters / 5).
+        // 0m = original volume, 1m = 1/2, 2m = 1/4, 3m = 1/8.
+        // Formula: volume *= pow(0.5, distanceMeters).
         const FVector ListenerLoc = GetSoundListenerLocation(User);
         const float DistanceCm = FVector::Dist(ListenerLoc, EventLocation);
-        const float HalfVolumeStepCm = 500.0f;
+        const float HalfVolumeStepCm = 100.0f;
         const float HalfSteps = DistanceCm / HalfVolumeStepCm;
         const float DistanceVolume = FMath::Pow(0.5f, HalfSteps);
         return BaseVolume * DistanceVolume;

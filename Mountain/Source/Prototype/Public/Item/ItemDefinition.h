@@ -152,6 +152,21 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Activate")
     EItemSoundPlaybackMode ActivateSoundPlaybackMode = EItemSoundPlaybackMode::EventLocation;
+    
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Anchor Retrieve")
+    TObjectPtr<USoundBase> AnchorRetrieveSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Anchor Retrieve")
+    TArray<FItemSoundVariant> AnchorRetrieveSoundVariants;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Anchor Retrieve", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float AnchorRetrieveSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Anchor Retrieve", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float AnchorRetrieveSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Anchor Retrieve")
+    EItemSoundPlaybackMode AnchorRetrieveSoundPlaybackMode = EItemSoundPlaybackMode::EventLocation;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stack", meta = (ClampMin = "1"))
     int32 MaxStack = 1;

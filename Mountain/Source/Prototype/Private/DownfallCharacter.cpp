@@ -1270,6 +1270,11 @@ void ADownfallCharacter::FinishUsingAnchor(bool bConsumeOneUse)
 
     if (bConsumeOneUse && Inventory && UsedSlot != INDEX_NONE)
     {
+        PlayItemAnchorRetrieveSoundAtSlot(
+            UsedSlot,
+            GetSafetyLineAnchorLocation()
+        );
+
         Inventory->ConsumeItemAt(UsedSlot, 1);
     }
 
@@ -2933,130 +2938,248 @@ void ADownfallCharacter::UpdateSafetyLineVisual()
 #if !UE_BUILD_SHIPPING
 void ADownfallCharacter::DrawDebugInfo()
 {
-    if (!GEngine) return;
-
-    int32 LineIndex = 100;
-
-    // 등반 상태
-    FString ClimbingStatus = bIsClimbing ? TEXT("Climbing") : TEXT("Not Climbing");
-    GEngine->AddOnScreenDebugMessage(
-        LineIndex++, 0.0f, FColor::Cyan,
-        FString::Printf(TEXT("Status: %s"), *ClimbingStatus)
-    );
-
-    // Left Hand 정보
-    if (LeftHand.State == EHandState::Gripping)
+    if (!GEngine || !GetWorld())
     {
-        // 경사각
-        float SlopeAngle = LeftHand.CurrentGrip.SurfaceAngleDegrees;
-        GEngine->AddOnScreenDebugMessage(
-            LineIndex++, 0.0f, FColor::Green,
-            FString::Printf(TEXT("Left Slope: %.1f°"), SlopeAngle)
-        );
-
-        // 스태미나 소모량
-        float DrainRate = GetStaminaDrainRate(LeftHand);
-        GEngine->AddOnScreenDebugMessage(
-            LineIndex++, 0.0f, FColor::Green,
-            FString::Printf(TEXT("Left Drain: %.2f/s"), DrainRate)
-        );
-
-        // 현재 스태미나
-        GEngine->AddOnScreenDebugMessage(
-            LineIndex++, 0.0f, FColor::Green,
-            FString::Printf(TEXT("Left Stamina: %.1f"), LeftHand.Stamina)
-        );
-    }
-    else
-    {
-        GEngine->AddOnScreenDebugMessage(
-            LineIndex++, 0.0f, FColor::Red,
-            TEXT("Left Hand: Free")
-        );
+        return;
     }
 
-    // Right Hand 정보
-    if (RightHand.State == EHandState::Gripping)
-    {
-        // 경사각
-        float SlopeAngle = RightHand.CurrentGrip.SurfaceAngleDegrees;
-        GEngine->AddOnScreenDebugMessage(
-            LineIndex++, 0.0f, FColor::Blue,
-            FString::Printf(TEXT("Right Slope: %.1f°"), SlopeAngle)
-        );
+    const bool bLeftGripping = (LeftHand.State == EHandState::Gripping);
+    const bool bRightGripping = (RightHand.State == EHandState::Gripping);
 
-        // 스태미나 소모량
-        float DrainRate = GetStaminaDrainRate(RightHand);
-        GEngine->AddOnScreenDebugMessage(
-            LineIndex++, 0.0f, FColor::Blue,
-            FString::Printf(TEXT("Right Drain: %.2f/s"), DrainRate)
-        );
+    const float LeftSlope = bLeftGripping
+        ? LeftHand.CurrentGrip.SurfaceAngleDegrees
+        : 0.0f;
 
-        // 현재 스태미나
-        GEngine->AddOnScreenDebugMessage(
-            LineIndex++, 0.0f, FColor::Blue,
-            FString::Printf(TEXT("Right Stamina: %.1f"), RightHand.Stamina)
-        );
-    }
-    else
-    {
-        GEngine->AddOnScreenDebugMessage(
-            LineIndex++, 0.0f, FColor::Red,
-            TEXT("Right Hand: Free")
-        );
-    }
+    const float RightSlope = bRightGripping
+        ? RightHand.CurrentGrip.SurfaceAngleDegrees
+        : 0.0f;
 
-    // Physics 상태
-    bool bPhysicsOn = GetCapsuleComponent()->IsSimulatingPhysics();
-    FString PhysicsStatus = bPhysicsOn ? TEXT("Physics ON") : TEXT("Physics OFF");
-    GEngine->AddOnScreenDebugMessage(
-        LineIndex++, 0.0f, FColor::Yellow,
-        FString::Printf(TEXT("Physics: %s"), *PhysicsStatus)
-    );
+    const float LeftDrain = bLeftGripping
+        ? GetStaminaDrainRate(LeftHand)
+        : 0.0f;
 
-    // Movement 모드
+    const float RightDrain = bRightGripping
+        ? GetStaminaDrainRate(RightHand)
+        : 0.0f;
+
+    const FString LeftSlopeText = bLeftGripping
+        ? FString::Printf(TEXT("%.1f deg"), LeftSlope)
+        : TEXT("-");
+
+    const FString RightSlopeText = bRightGripping
+        ? FString::Printf(TEXT("%.1f deg"), RightSlope)
+        : TEXT("-");
+
+    const FString LeftDrainText = bLeftGripping
+        ? FString::Printf(TEXT("%.2f/s"), LeftDrain)
+        : TEXT("-");
+
+    const FString RightDrainText = bRightGripping
+        ? FString::Printf(TEXT("%.2f/s"), RightDrain)
+        : TEXT("-");
+
     FString MovementMode;
-    switch (GetCharacterMovement()->MovementMode)
+
+    if (bIsClimbing)
     {
-    case MOVE_Walking: MovementMode = TEXT("Walking"); break;
-    case MOVE_Falling: MovementMode = TEXT("Falling"); break;
-    case MOVE_Flying: MovementMode = TEXT("Flying"); break;
-    default: MovementMode = TEXT("Other"); break;
+        MovementMode = TEXT("Climbing");
     }
-    GEngine->AddOnScreenDebugMessage(
-        LineIndex++, 0.0f, FColor::Yellow,
-        FString::Printf(TEXT("Movement: %s"), *MovementMode)
-    );
-
-    GEngine->AddOnScreenDebugMessage(
-        LineIndex++, 0.0f, bDebugFlyMode ? FColor::Yellow : FColor::Silver,
-        FString::Printf(TEXT("Fly Mode: %s | Space Up / Ctrl Down"), bDebugFlyMode ? TEXT("ON") : TEXT("OFF"))
-    );
-
-    // Monster spawn count 표시
-    FString MonsterCountText = TEXT("Monsters: Spawner not found");
-    TArray<AActor*> FoundMonsterSpawners;
-    UGameplayStatics::GetAllActorsOfClass(GetWorld(), AMonsterSpawner::StaticClass(), FoundMonsterSpawners);
-
-    if (FoundMonsterSpawners.Num() > 0)
+    else
     {
-        if (AMonsterSpawner* MonsterSpawner = Cast<AMonsterSpawner>(FoundMonsterSpawners[0]))
+        switch (GetCharacterMovement()->MovementMode)
         {
-            MonsterCountText = MonsterSpawner->GetCurrentMonsterCountDebugText();
+        case MOVE_Walking:
+            MovementMode = TEXT("Walking");
+            break;
+
+        case MOVE_Falling:
+            MovementMode = TEXT("Falling");
+            break;
+
+        case MOVE_Flying:
+            MovementMode = TEXT("Flying");
+            break;
+
+        default:
+            MovementMode = TEXT("Other");
+            break;
         }
     }
 
-    GEngine->AddOnScreenDebugMessage(
-        LineIndex++, 0.0f, FColor::Orange,
-        MonsterCountText
+    auto CountActorsWithTags =
+        [this](const FName RequiredTag, const FName TypeTag) -> int32
+        {
+            TArray<AActor*> FoundActors;
+            UGameplayStatics::GetAllActorsWithTag(
+                GetWorld(),
+                RequiredTag,
+                FoundActors
+            );
+
+            int32 Count = 0;
+
+            for (AActor* Actor : FoundActors)
+            {
+                if (IsValid(Actor) &&
+                    !Actor->IsActorBeingDestroyed() &&
+                    Actor->ActorHasTag(TypeTag))
+                {
+                    ++Count;
+                }
+            }
+
+            return Count;
+        };
+
+    const int32 WallCrawlerCount = CountActorsWithTags(
+        FName(TEXT("MG_SpawnedMonster")),
+        FName(TEXT("WallCrawler"))
     );
 
-    // Insanity 표시
-    FColor InsanityColor = bIsConfused ? FColor::Red : FColor::Magenta;
+    const int32 FlyingPlatformCount = CountActorsWithTags(
+        FName(TEXT("MG_SpawnedMonster")),
+        FName(TEXT("FlyingPlatform"))
+    );
+
+    const int32 FlyingAttackerCount = CountActorsWithTags(
+        FName(TEXT("MG_SpawnedMonster")),
+        FName(TEXT("FlyingAttacker"))
+    );
+
+    const int32 MonsterTotal =
+        WallCrawlerCount +
+        FlyingPlatformCount +
+        FlyingAttackerCount;
+
+    const int32 AnchorCount = CountActorsWithTags(
+        FName(TEXT("MG_SpawnedItem")),
+        FName(TEXT("Anchor"))
+    );
+
+    const int32 BoltCount = CountActorsWithTags(
+        FName(TEXT("MG_SpawnedItem")),
+        FName(TEXT("Bolt"))
+    );
+
+    const int32 ChocoCount = CountActorsWithTags(
+        FName(TEXT("MG_SpawnedItem")),
+        FName(TEXT("Choco"))
+    );
+
+    const int32 LampCount = CountActorsWithTags(
+        FName(TEXT("MG_SpawnedItem")),
+        FName(TEXT("Lamp"))
+    );
+
+    const int32 ItemTotal =
+        AnchorCount +
+        BoltCount +
+        ChocoCount +
+        LampCount;
+
+    const FColor LeftHandColor = FColor::Green;
+    const FColor RightHandColor = FColor::Blue;
+    const FColor MovementColor = FColor::Yellow;
+    const FColor FlyModeColor = FColor::Silver;
+    const FColor MonsterColor = FColor::Orange;
+    const FColor ItemColor = FColor(255, 105, 180);
+    const FColor InsanityColor = bIsConfused
+        ? FColor::Red
+        : FColor::Magenta;
+
+    // 고정 순서 / 고정 줄 수.
     GEngine->AddOnScreenDebugMessage(
-        LineIndex++, 0.0f, InsanityColor,
-        FString::Printf(TEXT("Insanity: %.1f / %.1f %s"),
-            Insanity, MaxInsanity, bIsConfused ? TEXT("[CONFUSED]") : TEXT(""))
+        100,
+        0.15f,
+        FColor::White,
+        TEXT("=== Climbing ===")
+    );
+
+    GEngine->AddOnScreenDebugMessage(
+        101,
+        0.15f,
+        LeftHandColor,
+        FString::Printf(
+            TEXT("Left Hand  | State: %s | Slope: %s | Drain: %s | Stamina: %.1f / %.1f"),
+            bLeftGripping ? TEXT("Gripping") : TEXT("Free"),
+            *LeftSlopeText,
+            *LeftDrainText,
+            LeftHand.Stamina,
+            MaxStamina
+        )
+    );
+
+    GEngine->AddOnScreenDebugMessage(
+        102,
+        0.15f,
+        RightHandColor,
+        FString::Printf(
+            TEXT("Right Hand | State: %s | Slope: %s | Drain: %s | Stamina: %.1f / %.1f"),
+            bRightGripping ? TEXT("Gripping") : TEXT("Free"),
+            *RightSlopeText,
+            *RightDrainText,
+            RightHand.Stamina,
+            MaxStamina
+        )
+    );
+
+    GEngine->AddOnScreenDebugMessage(
+        103,
+        0.15f,
+        InsanityColor,
+        FString::Printf(
+            TEXT("Insanity: %.1f / %.1f %s"),
+            Insanity,
+            MaxInsanity,
+            bIsConfused ? TEXT("[CONFUSED]") : TEXT("")
+        )
+    );
+
+    GEngine->AddOnScreenDebugMessage(
+        104,
+        0.15f,
+        FlyModeColor,
+        FString::Printf(
+            TEXT("Fly Mode: %s"),
+            bDebugFlyMode ? TEXT("ON") : TEXT("OFF")
+        )
+    );
+
+    GEngine->AddOnScreenDebugMessage(
+        105,
+        0.15f,
+        MovementColor,
+        FString::Printf(
+            TEXT("Movement: %s"),
+            *MovementMode
+        )
+    );
+
+    GEngine->AddOnScreenDebugMessage(
+        106,
+        0.15f,
+        MonsterColor,
+        FString::Printf(
+            TEXT("Monster Count: WallCrawler %d | FlyingPlatform %d | FlyingAttacker %d | Total %d"),
+            WallCrawlerCount,
+            FlyingPlatformCount,
+            FlyingAttackerCount,
+            MonsterTotal
+        )
+    );
+
+    GEngine->AddOnScreenDebugMessage(
+        107,
+        0.15f,
+        ItemColor,
+        FString::Printf(
+            TEXT("Item Count: Anchor %d | Bolt %d | Choco %d | Lamp %d | Total %d"),
+            AnchorCount,
+            BoltCount,
+            ChocoCount,
+            LampCount,
+            ItemTotal
+        )
     );
 }
 #endif
@@ -3371,6 +3494,41 @@ void ADownfallCharacter::PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVec
     PlayCharacterSound(Picked.Sound, Picked.VolumeMultiplier, Picked.PitchMultiplier, Def->ActivateSoundPlaybackMode, Location);
 }
 
+
+
+void ADownfallCharacter::PlayItemAnchorRetrieveSoundAtSlot(int32 SlotIndex, const FVector& Location) const
+{
+    if (!Inventory || !IsValidInventorySlotIndex(SlotIndex))
+    {
+        return;
+    }
+
+    UItemDefinition* Def = Inventory->GetItemDefinitionAt(SlotIndex);
+    if (!Def)
+    {
+        return;
+    }
+
+    const FDFPickedSound Picked = DF_SelectSoundVariant(
+        Def->AnchorRetrieveSoundVariants,
+        Def->AnchorRetrieveSound,
+        Def->AnchorRetrieveSoundVolumeMultiplier,
+        Def->AnchorRetrieveSoundPitchMultiplier
+    );
+
+    if (!Picked.Sound)
+    {
+        return;
+    }
+
+    PlayCharacterSound(
+        Picked.Sound,
+        Picked.VolumeMultiplier,
+        Picked.PitchMultiplier,
+        Def->AnchorRetrieveSoundPlaybackMode,
+        Location
+    );
+}
 
 void ADownfallCharacter::PlayCharacterStateSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float VolumeMultiplier, float PitchMultiplier, const FVector& EventLocation)
 {

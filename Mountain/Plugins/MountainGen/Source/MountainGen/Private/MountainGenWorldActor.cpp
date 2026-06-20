@@ -829,7 +829,7 @@ static void MG_RecomputeNormalsAndTangents(FChunkMeshData& M)
 
 AMountainGenWorldActor::AMountainGenWorldActor()
 {
-    PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = false;
 
     ProcMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProcMesh"));
@@ -840,7 +840,6 @@ AMountainGenWorldActor::AMountainGenWorldActor()
     ProcMesh->SetGenerateOverlapEvents(false);
     ProcMesh->SetMobility(EComponentMobility::Movable);
 
-    // Lumen + Distance Field 조명 수신 활성화
     ProcMesh->bVisibleInRayTracing = true;
     ProcMesh->SetCastShadow(true);
     ProcMesh->bCastDynamicShadow = true;
@@ -863,84 +862,7 @@ void AMountainGenWorldActor::UI_Status(const FString& Msg, float Seconds, FColor
 
 void AMountainGenWorldActor::ToggleOnScreenMessages()
 {
-    bEnableOnScreenMessages = !bEnableOnScreenMessages;
-
-    if (GEngine)
-    {
-        const FString Msg = bEnableOnScreenMessages
-            ? TEXT("[MountainGen] 화면 출력: ON")
-            : TEXT("[MountainGen] 화면 출력: OFF");
-
-        GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, Msg);
-    }
-}
-
-
-static int32 MG_CountActorsByTags(UWorld* World, const FName GroupTag, const FName TypeTag)
-{
-    if (!World)
-    {
-        return 0;
-    }
-
-    TArray<AActor*> FoundActors;
-    UGameplayStatics::GetAllActorsWithTag(World, GroupTag, FoundActors);
-
-    int32 Count = 0;
-    for (AActor* Actor : FoundActors)
-    {
-        if (!IsValid(Actor))
-        {
-            continue;
-        }
-
-        if (Actor->Tags.Contains(TypeTag))
-        {
-            ++Count;
-        }
-    }
-
-    return Count;
-}
-
-void AMountainGenWorldActor::PrintRuntimeSpawnDebug()
-{
-    UWorld* World = GetWorld();
-    if (!World || !GEngine)
-    {
-        return;
-    }
-
-    const int32 WallCrawlerCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedMonster")), FName(TEXT("WallCrawler")));
-    const int32 FlyingPlatformCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedMonster")), FName(TEXT("FlyingPlatform")));
-    const int32 FlyingAttackerCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedMonster")), FName(TEXT("FlyingAttacker")));
-    const int32 MonsterTotal = WallCrawlerCount + FlyingPlatformCount + FlyingAttackerCount;
-
-    const int32 AnchorCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedItem")), FName(TEXT("Anchor")));
-    const int32 BoltCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedItem")), FName(TEXT("Bolt")));
-    const int32 ChocoCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedItem")), FName(TEXT("Choco")));
-    const int32 LampCount = MG_CountActorsByTags(World, FName(TEXT("MG_SpawnedItem")), FName(TEXT("Lamp")));
-    const int32 ItemTotal = AnchorCount + BoltCount + ChocoCount + LampCount;
-
-    const FString MonsterLine = FString::Printf(
-        TEXT("Monsters: WallCrawler %d | FlyingPlatform %d | FlyingAttacker %d | Total %d"),
-        WallCrawlerCount,
-        FlyingPlatformCount,
-        FlyingAttackerCount,
-        MonsterTotal
-    );
-
-    const FString ItemLine = FString::Printf(
-        TEXT("Items: Anchor %d | Bolt %d | Choco %d | Lamp %d | Total %d"),
-        AnchorCount,
-        BoltCount,
-        ChocoCount,
-        LampCount,
-        ItemTotal
-    );
-
-    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, MonsterLine);
-    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, ItemLine);
+    SetOnScreenMessagesEnabled(!bEnableOnScreenMessages);
 }
 
 
@@ -950,9 +872,15 @@ void AMountainGenWorldActor::SetOnScreenMessagesEnabled(bool bEnabled)
 
     if (GEngine)
     {
+        if (!bEnableOnScreenMessages)
+        {
+            // Character debug is rendered with message ID 0.
+            GEngine->RemoveOnScreenDebugMessage(0);
+        }
+
         const FString Msg = bEnableOnScreenMessages
-            ? TEXT("[MountainGen] 화면 출력: ON")
-            : TEXT("[MountainGen] 화면 출력: OFF");
+            ? TEXT("[MountainGen] Debug Mode: ON")
+            : TEXT("[MountainGen] Debug Mode: OFF");
 
         GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, Msg);
     }
@@ -1254,8 +1182,9 @@ void AMountainGenWorldActor::BeginPlay()
 
     if (bEnableOnScreenToggleKey)
     {
-        InputComponent->BindKey(EKeys::P, IE_Pressed, this, &AMountainGenWorldActor::PrintRuntimeSpawnDebug);
+        InputComponent->BindKey(EKeys::P, IE_Pressed, this, &AMountainGenWorldActor::ToggleOnScreenMessages);
     }
+
 }
 
 
