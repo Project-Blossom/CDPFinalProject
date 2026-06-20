@@ -15,6 +15,9 @@ void AFlyingAttacker::BeginPlay()
 {
     Super::BeginPlay();
 
+    // 스테이지별 색상 틴트 머티리얼 적용
+    ApplyStageTintMaterials(Stage2Materials, Stage3Materials);
+
     AttackState = EAttackState::Idle;
     LastAttackTime = -AttackCooldown;  // 시작 시 즉시 공격 가능
 

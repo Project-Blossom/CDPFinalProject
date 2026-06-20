@@ -21,6 +21,9 @@ void AWallCrawler::BeginPlay()
 {
     Super::BeginPlay();
 
+    // 스테이지별 색상 틴트 머티리얼 적용
+    ApplyStageTintMaterials(Stage2Materials, Stage3Materials);
+
     // CRITICAL: 스폰 시간 기록
     SpawnTime = GetWorld()->GetTimeSeconds();
 

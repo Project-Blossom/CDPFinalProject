@@ -87,4 +87,11 @@ public:
     // 순수 가상 함수 (자식 클래스에서 필수 구현)
     UFUNCTION(BlueprintCallable, Category = "Monster")
     virtual void Attack() PURE_VIRTUAL(AMonsterBase::Attack, );
+
+protected:
+    // 스테이지별 머티리얼 적용 — 각 자식 BeginPlay에서 슬롯별 배열을 전달해 호출
+    // GameInstance의 CurrentStageIndex를 읽어 2 -> Stage2Materials, 3 이상 -> Stage3Materials 적용
+    // Stage1이거나 배열이 비어있으면 원본 머티리얼 유지
+    void ApplyStageTintMaterials(const TArray<class UMaterialInterface*>& Stage2Materials,
+        const TArray<class UMaterialInterface*>& Stage3Materials);
 };

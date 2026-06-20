@@ -17,6 +17,9 @@ void AFlyingPlatform::BeginPlay()
 {
     Super::BeginPlay();
 
+    // 스테이지별 색상 틴트 머티리얼 적용
+    ApplyStageTintMaterials(Stage2Materials, Stage3Materials);
+
     // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s (Flying Platform) ready for player"), *GetName());
 }
 

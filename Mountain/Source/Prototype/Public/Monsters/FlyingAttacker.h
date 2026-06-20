@@ -119,6 +119,14 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "AI|Territory")
     int32 CurrentSector = -1;  // 현재 위치한 섹터
 
+    // ── 스테이지별 색상 틴트 머티리얼 (4 슬롯) ──────────────────
+    // Stage2/3 진입 시 BeginPlay에서 자동 적용. 비워두면 원본 머티리얼 유지.
+    UPROPERTY(EditAnywhere, Category = "StageTint")
+    TArray<class UMaterialInterface*> Stage2Materials;
+
+    UPROPERTY(EditAnywhere, Category = "StageTint")
+    TArray<class UMaterialInterface*> Stage3Materials;
+
     // Territory Functions
     void InitializeTerritory();  // BeginPlay에서 호출
     int32 GetCurrentSector() const;  // 현재 섹터 계산

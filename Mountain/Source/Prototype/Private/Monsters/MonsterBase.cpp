@@ -6,6 +6,9 @@
 #include "DrawDebugHelpers.h"
 #include "AIController.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Core/DownfallGameInstance.h"
+#include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY(LogMonster);
 
@@ -182,4 +185,52 @@ void AMonsterBase::Die()
 
     // 일단 파괴
     Destroy();
+}
+
+void AMonsterBase::ApplyStageTintMaterials(const TArray<UMaterialInterface*>& Stage2Materials,
+    const TArray<UMaterialInterface*>& Stage3Materials)
+{
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp)
+    {
+        return;
+    }
+
+    UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(UGameplayStatics::GetGameInstance(this));
+    const int32 StageIndex = GI ? GI->GetCurrentStageIndex() : 1;
+
+    const TArray<UMaterialInterface*>* MaterialsToApply = nullptr;
+
+    if (StageIndex == 2)
+    {
+        MaterialsToApply = &Stage2Materials;
+    }
+    else if (StageIndex >= 3)
+    {
+        MaterialsToApply = &Stage3Materials;
+    }
+    else
+    {
+        // Stage 1 또는 미설정 — 원본 머티리얼 유지
+        return;
+    }
+
+    if (!MaterialsToApply || MaterialsToApply->Num() == 0)
+    {
+        UE_LOG(LogMonster, Warning, TEXT("%s: StageIndex=%d 머티리얼 배열이 비어있어 원본 유지"),
+            *GetName(), StageIndex);
+        return;
+    }
+
+    for (int32 SlotIndex = 0; SlotIndex < MaterialsToApply->Num(); ++SlotIndex)
+    {
+        UMaterialInterface* Mat = (*MaterialsToApply)[SlotIndex];
+        if (Mat)
+        {
+            MeshComp->SetMaterial(SlotIndex, Mat);
+        }
+    }
+
+    UE_LOG(LogMonster, Log, TEXT("%s: StageIndex=%d 틴트 머티리얼 적용 (슬롯 %d개)"),
+        *GetName(), StageIndex, MaterialsToApply->Num());
 }
