@@ -3530,6 +3530,41 @@ void ADownfallCharacter::PlayItemAnchorRetrieveSoundAtSlot(int32 SlotIndex, cons
     );
 }
 
+
+void ADownfallCharacter::PlayItemCooldownSoundAtSlot(int32 SlotIndex) const
+{
+    if (!Inventory || !IsValidInventorySlotIndex(SlotIndex))
+    {
+        return;
+    }
+
+    UItemDefinition* Def = Inventory->GetItemDefinitionAt(SlotIndex);
+    if (!Def)
+    {
+        return;
+    }
+
+    const FDFPickedSound Picked = DF_SelectSoundVariant(
+        Def->CooldownSoundVariants,
+        Def->CooldownSound,
+        Def->CooldownSoundVolumeMultiplier,
+        Def->CooldownSoundPitchMultiplier
+    );
+
+    if (!Picked.Sound)
+    {
+        return;
+    }
+
+    PlayCharacterSound(
+        Picked.Sound,
+        Picked.VolumeMultiplier,
+        Picked.PitchMultiplier,
+        Def->CooldownSoundPlaybackMode,
+        GetActorLocation()
+    );
+}
+
 void ADownfallCharacter::PlayCharacterStateSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float VolumeMultiplier, float PitchMultiplier, const FVector& EventLocation)
 {
     if (!bEnableCharacterStateSounds)
@@ -4195,6 +4230,8 @@ bool ADownfallCharacter::TryUseEquippedUtility()
                 {
                     GEngine->AddOnScreenDebugMessage(-1, 1.25f, FColor::Yellow, Message);
                 }
+
+                PlayItemCooldownSoundAtSlot(EquippedUtilitySlotIndex);
 
                 UE_LOG(LogDownFall, Warning, TEXT("%s"), *Message);
                 return false;

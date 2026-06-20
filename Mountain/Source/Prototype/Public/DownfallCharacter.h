@@ -259,7 +259,7 @@ public:
 
     // Settings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physics")
-    float GripStrength = 3000.0f; // Constraint 당기는 힘 
+    float GripStrength = 5000.0f; // Constraint 당기는 힘 
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physics")
     float GripDamping = 800.0f;
@@ -1517,6 +1517,7 @@ protected:
     void PlayItemUnequipSoundAtSlot(int32 SlotIndex) const;
     void PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const;
     void PlayItemAnchorRetrieveSoundAtSlot(int32 SlotIndex, const FVector& Location) const;
+    void PlayItemCooldownSoundAtSlot(int32 SlotIndex) const;
     void UpdateCharacterStateSounds(float DeltaTime);
     void PlayCharacterStateSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float VolumeMultiplier, float PitchMultiplier, const FVector& EventLocation);
     void RefreshStageBGM(bool bForceRestart = false);

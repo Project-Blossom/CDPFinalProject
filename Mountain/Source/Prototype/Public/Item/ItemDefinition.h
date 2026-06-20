@@ -168,6 +168,21 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Anchor Retrieve")
     EItemSoundPlaybackMode AnchorRetrieveSoundPlaybackMode = EItemSoundPlaybackMode::EventLocation;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Cooldown")
+    TObjectPtr<USoundBase> CooldownSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Cooldown")
+    TArray<FItemSoundVariant> CooldownSoundVariants;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Cooldown", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float CooldownSoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Cooldown", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float CooldownSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Cooldown")
+    EItemSoundPlaybackMode CooldownSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stack", meta = (ClampMin = "1"))
     int32 MaxStack = 1;
 
