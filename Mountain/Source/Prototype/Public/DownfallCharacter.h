@@ -1467,6 +1467,17 @@ public:
         meta = (ClampMin = "100.0"))
     float MinimapViewRange = 10000.f;
 
+    // [DEBUG-FIX] 마커가 원형 미니맵 가장자리(장식 아이콘에 가려지는 지점)까지 가지 않도록
+    // 하는 안전 여백. MarkerNorm_X/Y를 [0,1] 대신 [Margin, 1-Margin]으로 clamp한다.
+    // 이전엔 플레이어 고도 자체를 가짜로 올려서 보정하려 했는데, 그 보정값이 UVScale_Y로
+    // 나뉘면서(= 현재 줌 배율에 반비례) 의도보다 훨씬 크게 증폭돼 등반 중 내내 마커가
+    // 중앙을 못 따라가고 가장자리에 박혀버리는 부작용이 있었다. 좌표 자체를 안쪽으로
+    // 묶는 이 방식은 중앙에 있을 때는 전혀 영향이 없고, 가장자리 근처(시작/끝 지점)에서만
+    // 작동한다. 기본값 0.08(8%).
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
+        meta = (ClampMin = "0.0", ClampMax = "0.45"))
+    float MinimapMarkerEdgeMargin = 0.08f;
+
     // Pause Menu
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Pause")
     TSubclassOf<class UPauseMenuWidget> PauseMenuWidgetClass;

@@ -5377,10 +5377,24 @@ void ADownfallCharacter::UpdateMinimapUI()
     const FVector PlayerPos = GetActorLocation();
     const FVector CapturePos = CachedSceneCapture->GetActorLocation();
 
-    // ── UV 좌표 계산 ───────────────────────────────────────────
+    // [DEBUG-FIX] 위아래 축척이 안 맞는 문제의 진짜 원인.
+    // AutoConfigureMinimapCapture()는 정사각형 RT를 위해 OrthoWidth = Max(DetectedWidth,
+    // DetectedHeight)를 쓴다. 이 절벽은 가로(약 800m)가 세로(약 420m)보다 넓어서
+    // OrthoWidth는 가로 기준(800m)으로 정해지고, 정사각형 캡처이므로 실제로 캡처되는
+    // 세로 범위도 가로와 동일하게 800m다. 그런데 그동안 UV_Y 계산은 HalfH를
+    // CliffTotalHeight*0.5(=210m, 세로 420m 기준)로 써왔다 — 실제로 찍힌 세로 범위
+    // (800m)의 절반밖에 안 되는 값이다. 그 결과 등반 가능한 실제 0~400m 구간이 텍스처
+    // 전체(800m 범위)의 가운데 일부에만 작게 매핑되고, 위아래로 텍스처에는 찍혀있지만
+    // 실제 등반 범위와는 무관한 "죽은 구간"이 생겼다(시작 직후·도착 직전에 마커/배경이
+    // 한참 멈춰 있는 것처럼 보이는 원인). 정사각형 캡처가 실제로 담고 있는 가로/세로
+    // 범위는 항상 OrthoWidth로 동일하므로, HalfW/HalfH 둘 다 OrthoWidth 기준으로
+    // 계산해야 한다.
+    USceneCaptureComponent2D* MinimapCaptureComp = CachedSceneCapture->GetCaptureComponent2D();
+    const float CaptureSpanCm = MinimapCaptureComp ? MinimapCaptureComp->OrthoWidth : CliffTotalWidth;
+
     // 암벽 좌표계: Y축 = 좌우(UVX), Z축 = 상하(UVY)
-    const float HalfW = CliffTotalWidth * 0.5f;
-    const float HalfH = CliffTotalHeight * 0.5f;
+    const float HalfW = CaptureSpanCm * 0.5f;
+    const float HalfH = CaptureSpanCm * 0.5f;
 
     // [DEBUG-FIX] 좌우 반전 버그 수정.
     // 기존 식 (PlayerPos.Y - (CapturePos.Y - HalfW)) / CliffTotalWidth는 PlayerPos.Y가
@@ -5391,18 +5405,14 @@ void ADownfallCharacter::UpdateMinimapUI()
     // 배경 스크롤도, 거기서 파생되는 플레이어 마커 위치도 둘 다 좌우가 반대로 보였다.
     // 수식을 좌우로 뒤집어서 맞춘다.
     const float UV_X = FMath::Clamp(
-        ((CapturePos.Y + HalfW) - PlayerPos.Y) / CliffTotalWidth, 0.0f, 1.0f);
+        ((CapturePos.Y + HalfW) - PlayerPos.Y) / CaptureSpanCm, 0.0f, 1.0f);
 
-    // [DEBUG-FIX] 마커 시작 위치 버퍼를 UV_Y(배경 스크롤 기준)에 적용했더니, 실제 캡처된
-    // RT_Minimap 텍스처의 진짜 월드 Z 범위와 어긋나서 고도가 올라가면 배경이 암벽 위쪽
-    // 끝을 넘어 빈 영역(하늘)까지 스크롤되는 문제가 생겼다. 마커 위치는 위젯 쪽 수정만으로
-    // 이미 정확했으므로(버퍼 불필요), UV_Y는 원래의 정확한 텍스처 매핑 식으로 되돌린다.
     const float UV_Y = FMath::Clamp(
-        1.0f - (PlayerPos.Z - (CapturePos.Z - HalfH)) / CliffTotalHeight, 0.0f, 1.0f);
+        1.0f - (PlayerPos.Z - (CapturePos.Z - HalfH)) / CaptureSpanCm, 0.0f, 1.0f);
 
     // ── UV Scale (표시 범위 비율) ──────────────────────────────
-    const float UVScale_X = FMath::Clamp(MinimapViewRange / CliffTotalWidth, 0.01f, 1.0f);
-    const float UVScale_Y = FMath::Clamp(MinimapViewRange / CliffTotalHeight, 0.01f, 1.0f);
+    const float UVScale_X = FMath::Clamp(MinimapViewRange / CaptureSpanCm, 0.01f, 1.0f);
+    const float UVScale_Y = FMath::Clamp(MinimapViewRange / CaptureSpanCm, 0.01f, 1.0f);
 
     // ── UV Offset (플레이어 중앙 정렬) ─────────────────────────
     const float UVOffset_X = FMath::Clamp(UV_X - UVScale_X * 0.5f, 0.0f, 1.0f - UVScale_X);
@@ -5415,8 +5425,15 @@ void ADownfallCharacter::UpdateMinimapUI()
     );
 
     // ── 플레이어 마커 위치 (일반: 중앙, 경계: 약간 이동) ───────
-    const float MarkerNorm_X = FMath::Clamp((UV_X - UVOffset_X) / UVScale_X, 0.0f, 1.0f);
-    const float MarkerNorm_Y = FMath::Clamp((UV_Y - UVOffset_Y) / UVScale_Y, 0.0f, 1.0f);
+    // [DEBUG-FIX] 가장자리(장식 아이콘에 가려지는 지점) 안전 여백 적용.
+    // 중앙 추적 중(UVOffset이 clamp되지 않은 구간)에는 MarkerNorm이 항상 0.5 근처라
+    // 이 clamp는 사실상 작동하지 않는다 — 등반 범위의 시작/끝 부근(UVOffset이 0 또는
+    // 1-UVScale로 clamp되는 구간)에서만 마커가 0 또는 1 쪽으로 밀리는데, 그 극단값만
+    // MinimapMarkerEdgeMargin만큼 안쪽으로 묶는다.
+    const float MarkerNorm_X = FMath::Clamp((UV_X - UVOffset_X) / UVScale_X,
+        MinimapMarkerEdgeMargin, 1.0f - MinimapMarkerEdgeMargin);
+    const float MarkerNorm_Y = FMath::Clamp((UV_Y - UVOffset_Y) / UVScale_Y,
+        MinimapMarkerEdgeMargin, 1.0f - MinimapMarkerEdgeMargin);
 
     MinimapWidget->SetPlayerMarkerPosition(FVector2D(MarkerNorm_X, MarkerNorm_Y));
 
