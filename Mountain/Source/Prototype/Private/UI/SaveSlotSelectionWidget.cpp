@@ -6,10 +6,19 @@
 #include "UI/FadeWidget.h"
 #include "UI/OverwriteWarningWidget.h"
 #include "UI/FadeWidget.h"
+#include "UI/UIButtonClickSoundHelper.h"
 
 void USaveSlotSelectionWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    // 공통 버튼 클릭음 적용
+    PrototypeUI::ApplyProjectButtonClickSound(this);
+
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->PlayMenuBGM(this, GI->SaveSlotSelectionBGM);
+    }
 
     // 버튼 클릭 이벤트 바인딩
     if (Slot0Button)
@@ -86,7 +95,7 @@ void USaveSlotSelectionWidget::UpdateSlotInfo()
             int32 Minutes = FMath::FloorToInt((PlayTime - Hours * 3600.0f) / 60.0f);
 
             // 날짜 포맷
-            FString DateStr = FString::Printf(TEXT("%d/%d/%d"), 
+            FString DateStr = FString::Printf(TEXT("%d/%d/%d"),
                 LastSaveTime.GetYear(), LastSaveTime.GetMonth(), LastSaveTime.GetDay());
 
             FString InfoStr = FString::Printf(
@@ -157,7 +166,7 @@ void USaveSlotSelectionWidget::ShowConfirmDialog(int32 SlotIndex)
     if (!OverwriteWarningWidgetClass)
     {
         UE_LOG(LogTemp, Error, TEXT("OverwriteWarningWidgetClass not set!"));
-        
+
         // Widget이 없으면 바로 진행
         UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(GetGameInstance());
         if (GI)
@@ -179,7 +188,7 @@ void USaveSlotSelectionWidget::ShowConfirmDialog(int32 SlotIndex)
     {
         CurrentWarningWidget->SetSlotIndex(SlotIndex);
         CurrentWarningWidget->AddToViewport(100);
-        
+
         UE_LOG(LogTemp, Warning, TEXT("Showing overwrite warning for slot %d"), SlotIndex);
     }
 }
@@ -244,11 +253,11 @@ void USaveSlotSelectionWidget::StartFadeOutToLevel(FName LevelName)
     {
         FadeWidgetInstance->AddToViewport(200); // 최상위
         FadeWidgetInstance->StartFadeOut(FadeOutDuration);
-        
+
         PendingLevelName = LevelName;
-        
+
         UE_LOG(LogTemp, Warning, TEXT("Starting Fade Out to level: %s"), *LevelName.ToString());
-        
+
         // Fade Out 시간 후 레벨 전환
         FTimerHandle TimerHandle;
         GetWorld()->GetTimerManager().SetTimer(

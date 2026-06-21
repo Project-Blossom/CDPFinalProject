@@ -9,6 +9,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Core/DownfallGameInstance.h"
 #include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 DEFINE_LOG_CATEGORY(LogMonster);
 
@@ -85,6 +86,26 @@ void AMonsterBase::Tick(float DeltaTime)
 #endif
 }
 
+
+void AMonsterBase::PlayMonsterSound(USoundBase* Sound, float VolumeMultiplier) const
+{
+    if (Sound && GetWorld())
+    {
+        UGameplayStatics::PlaySoundAtLocation(
+            this,
+            Sound,
+            GetActorLocation(),
+            FRotator::ZeroRotator,
+            FMath::Max(0.0f, VolumeMultiplier)
+        );
+    }
+}
+
+void AMonsterBase::PlayMonsterDetectionSound() const
+{
+    PlayMonsterSound(MonsterDetectionSound, MonsterDetectionSoundVolumeMultiplier);
+}
+
 void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
     // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s OnPerceptionUpdated! Actor: %s, Successfully Sensed: %s"), 
@@ -107,8 +128,15 @@ void AMonsterBase::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 
     if (Stimulus.WasSuccessfullySensed())
     {
+        const bool bWasAlreadyDetected = (TargetPlayer == Player);
+
         // 플레이어 인식
         TargetPlayer = Player;
+
+        if (!bWasAlreadyDetected)
+        {
+            PlayMonsterDetectionSound();
+        }
         // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s DETECTED player at distance: %.1f"), 
             // *GetName(), FVector::Dist(GetActorLocation(), Player->GetActorLocation()));
     }
@@ -165,6 +193,8 @@ void AMonsterBase::ForceForgetPlayer(ADownfallCharacter* PlayerToForget)
 
 void AMonsterBase::TakeDamageCustom(float Damage)
 {
+    PlayMonsterSound(MonsterHitSound, MonsterHitSoundVolumeMultiplier);
+
     CurrentHealth -= Damage;
     CurrentHealth = FMath::Max(0.0f, CurrentHealth);
 

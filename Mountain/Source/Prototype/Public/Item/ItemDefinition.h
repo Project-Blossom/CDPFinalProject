@@ -167,7 +167,7 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Anchor Retrieve")
     EItemSoundPlaybackMode AnchorRetrieveSoundPlaybackMode = EItemSoundPlaybackMode::EventLocation;
-
+    
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Cooldown")
     TObjectPtr<USoundBase> CooldownSound = nullptr;
 
@@ -182,6 +182,21 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Cooldown")
     EItemSoundPlaybackMode CooldownSoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
+    
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Destroy")
+    TObjectPtr<USoundBase> DestroySound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Destroy")
+    TArray<FItemSoundVariant> DestroySoundVariants;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Destroy", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float DestroySoundPitchMultiplier = 1.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Destroy", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float DestroySoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound|Destroy")
+    EItemSoundPlaybackMode DestroySoundPlaybackMode = EItemSoundPlaybackMode::Play2D;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stack", meta = (ClampMin = "1"))
     int32 MaxStack = 1;

@@ -132,6 +132,10 @@ struct FStageBGMEntry
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
     float VolumeMultiplier = 1.0f;
+
+    // Stage 3에서 BloodMoon VFX가 켜졌을 때 Normal/Insanity BGM 대신 우선 재생된다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM")
+    TObjectPtr<USoundBase> BloodMoonBGM = nullptr;
 };
 
 UCLASS()
@@ -556,6 +560,17 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
     float InsanityLoopSoundPitchMultiplier = 1.0f;
+
+
+    // 광기 구간에 "진입한 순간" 1회 재생된다. 반복 루프음과 별도다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity")
+    TObjectPtr<USoundBase> InsanityThreshold1EnterSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity")
+    TObjectPtr<USoundBase> InsanityThreshold2EnterSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float InsanityEnterSoundVolumeMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Movement")
     TObjectPtr<USoundBase> WalkSound = nullptr;
@@ -988,6 +1003,14 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "VFX|RainVFX")
     bool bRainActive = false;
 
+
+    // Stage 1 비 이벤트 환경음. Sound Wave/Cue를 Loop로 설정해 둔다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather")
+    TObjectPtr<USoundBase> RainAmbientSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float RainAmbientVolumeMultiplier = 1.0f;
+
     // ── Blizzard Hallucination VFX ──────────────────────────────
     // Stage 2 이상에서 활성화. Rain과 동시 발생 없음.
     // 기획서: Downfall Mountain 폭설 환각 VFX
@@ -1071,6 +1094,20 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "VFX|BlizzardVFX")
     bool bBlizzardActive = false;
+
+
+    // Stage 2 폭설 이벤트 환경음 및 빙결 디버프 시작음.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather")
+    TObjectPtr<USoundBase> BlizzardAmbientSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float BlizzardAmbientVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather")
+    TObjectPtr<USoundBase> FrostDebuffStartSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float FrostDebuffStartSoundVolumeMultiplier = 1.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "VFX|BlizzardVFX")
     float BlizzardCurrentWeight = 0.0f;
@@ -1518,6 +1555,7 @@ protected:
     void PlayItemActivateSoundAtSlot(int32 SlotIndex, const FVector& Location) const;
     void PlayItemAnchorRetrieveSoundAtSlot(int32 SlotIndex, const FVector& Location) const;
     void PlayItemCooldownSoundAtSlot(int32 SlotIndex) const;
+    void PlayItemDestroySoundAtSlot(int32 SlotIndex) const;
     void UpdateCharacterStateSounds(float DeltaTime);
     void PlayCharacterStateSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float VolumeMultiplier, float PitchMultiplier, const FVector& EventLocation);
     void RefreshStageBGM(bool bForceRestart = false);
@@ -1597,10 +1635,18 @@ private:
     float CharacterStateFallElapsedSeconds = 0.0f;
     bool bCharacterStateWasFalling = false;
     bool bStageBGMCurrentlyInsanity = false;
+    bool bStageBGMCurrentlyBloodMoon = false;
+    int32 PreviousInsanitySoundTier = 0;
     int32 PlayingStageMusicIndex = INDEX_NONE;
 
     UPROPERTY(Transient)
     TObjectPtr<UAudioComponent> StageBGMComponent = nullptr;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UAudioComponent> RainAmbientAudioComponent = nullptr;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UAudioComponent> BlizzardAmbientAudioComponent = nullptr;
 
     // Minimap SceneCapture2D 캐시
     TWeakObjectPtr<class ASceneCapture2D>  CachedSceneCapture;

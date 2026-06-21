@@ -3,10 +3,19 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Core/DownfallGameInstance.h"
+#include "UI/UIButtonClickSoundHelper.h"
 
 void UMainMenuWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    // 공통 버튼 클릭음 적용
+    PrototypeUI::ApplyProjectButtonClickSound(this);
+
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->PlayMenuBGM(this, GI->MainMenuBGM);
+    }
 
     // 버튼 클릭 이벤트 바인딩
     if (NewGameButton)
@@ -18,7 +27,7 @@ void UMainMenuWidget::NativeConstruct()
     {
         LoadGameButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleLoadGameClicked);
     }
-    
+
     if (FreeRunButton)
     {
         FreeRunButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleFreeRunClicked);
@@ -105,7 +114,7 @@ void UMainMenuWidget::HandleSettingsClicked()
     UE_LOG(LogTemp, Warning, TEXT("Settings clicked"));
 
     // TODO: Settings 레벨/UI로 이동 (아직 없음)
-    
+
     UE_LOG(LogTemp, Warning, TEXT("Settings not implemented yet"));
 }
 

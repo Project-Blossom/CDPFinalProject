@@ -4,10 +4,14 @@
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Kismet/GameplayStatics.h"
+#include "UI/UIButtonClickSoundHelper.h"
 
 void UCliffSelectionHUDWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    // 공통 버튼 클릭음 적용
+    PrototypeUI::ApplyProjectButtonClickSound(this);
 
     if (RerollButton)
     {

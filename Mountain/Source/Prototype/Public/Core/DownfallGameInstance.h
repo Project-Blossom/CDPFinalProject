@@ -5,6 +5,9 @@
 #include "Core/StageData.h"
 #include "DownfallGameInstance.generated.h"
 
+class USoundBase;
+class UAudioComponent;
+
 /**
  * 전역 게임 데이터 관리
  * - 스테이지 기록
@@ -107,6 +110,36 @@ public:
     UFUNCTION(BlueprintPure, Category = "UI")
     bool ShouldShowLoadingUI() const { return bShowLoadingUI; }
 
+
+    // ========== UI / Menu Audio ==========
+    // BP_DownfallGameInstance의 Class Defaults에서 설정한다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound")
+    TObjectPtr<USoundBase> UIButtonClickSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound")
+    TObjectPtr<USoundBase> MainMenuBGM = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound")
+    TObjectPtr<USoundBase> SaveSlotSelectionBGM = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound")
+    TObjectPtr<USoundBase> CliffSelectionBGM = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound")
+    TObjectPtr<USoundBase> CliffSelectionRerollSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound")
+    TObjectPtr<USoundBase> CliffSelectionConfirmSound = nullptr;
+
+    UFUNCTION(BlueprintCallable, Category = "UI|Sound")
+    void PlayMenuBGM(UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier = 1.0f);
+
+    UFUNCTION(BlueprintCallable, Category = "UI|Sound")
+    void StopMenuBGM(float FadeOutSeconds = 0.2f);
+
+    UFUNCTION(BlueprintCallable, Category = "UI|Sound")
+    void PlayUISound(UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier = 1.0f, float PitchMultiplier = 1.0f);
+
     // ========== Cliff Selection ==========
 
     // CliffSelection 레벨 진입 시 호출 — 3개의 새 Seed 생성
@@ -165,4 +198,8 @@ protected:
     // 플레이어가 선택(Enter)한 Seed — 다음 스테이지 레벨 로드 시 사용
     UPROPERTY(BlueprintReadOnly, Category = "CliffSelection")
     int32 SelectedSeed = 0;
+
+
+    UPROPERTY(Transient)
+    TObjectPtr<UAudioComponent> MenuBGMComponent = nullptr;
 };

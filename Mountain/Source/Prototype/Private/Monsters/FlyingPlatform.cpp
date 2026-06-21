@@ -26,7 +26,7 @@ void AFlyingPlatform::BeginPlay()
 void AFlyingPlatform::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-    
+
     // Behavior Tree가 실행 중이면 기존 로직 스킵
     AAIController* AIController = Cast<AAIController>(GetController());
     if (AIController && AIController->BrainComponent && AIController->BrainComponent->IsRunning())
@@ -35,7 +35,7 @@ void AFlyingPlatform::Tick(float DeltaTime)
         return;
     }
 
-// [DISABLED FOR DEMO] Debug visualization: Grab sphere, cross marker, sweep range
+    // [DISABLED FOR DEMO] Debug visualization: Grab sphere, cross marker, sweep range
 #if 0
     FVector GrabLoc = GetGrabLocation();
     DrawDebugSphere(GetWorld(), GrabLoc, 500.0f, 16, bPlayerAttached ? FColor::Yellow : FColor::Green, false, 0.1f, 0, 3.0f);
@@ -79,7 +79,7 @@ void AFlyingPlatform::UpdatePatrol(float DeltaTime)
         bHasTarget = true;
         bIsIdling = false;
         IdleTimer = 0.0f;
-        
+
         // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s new target: %s"), *GetName(), *CurrentTargetLocation.ToString());
     }
 
@@ -104,7 +104,7 @@ void AFlyingPlatform::UpdatePatrol(float DeltaTime)
 
         // 대기 중
         IdleTimer += DeltaTime;
-        
+
         if (IdleTimer >= IdleWaitTime)
         {
             // 대기 끝 - 다음 목표 설정
@@ -119,7 +119,9 @@ void AFlyingPlatform::OnPlayerGrab(ADownfallCharacter* Player)
 
     bPlayerAttached = true;
     AttachedTime = 0.0f;
-    
+
+    PlayMonsterSound(AbductionSound, AbductionSoundVolumeMultiplier);
+
     // [DISABLED FOR DEMO] UE_LOG(LogMonster, Log, TEXT("%s grabbed by player"), *GetName());
 }
 
@@ -158,7 +160,7 @@ FVector AFlyingPlatform::GetGrabLocation() const
     // Blueprint에서 추가한 SceneComponent들 중에서 "GrabPoint" 찾기
     TArray<USceneComponent*> SceneComponents;
     GetComponents<USceneComponent>(SceneComponents);
-    
+
     for (USceneComponent* Comp : SceneComponents)
     {
         if (Comp && Comp->GetName().Contains(TEXT("GrabPoint")))
@@ -180,17 +182,17 @@ FVector AFlyingPlatform::GetGrabLocation() const
 void AFlyingPlatform::OnObstacleDetected(const FVector& ObstacleDirection)
 {
     Super::OnObstacleDetected(ObstacleDirection);
-    
+
     // BT 없을 때: 목표 포기
     bHasTarget = false;
-    
+
     // BT 있을 때: Blackboard PatrolLocation 초기화
     AAIController* AIController = Cast<AAIController>(GetController());
     if (AIController && AIController->GetBlackboardComponent())
     {
         UBlackboardComponent* Blackboard = AIController->GetBlackboardComponent();
         Blackboard->ClearValue("PatrolLocation");
-        
+
         // [DISABLED FOR DEMO] UE_LOG(LogMonster, Warning, TEXT("%s obstacle detected! Blackboard PatrolLocation cleared"), *GetName());
     }
     else
@@ -228,7 +230,7 @@ AWallCrawler* AFlyingPlatform::FindNearbyWallCrawler()
 
     if (NearestCrawler)
     {
-        UE_LOG(LogMonster, Log, TEXT("%s: Found nearby WallCrawler: %s (Distance: %.1f)"), 
+        UE_LOG(LogMonster, Log, TEXT("%s: Found nearby WallCrawler: %s (Distance: %.1f)"),
             *GetName(), *NearestCrawler->GetName(), MinDistance);
 
         NearestCrawler->AttachToCarrier(this);

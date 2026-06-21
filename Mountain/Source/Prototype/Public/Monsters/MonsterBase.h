@@ -5,6 +5,8 @@
 #include "Perception/AIPerceptionComponent.h"
 #include "MonsterBase.generated.h"
 
+class USoundBase;
+
 DECLARE_LOG_CATEGORY_EXTERN(LogMonster, Log, All);
 
 UCLASS(Abstract)
@@ -61,6 +63,20 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Stats")
     float CurrentHealth;
 
+
+    // 모든 몬스터 공통: 플레이어 최초 감지 / 피격 효과음.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+    TObjectPtr<USoundBase> MonsterDetectionSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float MonsterDetectionSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+    TObjectPtr<USoundBase> MonsterHitSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float MonsterHitSoundVolumeMultiplier = 1.0f;
+
     // Debug
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
     bool bShowDebug = false;
@@ -92,6 +108,9 @@ protected:
     // 스테이지별 머티리얼 적용 — 각 자식 BeginPlay에서 슬롯별 배열을 전달해 호출
     // GameInstance의 CurrentStageIndex를 읽어 2 -> Stage2Materials, 3 이상 -> Stage3Materials 적용
     // Stage1이거나 배열이 비어있으면 원본 머티리얼 유지
+    void PlayMonsterSound(USoundBase* Sound, float VolumeMultiplier = 1.0f) const;
+    void PlayMonsterDetectionSound() const;
+
     void ApplyStageTintMaterials(const TArray<class UMaterialInterface*>& Stage2Materials,
         const TArray<class UMaterialInterface*>& Stage3Materials);
 };

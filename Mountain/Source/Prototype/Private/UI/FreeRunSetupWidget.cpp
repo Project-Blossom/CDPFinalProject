@@ -5,10 +5,14 @@
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
 #include "MountainGenWorldActor.h"
+#include "UI/UIButtonClickSoundHelper.h"
 
 void UFreeRunSetupWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    // 공통 버튼 클릭음 적용
+    PrototypeUI::ApplyProjectButtonClickSound(this);
 
     // 버튼 클릭 이벤트 바인딩
     if (EasyButton)
@@ -139,7 +143,7 @@ void UFreeRunSetupWidget::HandleRandomSeedClicked()
 
     // 새로운 랜덤 Seed 생성 (1 ~ INT32_MAX)
     int32 RandomSeed = FMath::RandRange(1, INT32_MAX);
-    
+
     // 쉼표 없이 숫자만 표시
     SeedTextBox->SetText(FText::FromString(FString::FromInt(RandomSeed)));
 
@@ -200,9 +204,9 @@ void UFreeRunSetupWidget::HandleStartClicked()
     UE_LOG(LogTemp, Warning, TEXT("Moving to FreeRun level..."));
 
     // FreeRun 레벨로 이동 (Seed와 Difficulty를 URL 파라미터로 전달)
-    FString LevelURL = FString::Printf(TEXT("%s?Seed=%d&Difficulty=%d"), 
+    FString LevelURL = FString::Printf(TEXT("%s?Seed=%d&Difficulty=%d"),
         *FreeRunLevel.ToString(), Seed, SelectedDifficulty);
-    
+
     UGameplayStatics::OpenLevel(this, FName(*LevelURL));
 }
 
@@ -216,7 +220,7 @@ void UFreeRunSetupWidget::HandleSeedTextCommitted(const FText& Text, ETextCommit
         return;
 
     FString SeedString = Text.ToString();
-    
+
     // 빈 문자열이면 기본값 1로 설정
     if (SeedString.IsEmpty())
     {
@@ -247,10 +251,10 @@ void UFreeRunSetupWidget::UpdateDifficultyUI()
     FString DifficultyName;
     switch (SelectedDifficulty)
     {
-        case 0: DifficultyName = TEXT("Easy"); break;
-        case 1: DifficultyName = TEXT("Normal"); break;
-        case 2: DifficultyName = TEXT("Hard"); break;
-        default: DifficultyName = TEXT("Unknown"); break;
+    case 0: DifficultyName = TEXT("Easy"); break;
+    case 1: DifficultyName = TEXT("Normal"); break;
+    case 2: DifficultyName = TEXT("Hard"); break;
+    default: DifficultyName = TEXT("Unknown"); break;
     }
 
     SelectedDifficultyText->SetText(FText::FromString(FString::Printf(TEXT("Selected: %s"), *DifficultyName)));
@@ -293,18 +297,18 @@ void UFreeRunSetupWidget::UpdatePreview(int32 Seed, int32 Difficulty)
     // Difficulty 적용
     switch (Difficulty)
     {
-        case 0:
-            PreviewMountain->Settings.Difficulty = EMountainGenDifficulty::Easy;
-            break;
-        case 1:
-            PreviewMountain->Settings.Difficulty = EMountainGenDifficulty::Normal;
-            break;
-        case 2:
-            PreviewMountain->Settings.Difficulty = EMountainGenDifficulty::Hard;
-            break;
-        default:
-            PreviewMountain->Settings.Difficulty = EMountainGenDifficulty::Normal;
-            break;
+    case 0:
+        PreviewMountain->Settings.Difficulty = EMountainGenDifficulty::Easy;
+        break;
+    case 1:
+        PreviewMountain->Settings.Difficulty = EMountainGenDifficulty::Normal;
+        break;
+    case 2:
+        PreviewMountain->Settings.Difficulty = EMountainGenDifficulty::Hard;
+        break;
+    default:
+        PreviewMountain->Settings.Difficulty = EMountainGenDifficulty::Normal;
+        break;
     }
 
     // 재생성
@@ -337,9 +341,9 @@ void UFreeRunSetupWidget::UpdateSeedFromPreview()
 
     // 재생성 후 실제 적용된 Seed 값 가져오기 (SeedSearch로 변경될 수 있음)
     int32 FinalSeed = PreviewMountain->Settings.Seed;
-    
+
     // TextBox 업데이트 (쉼표 없이)
     SeedTextBox->SetText(FText::FromString(FString::FromInt(FinalSeed)));
-    
+
     UE_LOG(LogTemp, Warning, TEXT("Final Seed after SeedSearch: %d"), FinalSeed);
 }

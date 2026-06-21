@@ -33,6 +33,11 @@ void ACliffSelectionPawn::BeginPlay()
 {
     Super::BeginPlay();
 
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->PlayMenuBGM(this, GI->CliffSelectionBGM);
+    }
+
     // 초기 Yaw / 패닝 상태 초기화
     TargetYaw = GetActorRotation().Yaw;
     // PanStartZ: 항상 0 기준 (PlayerStart Z=0, 암벽 하단에서 상단까지 패닝)
@@ -174,6 +179,9 @@ void ACliffSelectionPawn::OnConfirmSelection(const FInputActionValue& Value)
         return;
     }
 
+    GI->PlayUISound(this, GI->CliffSelectionConfirmSound);
+    GI->StopMenuBGM(0.1f);
+
     GI->SetSelectedSeed(Seeds[CurrentIndex]);
     const int32 NextStageIndex = GI->GetCurrentStageIndex() + 1;
     GI->SetCurrentStageIndex(NextStageIndex);
@@ -214,6 +222,11 @@ void ACliffSelectionPawn::OnRerollPressed(const FInputActionValue& Value)
     if (!GM) return;
 
     UE_LOG(LogTemp, Warning, TEXT("CliffSelectionPawn: Reroll requested"));
+
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->PlayUISound(this, GI->CliffSelectionRerollSound);
+    }
 
     // 리롤 완료 시 GameMode가 OnAllCliffsGenerated를 다시 브로드캐스트하므로
     // HandleAllCliffsGenerated에서 초기 록온/HUD가 자동으로 갱신됨

@@ -2,6 +2,8 @@
 #include "Core/DownfallSaveGame.h"
 #include "Kismet/GameplayStatics.h"
 #include "Math/RandomStream.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundBase.h"
 
 void UDownfallGameInstance::Init()
 {
@@ -50,7 +52,7 @@ void UDownfallGameInstance::SaveToSlot(int32 SlotIndex)
     }
 
     SaveGameObject->StageRecords = StageRecords;
-    
+
     // 클리어한 스테이지 개수 계산
     int32 ClearedCount = 0;
     float TotalTime = 0.0f;
@@ -62,20 +64,20 @@ void UDownfallGameInstance::SaveToSlot(int32 SlotIndex)
             TotalTime += Record.BestTime;
         }
     }
-    
+
     SaveGameObject->ClearedStagesCount = ClearedCount;
     SaveGameObject->TotalPlayTime = TotalTime;
     SaveGameObject->LastSaveTime = FDateTime::Now();
 
     FString SlotName = GetSlotName(SlotIndex);
-    
+
     // 저장 경로 출력
     FString SaveGamePath = FPaths::ProjectSavedDir() / TEXT("SaveGames") / (SlotName + TEXT(".sav"));
     UE_LOG(LogTemp, Warning, TEXT("===== SAVE FILE PATH ====="));
     UE_LOG(LogTemp, Warning, TEXT("Slot Name: %s"), *SlotName);
     UE_LOG(LogTemp, Warning, TEXT("Full Path: %s"), *SaveGamePath);
     UE_LOG(LogTemp, Warning, TEXT("=========================="));
-    
+
     bool bSuccess = UGameplayStatics::SaveGameToSlot(SaveGameObject, SlotName, 0);
 
     if (bSuccess)
@@ -188,7 +190,7 @@ void UDownfallGameInstance::RecordStageTime(FName StageId, float Time)
 {
     if (StageId.IsNone() || Time <= 0.0f)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Invalid stage record: %s, Time: %.2f"), 
+        UE_LOG(LogTemp, Warning, TEXT("Invalid stage record: %s, Time: %.2f"),
             *StageId.ToString(), Time);
         return;
     }
@@ -207,8 +209,8 @@ void UDownfallGameInstance::RecordStageTime(FName StageId, float Time)
         if (ExistingRecord->BestTime == 0.0f || Time < ExistingRecord->BestTime)
         {
             ExistingRecord->BestTime = Time;
-            UE_LOG(LogTemp, Warning, TEXT("DownfallGameInstance: Stage %s cleared! Time: %.2f seconds"), 
-            *StageId.ToString(), Time);
+            UE_LOG(LogTemp, Warning, TEXT("DownfallGameInstance: Stage %s cleared! Time: %.2f seconds"),
+                *StageId.ToString(), Time);
         }
     }
     else
@@ -222,7 +224,7 @@ void UDownfallGameInstance::RecordStageTime(FName StageId, float Time)
 
         StageRecords.Add(NewRecord);
 
-        UE_LOG(LogTemp, Warning, TEXT("DownfallGameInstance: First clear of %s! Time: %.2f seconds"), 
+        UE_LOG(LogTemp, Warning, TEXT("DownfallGameInstance: First clear of %s! Time: %.2f seconds"),
             *StageId.ToString(), Time);
     }
 
@@ -284,4 +286,74 @@ void UDownfallGameInstance::SaveGame()
 void UDownfallGameInstance::LoadGame()
 {
     LoadFromSlot(CurrentSaveSlotIndex);
+}
+
+
+void UDownfallGameInstance::PlayMenuBGM(UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier)
+{
+    if (!WorldContextObject || !Sound)
+    {
+        return;
+    }
+
+    const float SafeVolume = FMath::Max(0.0f, VolumeMultiplier);
+
+    if (MenuBGMComponent && IsValid(MenuBGMComponent) && MenuBGMComponent->Sound == Sound)
+    {
+        MenuBGMComponent->SetVolumeMultiplier(SafeVolume);
+        return;
+    }
+
+    StopMenuBGM(0.0f);
+
+    MenuBGMComponent = UGameplayStatics::SpawnSound2D(
+        WorldContextObject,
+        Sound,
+        SafeVolume,
+        1.0f,
+        0.0f,
+        nullptr,
+        false,
+        false
+    );
+
+    if (MenuBGMComponent && IsValid(MenuBGMComponent))
+    {
+        MenuBGMComponent->bAutoDestroy = false;
+        MenuBGMComponent->FadeIn(0.25f, SafeVolume);
+    }
+}
+
+void UDownfallGameInstance::StopMenuBGM(float FadeOutSeconds)
+{
+    if (!MenuBGMComponent || !IsValid(MenuBGMComponent))
+    {
+        MenuBGMComponent = nullptr;
+        return;
+    }
+
+    if (FadeOutSeconds > 0.0f)
+    {
+        MenuBGMComponent->FadeOut(FadeOutSeconds, 0.0f);
+    }
+    else
+    {
+        MenuBGMComponent->Stop();
+    }
+
+    MenuBGMComponent->DestroyComponent();
+    MenuBGMComponent = nullptr;
+}
+
+void UDownfallGameInstance::PlayUISound(UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier)
+{
+    if (WorldContextObject && Sound)
+    {
+        UGameplayStatics::PlaySound2D(
+            WorldContextObject,
+            Sound,
+            FMath::Max(0.0f, VolumeMultiplier),
+            FMath::Max(0.01f, PitchMultiplier)
+        );
+    }
 }

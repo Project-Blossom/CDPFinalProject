@@ -408,6 +408,8 @@ void AFlyingAttacker::ExecuteCharge()
     SetAttackState(EAttackState::Attacking);
     bHasHitPlayer = false;
 
+    PlayMonsterSound(ChargeSound, ChargeSoundVolumeMultiplier);
+
     UE_LOG(LogMonster, Warning, TEXT("%s CHARGING!"), *GetName());
 }
 
@@ -417,6 +419,8 @@ void AFlyingAttacker::OnAttackHit(ADownfallCharacter* Player)
         return;
 
     bHasHitPlayer = true;
+
+    PlayMonsterSound(AttackHitSound, AttackHitSoundVolumeMultiplier);
 
     // Insanity 증가
     Player->AddInsanity(InsanityDamage);

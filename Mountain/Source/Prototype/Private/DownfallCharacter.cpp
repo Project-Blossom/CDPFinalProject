@@ -3565,6 +3565,41 @@ void ADownfallCharacter::PlayItemCooldownSoundAtSlot(int32 SlotIndex) const
     );
 }
 
+
+void ADownfallCharacter::PlayItemDestroySoundAtSlot(int32 SlotIndex) const
+{
+    if (!Inventory || !IsValidInventorySlotIndex(SlotIndex))
+    {
+        return;
+    }
+
+    UItemDefinition* Def = Inventory->GetItemDefinitionAt(SlotIndex);
+    if (!Def)
+    {
+        return;
+    }
+
+    const FDFPickedSound Picked = DF_SelectSoundVariant(
+        Def->DestroySoundVariants,
+        Def->DestroySound,
+        Def->DestroySoundVolumeMultiplier,
+        Def->DestroySoundPitchMultiplier
+    );
+
+    if (!Picked.Sound)
+    {
+        return;
+    }
+
+    PlayCharacterSound(
+        Picked.Sound,
+        Picked.VolumeMultiplier,
+        Picked.PitchMultiplier,
+        Def->DestroySoundPlaybackMode,
+        GetActorLocation()
+    );
+}
+
 void ADownfallCharacter::PlayCharacterStateSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float VolumeMultiplier, float PitchMultiplier, const FVector& EventLocation)
 {
     if (!bEnableCharacterStateSounds)
@@ -3962,12 +3997,23 @@ bool ADownfallCharacter::TryPickHeldItemFromCursor()
 
     if (Inventory->IsReservedCenterSlot(InventoryCursorIndex))
     {
-        if (IsValidInventorySlotIndex(HeldSlotIndex))
+        const bool bHadHeldItem = IsValidInventorySlotIndex(HeldSlotIndex);
+
+        if (bHadHeldItem)
         {
             PlayItemUnequipSoundAtSlot(HeldSlotIndex);
         }
-
-        PlayCharacterSound(EmptyHandSelectSoundVariants, EmptyHandSelectSound, EmptyHandSelectSoundVolumeMultiplier, EmptyHandSelectSoundPitchMultiplier, EmptyHandSelectSoundPlaybackMode, GetActorLocation());
+        else
+        {
+            PlayCharacterSound(
+                EmptyHandSelectSoundVariants,
+                EmptyHandSelectSound,
+                EmptyHandSelectSoundVolumeMultiplier,
+                EmptyHandSelectSoundPitchMultiplier,
+                EmptyHandSelectSoundPlaybackMode,
+                GetActorLocation()
+            );
+        }
 
         HeldSlotIndex = INDEX_NONE;
         ItemUseState = EItemUseState::None;
@@ -4144,6 +4190,8 @@ bool ADownfallCharacter::TryDestroyInventoryItemAtCursor()
     {
         return false;
     }
+
+    PlayItemDestroySoundAtSlot(DestroySlotIndex);
 
     if (!Inventory->ConsumeItemAt(DestroySlotIndex, 1))
     {

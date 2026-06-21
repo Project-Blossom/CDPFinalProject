@@ -5,6 +5,8 @@
 #include "Climbing/IClimbableSurface.h"
 #include "FlyingPlatform.generated.h"
 
+class USoundBase;
+
 UCLASS()
 class PROTOTYPE_API AFlyingPlatform : public AFlyingMonster, public IClimbableSurface
 {
@@ -41,37 +43,45 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Platform")
     FName GrabSocketName = "GrabSocket";
-    
+
     UPROPERTY(EditAnywhere, Category = "Platform")
     float GripDetectionRadius = 300.0f; // FlyingPlatform 전용 잡기 감지 반경 (cm)
-    
+
+
+    // 플레이어가 플랫폼에 붙잡혀 납치 상태로 들어갈 때 재생.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+    TObjectPtr<USoundBase> AbductionSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float AbductionSoundVolumeMultiplier = 1.0f;
+
     // ============================================
     // Carrier System (WallCrawler Transport)
     // ============================================
     UPROPERTY(EditAnywhere, Category = "Carrier")
     float WallCrawlerDetectionRadius = 5000.0f;  // 50m
-    
+
     UPROPERTY(EditAnywhere, Category = "Carrier")
     float PlayerDropRadius = 5000.0f;  // 50m
-    
+
     UPROPERTY(EditAnywhere, Category = "Carrier")
     float CrawlerSearchInterval = 5.0f;  // 5초
-    
+
     UPROPERTY(BlueprintReadOnly, Category = "Carrier")
     class AWallCrawler* CarriedCrawler = nullptr;
-    
+
     UPROPERTY(BlueprintReadOnly, Category = "Carrier")
     float LastSearchTime = 0.0f;
-    
+
     UFUNCTION(BlueprintCallable, Category = "Carrier")
     class AWallCrawler* FindNearbyWallCrawler();
-    
+
     UFUNCTION(BlueprintCallable, Category = "Carrier")
     void DropWallCrawler();
-    
+
     UFUNCTION(BlueprintPure, Category = "Carrier")
     bool HasCarriedCrawler() const { return CarriedCrawler != nullptr; }
-    
+
     UFUNCTION(BlueprintPure, Category = "Carrier")
     bool CanDropCrawler() const;
 
@@ -80,7 +90,7 @@ public:
     // const 함수 내에서 수정 가능하도록 mutable 선언
     mutable bool bHasDrawnDropDebug = false;
 #endif
-    
+
     // ============================================
     // Patrol State
     // ============================================

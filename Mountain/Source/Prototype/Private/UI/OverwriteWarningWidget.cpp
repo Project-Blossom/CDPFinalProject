@@ -4,10 +4,14 @@
 #include "Kismet/GameplayStatics.h"
 #include "Core/DownfallGameInstance.h"
 #include "UI/FadeWidget.h"
+#include "UI/UIButtonClickSoundHelper.h"
 
 void UOverwriteWarningWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    // 공통 버튼 클릭음 적용
+    PrototypeUI::ApplyProjectButtonClickSound(this);
 
     // 버튼 클릭 이벤트 바인딩
     if (ConfirmButton)
@@ -94,9 +98,9 @@ void UOverwriteWarningWidget::StartFadeOutToLevel(FName LevelName)
     {
         FadeWidgetInstance->AddToViewport(200);
         FadeWidgetInstance->StartFadeOut(FadeOutDuration);
-        
+
         PendingLevelName = LevelName;
-        
+
         // Fade Out 시간 후 레벨 전환
         FTimerHandle TimerHandle;
         GetWorld()->GetTimerManager().SetTimer(

@@ -3,10 +3,14 @@
 #include "Kismet/GameplayStatics.h"
 #include "Core/DownfallGameMode.h"
 #include "Core/DownfallGameInstance.h"
+#include "UI/UIButtonClickSoundHelper.h"
 
 void UPauseMenuWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    // 공통 버튼 클릭음 적용
+    PrototypeUI::ApplyProjectButtonClickSound(this);
 
     // 버튼 클릭 이벤트 바인딩
     if (ResumeButton)

@@ -4,6 +4,8 @@
 #include "Monsters/FlyingMonster.h"
 #include "FlyingAttacker.generated.h"
 
+class USoundBase;
+
 // 공격 상태
 UENUM(BlueprintType)
 enum class EAttackState : uint8
@@ -54,6 +56,20 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Attack")
     float SafeDistance = 500.0f;             // 안전 거리 (공격 후 유지)
+
+
+    // 돌진 시작음과 플레이어 적중음.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+    TObjectPtr<USoundBase> ChargeSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float ChargeSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+    TObjectPtr<USoundBase> AttackHitSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float AttackHitSoundVolumeMultiplier = 1.0f;
 
     // Attack State Tracking
     UPROPERTY(BlueprintReadOnly, Category = "Attack")

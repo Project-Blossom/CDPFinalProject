@@ -2,7 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Monsters/MonsterBase.h"
+#include "Components/AudioComponent.h"
 #include "WallCrawler.generated.h"
+
+class USoundBase;
 
 UCLASS()
 class PROTOTYPE_API AWallCrawler : public AMonsterBase
@@ -105,6 +108,14 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Attack")
     float StaminaDrainRate = 10.0f;
+
+
+    // 플레이어에게 붙어 스태미나를 흡수하는 동안 재생되는 루프음.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+    TObjectPtr<USoundBase> DrainLoopSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float DrainLoopSoundVolumeMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, Category = "Attack")
     float ShakeThreshold = 1000.0f;
@@ -211,4 +222,9 @@ public:
     virtual void Attack() override {}
     virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus) override;
     virtual void ForceForgetPlayer(class ADownfallCharacter* PlayerToForget) override;
+
+
+private:
+    UPROPERTY(Transient)
+    TObjectPtr<UAudioComponent> DrainLoopAudioComponent = nullptr;
 };

@@ -9,6 +9,7 @@
 #include "BrainComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "TimerManager.h"  // ← 추가 (FTimerHandle 사용)
+#include "Kismet/GameplayStatics.h"
 
 AWallCrawler::AWallCrawler()
 {
@@ -506,6 +507,18 @@ void AWallCrawler::AttachToPlayer(ADownfallCharacter* Player)
     // Attach Desaturation VFX 표시
     Player->ShowAttachDesaturation(0.8f);
 
+
+    if (DrainLoopSound && (!DrainLoopAudioComponent || !IsValid(DrainLoopAudioComponent)))
+    {
+        DrainLoopAudioComponent = UGameplayStatics::SpawnSound2D(
+            this, DrainLoopSound, DrainLoopSoundVolumeMultiplier, 1.0f, 0.0f, nullptr, false, false);
+        if (DrainLoopAudioComponent)
+        {
+            DrainLoopAudioComponent->bAutoDestroy = false;
+            DrainLoopAudioComponent->FadeIn(0.15f, DrainLoopSoundVolumeMultiplier);
+        }
+    }
+
     UE_LOG(LogMonster, Warning, TEXT("%s ATTACHED (debuff mode) - Time since spawn: %.1fs, Shake detection RESET"), *GetName(), TimeSinceSpawn);
 }
 
@@ -514,6 +527,14 @@ void AWallCrawler::DetachFromPlayer()
     if (!bAttachedToPlayer) return;
 
     bAttachedToPlayer = false;
+
+    if (DrainLoopAudioComponent && IsValid(DrainLoopAudioComponent))
+    {
+        DrainLoopAudioComponent->FadeOut(0.15f, 0.0f);
+        DrainLoopAudioComponent->DestroyComponent();
+    }
+    DrainLoopAudioComponent = nullptr;
+
     AccumulatedShake = 0.0f;
     LastMousePosition = FVector2D::ZeroVector;  // CRITICAL: 리셋
 
@@ -752,6 +773,7 @@ void AWallCrawler::UpdateDetectionGauge(float DeltaTime)
         if (DetectionGauge >= DetectionGaugeMax && !TargetPlayer)
         {
             TargetPlayer = Cast<ADownfallCharacter>(PotentialTarget);
+            PlayMonsterDetectionSound();
             UE_LOG(LogMonster, Error, TEXT("%s DETECTED player via GAUGE (Gauge: %.1f) - TargetPlayer SET!"),
                 *GetName(), DetectionGauge);
         }
