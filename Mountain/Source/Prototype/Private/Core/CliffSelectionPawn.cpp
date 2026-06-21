@@ -369,24 +369,35 @@ void ACliffSelectionPawn::UpdateHUDInfo()
 {
     if (!HUDWidget) return;
 
-    UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>();
-    const TArray<int32>& Seeds = GI ? GI->GetGeneratedSeeds() : TArray<int32>();
+    // [DEBUG-FIX] HUD<->실제 지형 시드/난이도 불일치 버그 수정.
+    // 기존에는 GI->GetGeneratedSeeds()[CurrentIndex](=AutoTune 탐색 전 "요청 시드")와
+    // StageIndex로부터 별도로 재계산한 난이도 문자열을 표시했다. 이 값들은 실제로
+    // 화면에 보이는 절벽을 만든 SeedSearch 결과(FinalSeed)나 ResolveDifficultyFromStageIndex()가
+    // 실제로 선택한 Difficulty와 다를 수 있어, HUD에 표시되는 정보와 실제 지형이 어긋났다.
+    // 대신 실제로 생성이 완료된 Cliff 액터의 Settings를 그대로 읽어 단일 진실 공급원으로 삼는다.
+    // 이 값은 CliffSelectionGameMode::SpawnCliffs()에서 ApplyGeneratedMeshResult 이후
+    // 확정된 FinalSeed/Difficulty이며, Stage 진입 시 동일한 InputSeed+Difficulty로
+    // 재탐색했을 때도 결정론적으로 같은 FinalSeed가 나오므로 Stage에서 실제로 플레이하는
+    // 지형과도 일치한다.
+    AMountainGenWorldActor* Cliff = GetCliffAt(CurrentIndex);
 
-    const int32 Seed = Seeds.IsValidIndex(CurrentIndex) ? Seeds[CurrentIndex] : 0;
-    const int32 StageIndex = GI ? GI->GetCurrentStageIndex() : 0;
+    const int32 Seed = Cliff ? Cliff->Settings.Seed : 0;
+    const EMountainGenDifficulty Difficulty = Cliff ? Cliff->Settings.Difficulty : EMountainGenDifficulty::Normal;
 
-    HUDWidget->UpdateSelectionInfo(CurrentIndex, Seed, GetDifficultyDisplayString(StageIndex));
+    HUDWidget->UpdateSelectionInfo(CurrentIndex, Seed, GetDifficultyDisplayString(Difficulty));
 }
 
-FString ACliffSelectionPawn::GetDifficultyDisplayString(int32 StageIndex)
+FString ACliffSelectionPawn::GetDifficultyDisplayString(EMountainGenDifficulty Difficulty)
 {
-    switch (StageIndex)
+    switch (Difficulty)
     {
-    case 2:
+    case EMountainGenDifficulty::Hard:
         return TEXT("Hard");
-    case 1:
-    default:
+    case EMountainGenDifficulty::Normal:
         return TEXT("Medium");
+    case EMountainGenDifficulty::Easy:
+    default:
+        return TEXT("Easy");
     }
 }
 

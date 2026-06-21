@@ -12,6 +12,7 @@ class UInputAction;
 class UCliffSelectionHUDWidget;
 class UCliffSelectionLoadingWidget;
 class AMountainGenWorldActor;
+enum class EMountainGenDifficulty : uint8;
 
 /**
  * CliffSelection 레벨 플레이어 Pawn
@@ -142,7 +143,7 @@ private:
     void UpdateHUDInfo();
 
     // 난이도 enum -> 표시용 문자열
-    static FString GetDifficultyDisplayString(int32 StageIndex);
+    static FString GetDifficultyDisplayString(EMountainGenDifficulty Difficulty);
 
     // GameMode에서 스폰된 암벽 배열 가져오기 (캐시 없이 매번 조회)
     AMountainGenWorldActor* GetCliffAt(int32 Index) const;

@@ -40,6 +40,18 @@ void ADownfallGameMode::BeginPlay()
     if (GI && GI->GetSelectedSeed() > 0)
     {
         const int32 SelectedSeed = GI->GetSelectedSeed();
+
+        // [DEBUG-FIX] CliffSelection<->Stage 시드 드리프트 버그 수정.
+        // BuildChunkAndMesh()는 항상 MGApplyDifficultyPreset(S)를 거치며, 이 함수는
+        // Difficulty 값에 따라 Targets/BaseField3DStrengthCm/OverhangBias 등 시드 탐색
+        // 스코어링에 직접 관여하는 필드를 전부 덮어쓴다. 레벨에 배치된 MountainGenWorldActor의
+        // Settings.Difficulty(에디터에서 설정한 값, 기본 Easy)가 CliffSelection이 실제로
+        // 시드를 탐색할 때 사용한 Difficulty(Normal/Hard)와 다르면, 같은 Seed를 넣어도
+        // MGSearchSeedForTargets가 완전히 다른 후보를 "최적"으로 선택해 FinalSeed가
+        // CliffSelection에서 본 절벽과 달라진다. Seed뿐 아니라 Difficulty도 GameInstance
+        // 값으로 강제 동기화해 레벨 에디터 설정값에 의존하지 않도록 한다.
+        const EMountainGenDifficulty SelectedDifficulty = GI->GetSelectedDifficulty();
+
         bool bFoundActor = false;
 
         for (TActorIterator<AMountainGenWorldActor> It(GetWorld()); It; ++It)
@@ -48,12 +60,14 @@ void ADownfallGameMode::BeginPlay()
             if (MountainActor)
             {
                 MountainActor->Settings.Seed = SelectedSeed;
+                MountainActor->Settings.Difficulty = SelectedDifficulty;
                 MountainActor->OnMountainGenerated.AddDynamic(
                     this, &ADownfallGameMode::OnCliffGenerationComplete);
                 MountainActor->Regenerate();
                 bFoundActor = true;
 
-                UE_LOG(LogTemp, Warning, TEXT("StageGameMode: MountainGenWorldActor Seed=%d → Regenerate()"), SelectedSeed);
+                UE_LOG(LogTemp, Warning, TEXT("StageGameMode: MountainGenWorldActor Seed=%d Difficulty=%d → Regenerate()"),
+                    SelectedSeed, (int32)SelectedDifficulty);
                 break;
             }
         }

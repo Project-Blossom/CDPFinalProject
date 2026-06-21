@@ -2,6 +2,7 @@
 #include "GDPCGScoring.h"
 #include "VoxelDensityGenerator.h"
 #include "HAL/PlatformTime.h"
+#include "HAL/ThreadSafeCounter.h"
 #include "Async/ParallelFor.h"
 
 // ============================================================
@@ -142,26 +143,26 @@ struct FMGMetricsContext
         const FVoxelDensityGenerator Gen(S, TerrainOriginWorld);
         const FVector Up(0, 0, 1);
 
-        // 병렬 누적용 (원자 연산 피하려고 TLS 합산)
-        struct FAcc
-        {
-            int32 Valid = 0;
-            int32 Over = 0;
-            int32 Steep = 0;
-            int32 Rough = 0;
-            int32 ShadowRisk = 0;
-        };
-        TArray<FAcc> Accs;
-        const int32 NumWorkers = FMath::Max(1, FTaskGraphInterface::Get().GetNumWorkerThreads());
-        Accs.SetNumZeroed(NumWorkers + 1);
+        // [FIX] 기존에는 FPlatformTLS::GetCurrentThreadId() % (NumWorkers+1) 로 워커별 버킷에
+        // 비원자적으로 누적했다. ParallelFor가 실제로 사용하는 스레드 수/ID는 NumWorkers+1보다
+        // 클 수 있어 서로 다른 스레드가 같은 버킷에 충돌(collision)하면 동기화 없이 동시에
+        // A.Valid++ 등을 수행하는 데이터 레이스가 발생했다. 그 결과 동일한 Seed/입력값으로
+        // Compute()를 호출해도 호출할 때마다(스레드 스케줄링에 따라) Valid/Over/Steep/Rough/
+        // ShadowRisk 카운트가 미세하게 달라졌고, 이는 MGSearchSeedForTargets의 후보 점수와
+        // 최종 선택 Seed가 매번 달라지는 비결정성(예: CliffSelection과 Stage에서 같은
+        // RequestedSeed인데 FinalSeed가 다르게 나오는 버그)으로 이어졌다.
+        // FThreadSafeCounter(원자 연산)로 교체해 호출 횟수와 무관하게 항상 동일한 카운트가
+        // 나오도록 결정성을 보장한다. (FreeRunSetup 쪽 동일 패턴에도 같은 방식 적용 가능)
+        FThreadSafeCounter AccValid;
+        FThreadSafeCounter AccOver;
+        FThreadSafeCounter AccSteep;
+        FThreadSafeCounter AccRough;
+        FThreadSafeCounter AccShadowRisk;
 
         const int32 Total = Grid * Grid;
 
         ParallelFor(Total, [&](int32 idx)
             {
-                const int32 Worker = FMath::Clamp(FPlatformTLS::GetCurrentThreadId() % (NumWorkers + 1), 0, NumWorkers);
-                FAcc& A = Accs[Worker];
-
                 const int32 iz = idx / Grid;
                 const int32 iy = idx - iz * Grid;
 
@@ -238,32 +239,28 @@ struct FMGMetricsContext
                 if (bIsBaseCliff)
                     return;
 
-                A.Valid++;
+                AccValid.Increment();
 
                 if (NormalDelta >= RoughDeltaThreshold)
                 {
-                    A.Rough++;
+                    AccRough.Increment();
                 }
 
                 if (NormalDelta >= ShadowDeltaThreshold)
                 {
-                    A.ShadowRisk++;
+                    AccShadowRisk.Increment();
                 }
 
                 static constexpr float OverhangUpDotThreshold = -0.15f;
-                if (UpDot <= OverhangUpDotThreshold) A.Over++;
-                if (FMath::Abs(UpDot) <= SteepDot)   A.Steep++;
+                if (UpDot <= OverhangUpDotThreshold) AccOver.Increment();
+                if (FMath::Abs(UpDot) <= SteepDot)   AccSteep.Increment();
             });
 
-        int32 Valid = 0, Over = 0, Steep = 0, Rough = 0, ShadowRisk = 0;
-        for (const FAcc& A : Accs)
-        {
-            Valid += A.Valid;
-            Over += A.Over;
-            Steep += A.Steep;
-            Rough += A.Rough;
-            ShadowRisk += A.ShadowRisk;
-        }
+        const int32 Valid = AccValid.GetValue();
+        const int32 Over = AccOver.GetValue();
+        const int32 Steep = AccSteep.GetValue();
+        const int32 Rough = AccRough.GetValue();
+        const int32 ShadowRisk = AccShadowRisk.GetValue();
 
         M.SurfaceNearSamples = Valid;
         if (Valid > 0)

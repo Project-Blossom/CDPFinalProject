@@ -1391,6 +1391,15 @@ void AMountainGenWorldActor::ApplyGeneratedMeshResult(FMGAsyncResult&& Result, b
 
 void AMountainGenWorldActor::Regenerate()
 {
+    // [DEBUG] CliffSelection<->Stage Seed 동기화 버그 추적용.
+    // Regenerate()가 한 세션에서 몇 번 호출되는지, 그리고 호출 시점에
+    // Settings.Seed가 이미 어떤 값을 들고 있는지(이전 호출의 SeedSearch 결과가
+    // 누적되어 있는지) 확인한다.
+    static int32 RegenerateCallCount = 0;
+    ++RegenerateCallCount;
+    UE_LOG(LogTemp, Warning, TEXT("[MountainGen][%s] Regenerate() CALLED (CallCount=%d) Settings.Seed(BeforeBuild)=%d"),
+        *GetName(), RegenerateCallCount, Settings.Seed);
+
     BuildChunkAndMesh();
 }
 

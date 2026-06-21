@@ -102,6 +102,14 @@ void ACliffSelectionGameMode::SpawnCliffs()
 
     const EMountainGenDifficulty Difficulty = ResolveDifficultyFromStageIndex();
 
+    // [DEBUG-FIX] 시드 탐색에 실제 사용되는 Difficulty를 GameInstance에 저장.
+    // Stage GameMode가 레벨에 배치된 액터의 Difficulty 값(에디터 설정)을 신뢰하지 않고
+    // 이 값을 그대로 가져다 쓰도록 한다.
+    if (GI)
+    {
+        GI->SetSelectedDifficulty(Difficulty);
+    }
+
     FVector CenterLocation = FVector::ZeroVector;
     if (AActor* PlayerStart = FindPlayerStart(nullptr))
     {

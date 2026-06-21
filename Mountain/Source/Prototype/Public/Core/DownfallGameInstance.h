@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
 #include "Core/StageData.h"
+#include "MountainGenSettings.h"
 #include "DownfallGameInstance.generated.h"
 
 class USoundBase;
@@ -158,6 +159,20 @@ public:
     UFUNCTION(BlueprintPure, Category = "CliffSelection")
     int32 GetSelectedSeed() const { return SelectedSeed; }
 
+    // [DEBUG-FIX] CliffSelection<->Stage Seed 동기화 버그 수정용.
+    // CliffSelection이 시드를 탐색(MGSearchSeedForTargets)할 때 실제로 사용한 Difficulty를
+    // 그대로 저장해, 다음 Stage 레벨에서 같은 Difficulty로 Regenerate()하도록 한다.
+    // 레벨에 배치된 MountainGenWorldActor의 Settings.Difficulty 값(에디터에서 설정한 값)에
+    // 의존하지 않고, "실제로 시드를 찾을 때 쓴 Difficulty"를 단일 진실 공급원으로 삼는다.
+    // 이렇게 하면 향후 스테이지가 추가되거나 난이도 매핑 규칙이 바뀌어도
+    // CliffSelectionGameMode와 DownfallGameMode 양쪽에서 인덱스→난이도 매핑 로직을
+    // 중복/동기화할 필요가 없다.
+    UFUNCTION(BlueprintCallable, Category = "CliffSelection")
+    void SetSelectedDifficulty(EMountainGenDifficulty Difficulty) { SelectedDifficulty = Difficulty; }
+
+    UFUNCTION(BlueprintPure, Category = "CliffSelection")
+    EMountainGenDifficulty GetSelectedDifficulty() const { return SelectedDifficulty; }
+
 protected:
     // 스테이지 기록 배열
     UPROPERTY(BlueprintReadOnly, Category = "Stage")
@@ -198,6 +213,10 @@ protected:
     // 플레이어가 선택(Enter)한 Seed — 다음 스테이지 레벨 로드 시 사용
     UPROPERTY(BlueprintReadOnly, Category = "CliffSelection")
     int32 SelectedSeed = 0;
+
+    // CliffSelection이 시드 탐색에 실제로 사용한 Difficulty — Stage 레벨에서 동일하게 재사용
+    UPROPERTY(BlueprintReadOnly, Category = "CliffSelection")
+    EMountainGenDifficulty SelectedDifficulty = EMountainGenDifficulty::Normal;
 
 
     UPROPERTY(Transient)
