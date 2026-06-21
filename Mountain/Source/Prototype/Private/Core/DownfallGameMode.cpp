@@ -240,9 +240,6 @@ void ADownfallGameMode::OnCliffGenerationComplete(AActor* Generator)
             (RequestedSeed == ActualSeed) ? TEXT("MATCH") : TEXT("MISMATCH"));
     }
 
-    HideLoadingWidget();
-    StartStageAfterLoading();
-
     // [DEBUG-FIX] 미니맵 캡처 타이밍 버그 수정.
     // ADownfallCharacter::BeginPlay()는 AutoConfigureMinimapCapture()를 한 번 호출하지만,
     // 그 시점에는 MountainActor->Regenerate()가 비동기로 진행 중이라 ProcMesh 바운드가
@@ -253,11 +250,25 @@ void ADownfallGameMode::OnCliffGenerationComplete(AActor* Generator)
     // 메시 생성이 실제로 완료된 이 콜백(OnMountainGenerated) 시점에 플레이어 캐릭터의
     // AutoConfigureMinimapCapture()를 다시 호출해, 최종 ProcMesh 바운드 기준으로
     // SceneCapture를 재설정하고 RT_Minimap을 다시 캡처한다.
+    //
+    // [DEBUG-FIX] 순서 수정: 의도된 파이프라인은
+    // 암벽 생성 → 미니맵 머티리얼 적용 → 캡처 → 기존 머티리얼로 복구 → 로딩 화면 해제.
+    // AutoConfigureMinimapCapture()는 머티리얼 교체까지만 동기로 처리하고, 실제
+    // CaptureScene()/복구는 셰이더 워밍업을 위해 MinimapCaptureMaterialWarmupDelay초 뒤
+    // FinalizeMinimapCapture()에서 수행한다(새로 만든 M_MinimapCliff DMI를 같은 프레임에
+    // 바로 캡처하면 셰이더 컴파일이 끝나지 않아 엔진 기본 체커보드가 찍히는 문제 수정).
+    // 따라서 로딩 화면 해제도 그 워밍업 지연 이후로 맞춰야 "캡처 → 복구 → 로딩 화면 해제"
+    // 순서가 실제로 보장된다.
+    float MinimapWarmupDelay = 0.0f;
+    bool bTriggeredMinimapCapture = false;
+
     if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
     {
         if (ADownfallCharacter* PlayerCharacter = Cast<ADownfallCharacter>(PlayerPawn))
         {
             PlayerCharacter->AutoConfigureMinimapCapture();
+            MinimapWarmupDelay = PlayerCharacter->MinimapCaptureMaterialWarmupDelay;
+            bTriggeredMinimapCapture = true;
             UE_LOG(LogTemp, Warning, TEXT("StageGameMode: AutoConfigureMinimapCapture() re-triggered after mesh regen complete"));
         }
         else
@@ -269,6 +280,29 @@ void ADownfallGameMode::OnCliffGenerationComplete(AActor* Generator)
     {
         UE_LOG(LogTemp, Warning, TEXT("StageGameMode: PlayerPawn not found, skipping minimap reconfigure"));
     }
+
+    if (bTriggeredMinimapCapture)
+    {
+        // 워밍업 지연 + 약간의 여유(0.05s)만큼 기다린 뒤 로딩 화면 해제
+        GetWorld()->GetTimerManager().ClearTimer(MinimapCaptureLoadingDelayHandle);
+        GetWorld()->GetTimerManager().SetTimer(
+            MinimapCaptureLoadingDelayHandle,
+            this,
+            &ADownfallGameMode::FinishLoadingAfterMinimapCapture,
+            MinimapWarmupDelay + 0.05f,
+            false);
+    }
+    else
+    {
+        // 미니맵 캐릭터를 찾지 못한 예외적 상황 — 바로 로딩 화면 해제
+        FinishLoadingAfterMinimapCapture();
+    }
+}
+
+void ADownfallGameMode::FinishLoadingAfterMinimapCapture()
+{
+    HideLoadingWidget();
+    StartStageAfterLoading();
 }
 
 void ADownfallGameMode::HideLoadingWidget()

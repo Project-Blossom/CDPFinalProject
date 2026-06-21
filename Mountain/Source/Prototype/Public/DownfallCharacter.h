@@ -24,6 +24,7 @@ class AExponentialHeightFog;
 class AStaticMeshActor;
 class ASceneCapture2D;
 class UMinimapWidget;
+class UProceduralMeshComponent;
 class AMonsterSpawner;
 class USplineComponent;
 class USplineMeshComponent;
@@ -1417,6 +1418,23 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
     bool bCaptureWithShadows = false;
 
+    // [DEBUG-FIX] 스테이지별 동적 라이팅(블러드문 붉은/저조도 광원, 블리자드·비 노출 보정,
+    // 안개 밀도 변화 등)이 미니맵 캡처 결과를 흔드는 문제 수정.
+    // true면 SceneCaptureComponent2D 자신에게만(=레벨의 실제 광원/안개 액터는 건드리지 않고)
+    // Fog/Atmosphere/Bloom/Vignette/AutoExposure를 끄고 고정 노출로 캡처해, 현재 스테이지가
+    // Rain/Blizzard/BloodMoon 중 어떤 상태든 항상 동일한 베이스라인 밝기로 찍히도록 한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    bool bCaptureWithDefaultLighting = true;
+
+    // [DEBUG-FIX] M_MinimapCliff DMI를 처음 만들고 곧바로 같은 프레임에 CaptureScene()을
+    // 호출하면, 그 머티리얼이 한 번도 렌더링된 적이 없어 셰이더 컴파일이 끝나기 전에
+    // 캡처되어 엔진 기본 체커보드 머티리얼이 그대로 찍히는 경우가 있다.
+    // AutoConfigureMinimapCapture()는 머티리얼 교체까지만 동기로 처리하고, 이 시간(초)만큼
+    // 타이머로 대기한 뒤 실제 CaptureScene()/복구를 수행한다(FinalizeMinimapCapture()).
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
+        meta = (ClampMin = "0.0"))
+    float MinimapCaptureMaterialWarmupDelay = 0.25f;
+
     // 미니맵 Orthographic 캡처 범위 (cm) — SceneCapture2D OrthoWidth와 동일하게 설정
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
         meta = (ClampMin = "100.0"))
@@ -1435,6 +1453,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap",
         meta = (ClampMin = "100.0"))
     float CliffTotalHeight = 50000.f;
+
+    // [DEBUG-FIX] 미니맵 전용 암벽 머티리얼 (M_MinimapCliff).
+    // AutoConfigureMinimapCapture()가 캡처 직전 ProcMesh에 이 머티리얼을 적용하고,
+    // CaptureScene() 직후 원래(게임플레이) 머티리얼로 복구한다.
+    // 비어 있으면 기존 게임플레이 머티리얼이 그대로 캡처된다(폴백).
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Minimap")
+    TObjectPtr<UMaterialInterface> MinimapCliffMaterial;
 
     // 미니맵 표시 범위 (cm) — 캐릭터 중심 기준 표시할 반경
     // 기획서 기본값: 10000.0f (100m)
@@ -1656,6 +1681,22 @@ private:
 
     // Minimap SceneCapture2D 캐시
     TWeakObjectPtr<class ASceneCapture2D>  CachedSceneCapture;
+
+    // [DEBUG-FIX] M_MinimapCliff Dynamic Material Instance 캐시 (재사용)
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> MinimapCliffMID;
+
+    // [DEBUG-FIX] 셰이더 워밍업 지연 캡처용 보류 상태
+    FTimerHandle MinimapCaptureFinalizeTimerHandle;
+
+    UPROPERTY()
+    TObjectPtr<UProceduralMeshComponent> PendingMinimapProcMesh;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInterface> PendingMinimapOriginalMaterial;
+
+    // 머티리얼 워밍업 지연 후 실제 ShowFlags/PostProcess 적용 + CaptureScene() + 머티리얼 복구
+    void FinalizeMinimapCapture();
 
     // Minimap Color Tint Lerp 내부 상태
     FLinearColor MinimapCurrentTint = FLinearColor::White;

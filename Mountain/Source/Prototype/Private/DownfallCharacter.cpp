@@ -5382,8 +5382,21 @@ void ADownfallCharacter::UpdateMinimapUI()
     const float HalfW = CliffTotalWidth * 0.5f;
     const float HalfH = CliffTotalHeight * 0.5f;
 
+    // [DEBUG-FIX] 좌우 반전 버그 수정.
+    // 기존 식 (PlayerPos.Y - (CapturePos.Y - HalfW)) / CliffTotalWidth는 PlayerPos.Y가
+    // 커질수록(월드 +Y 방향) UV_X도 커지는(텍스처 오른쪽으로 이동) 것으로 가정한다.
+    // 그런데 SceneCapture2D가 절벽을 바라보는 카메라 회전(Forward→CliffCenter 방향)에서
+    // 실제 "화면 오른쪽"(U 증가 방향)은 카메라의 Right 벡터를 따르는데, 이 Right 벡터가
+    // 월드 +Y와 반대 방향이라 텍스처의 U=0/U=1이 실제로는 뒤집혀 있었다 — 그래서 RT_Minimap
+    // 배경 스크롤도, 거기서 파생되는 플레이어 마커 위치도 둘 다 좌우가 반대로 보였다.
+    // 수식을 좌우로 뒤집어서 맞춘다.
     const float UV_X = FMath::Clamp(
-        (PlayerPos.Y - (CapturePos.Y - HalfW)) / CliffTotalWidth, 0.0f, 1.0f);
+        ((CapturePos.Y + HalfW) - PlayerPos.Y) / CliffTotalWidth, 0.0f, 1.0f);
+
+    // [DEBUG-FIX] 마커 시작 위치 버퍼를 UV_Y(배경 스크롤 기준)에 적용했더니, 실제 캡처된
+    // RT_Minimap 텍스처의 진짜 월드 Z 범위와 어긋나서 고도가 올라가면 배경이 암벽 위쪽
+    // 끝을 넘어 빈 영역(하늘)까지 스크롤되는 문제가 생겼다. 마커 위치는 위젯 쪽 수정만으로
+    // 이미 정확했으므로(버퍼 불필요), UV_Y는 원래의 정확한 텍스처 매핑 식으로 되돌린다.
     const float UV_Y = FMath::Clamp(
         1.0f - (PlayerPos.Z - (CapturePos.Z - HalfH)) / CliffTotalHeight, 0.0f, 1.0f);
 
@@ -5454,10 +5467,33 @@ void ADownfallCharacter::AutoConfigureMinimapCapture() {
     const float DefaultSize = 50000.f;
     bool bAutoDetected = false;
 
+    // [DEBUG-FIX] 캡처 전/후 머티리얼 스왑·복구에 사용 — 함수 스코프로 끌어올림
+    UProceduralMeshComponent* ProcMeshForCapture = nullptr;
+    UMaterialInterface* OriginalCliffMaterial = nullptr;
+
     if (CachedMountainActor.IsValid())
     {
+        // [DEBUG-FIX] 깊이 기준점(Origin.X) 오프셋 버그 수정.
+        // GetActorBounds()는 액터에 붙은 모든 컴포넌트(콜리전 박스, 베이스 볼륨 등 눈에
+        // 안 보이는 것까지)를 합산한 바운드라서, 실제로 화면에 보이는 ProcMesh 표면보다
+        // 훨씬 크거나 한쪽으로 치우친 박스가 나올 수 있다. 그 결과 Origin.X가 실제 표면
+        // 요철의 중심과 어긋나면, CliffFrontX/CliffBackX 구간이 표면 WorldPos.X 분포의
+        // 한쪽 끝에만 걸쳐서 거의 전부 BottomColor(또는 TopColor) 한 색으로 쏠려 찍힌다
+        // (붉은색/연두색 Lerp가 전부 붉은색으로만 나오는 증상과 일치).
+        // 미니맵 머티리얼이 실제로 적용되는 대상은 ProcMesh이므로, ProcMesh 자신의 렌더
+        // 바운드를 기준점으로 사용해 실제 표시되는 표면과 항상 일치하도록 한다.
+        UProceduralMeshComponent* ProcMeshForBounds = CachedMountainActor->FindComponentByClass<UProceduralMeshComponent>();
         FVector Origin, BoxExtent;
-        CachedMountainActor->GetActorBounds(false, Origin, BoxExtent);
+        if (ProcMeshForBounds)
+        {
+            const FBox MeshBox = ProcMeshForBounds->Bounds.GetBox();
+            Origin = MeshBox.GetCenter();
+            BoxExtent = MeshBox.GetExtent();
+        }
+        else
+        {
+            CachedMountainActor->GetActorBounds(false, Origin, BoxExtent);
+        }
 
         if (!BoxExtent.IsNearlyZero())
         {
@@ -5512,31 +5548,64 @@ void ADownfallCharacter::AutoConfigureMinimapCapture() {
                     *CliffForward.ToString(), *CapturePos.ToString(), *CaptureRot.ToString());
             }
 
-            // ── M_MinimapCliff DMI에 CliffFrontX/BackX 자동 설정 ──
-            // Origin.X ± BoxExtent.X = 암벽 전면/후면 X 좌표
-            const float AutoFrontX = Origin.X + BoxExtent.X;
-            const float AutoBackX = Origin.X - BoxExtent.X;
+            // ── 미니맵 전용 머티리얼(M_MinimapCliff) 적용 ──
+            // [DEBUG-FIX] CliffFrontX/CliffBackX 산출 방식을 메시 바운드 역산에서
+            // 생성기의 실제 설계 파라미터 기반으로 교체.
+            // MountainGenWorldActor::GetFrontSurfaceWorldX()/GetTerrainOriginWorld()와
+            // VoxelDensityGenerator::SampleDensity()를 보면, 절벽 표면의 실제 WorldPos.X는
+            // ActorLocation().X(명목상 전면) 근처에서 BaseField3DStrengthCm 크기의 매크로
+            // 3D 노이즈로, 그리고 OverhangDepthCm*VolumeStrength 크기의 오버행 노이즈로
+            // 출렁이는 구조다 — 즉 이게 생성기가 "실제로 의도한" 깊이 변화 폭이다.
+            // 이전엔 ProcMesh의 렌더 바운드(min/max)로 이 범위를 역산했는데, ProcMesh에는
+            // 메인 절벽면과 별개로 Top Plateau(평탄한 정상부, bAddTopFlatPlateau)가 -X
+            // 방향으로 더 깊이(TopPlateauDepthCm) 뻗어 있어 전체 바운드가 그쪽으로
+            // 왜곡되고, 그 결과 메인 절벽면의 실제 깊이 분포가 매핑 범위의 좁은 한쪽
+            // 구석에만 몰려 거의 단색으로 saturate됐다(상단 가느다란 초록 띠 = Plateau,
+            // 나머지 전부 빨강 = 메인 절벽면이 한쪽 끝에 쏠린 것과 일치).
+            // 생성 파라미터를 직접 쓰면 Plateau 유무와 무관하게 항상 메인 절벽면 자체의
+            // 실제 깊이 변화 폭과 정확히 일치한다.
+            const float ReliefHalfRangeCm =
+                FMath::Clamp(CachedMountainActor->Settings.BaseField3DStrengthCm, 0.f, 50000.f)
+                + FMath::Max(0.f, CachedMountainActor->Settings.VolumeStrength)
+                    * FMath::Max(0.f, CachedMountainActor->Settings.OverhangDepthCm);
 
-            UProceduralMeshComponent* ProcMesh =
-                CachedMountainActor->FindComponentByClass<UProceduralMeshComponent>();
-            if (ProcMesh)
+            const float NominalFrontX = CachedMountainActor->GetFrontSurfaceWorldX(); // = ActorLocation().X
+            const float AutoFrontX = NominalFrontX + ReliefHalfRangeCm;
+            const float AutoBackX = NominalFrontX - ReliefHalfRangeCm;
+
+            // 참고: M_MinimapCliff에는 CliffTopZ 파라미터가 존재하지 않는다(그래프에 없음).
+            // 기존에 SetScalarParameterValue(CliffTopZ, ...)를 호출하던 것은 조용히
+            // 무시되던 죽은 코드였으므로 제거한다.
+
+            ProcMeshForCapture = ProcMeshForBounds;
+            if (ProcMeshForCapture)
             {
-                // 현재 머티리얼에서 DMI 생성 (이미 DMI면 그대로 캐스트)
-                UMaterialInterface* CurrentMat = ProcMesh->GetMaterial(0);
-                UMaterialInstanceDynamic* MinimapMID =
-                    Cast<UMaterialInstanceDynamic>(CurrentMat);
-                if (!MinimapMID && CurrentMat)
+                OriginalCliffMaterial = ProcMeshForCapture->GetMaterial(0);
+
+                if (MinimapCliffMaterial)
                 {
-                    MinimapMID = ProcMesh->CreateAndSetMaterialInstanceDynamic(0);
+                    if (!MinimapCliffMID || MinimapCliffMID->Parent != MinimapCliffMaterial)
+                    {
+                        MinimapCliffMID = UMaterialInstanceDynamic::Create(MinimapCliffMaterial, this);
+                    }
+
+                    if (MinimapCliffMID)
+                    {
+                        MinimapCliffMID->SetScalarParameterValue(FName("CliffFrontX"), AutoFrontX);
+                        MinimapCliffMID->SetScalarParameterValue(FName("CliffBackX"), AutoBackX);
+
+                        // 캡처 직전: 미니맵 전용 머티리얼로 교체
+                        ProcMeshForCapture->SetMaterial(0, MinimapCliffMID);
+
+                        UE_LOG(LogDownFall, Log,
+                            TEXT("Minimap: M_MinimapCliff 적용 — FrontX=%.0f BackX=%.0f (ReliefHalfRange=%.0f, NominalFrontX=%.0f)"),
+                            AutoFrontX, AutoBackX, ReliefHalfRangeCm, NominalFrontX);
+                    }
                 }
-                if (MinimapMID)
+                else
                 {
-                    MinimapMID->SetScalarParameterValue(FName("CliffFrontX"), AutoFrontX);
-                    MinimapMID->SetScalarParameterValue(FName("CliffBackX"), AutoBackX);
-                    MinimapMID->SetScalarParameterValue(FName("CliffTopZ"), DetectedHeight);
-                    UE_LOG(LogDownFall, Log,
-                        TEXT("Minimap: M_MinimapCliff DMI — FrontX=%.0f BackX=%.0f TopZ=%.0f"),
-                        AutoFrontX, AutoBackX, DetectedHeight);
+                    UE_LOG(LogDownFall, Warning,
+                        TEXT("Minimap: MinimapCliffMaterial not assigned - set in BP_DownfallCharacter (UI|Minimap). 게임플레이 머티리얼로 캡처됩니다."));
                 }
             }
 
@@ -5554,6 +5623,49 @@ void ADownfallCharacter::AutoConfigureMinimapCapture() {
             CliffTotalWidth, CliffTotalHeight);
     }
 
+    // [DEBUG-FIX] 셰이더 워밍업 대기 후 실제 캡처.
+    // M_MinimapCliff DMI를 방금 새로 만들어 적용한 직후라 셰이더가 아직 컴파일 중일 수 있다.
+    // 같은 프레임에 바로 CaptureScene()을 호출하면 셰이더 컴파일이 끝나지 않아 엔진 기본
+    // 체커보드 머티리얼이 그대로 찍히는 경우가 있었다. MinimapCaptureMaterialWarmupDelay(초)만큼
+    // 타이머로 대기한 뒤 FinalizeMinimapCapture()에서 ShowFlags/PostProcess 적용 +
+    // CaptureScene() + 머티리얼 복구를 수행한다.
+    PendingMinimapProcMesh = ProcMeshForCapture;
+    PendingMinimapOriginalMaterial = OriginalCliffMaterial;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(MinimapCaptureFinalizeTimerHandle);
+        World->GetTimerManager().SetTimer(
+            MinimapCaptureFinalizeTimerHandle,
+            this,
+            &ADownfallCharacter::FinalizeMinimapCapture,
+            MinimapCaptureMaterialWarmupDelay,
+            false);
+
+        UE_LOG(LogDownFall, Log,
+            TEXT("Minimap: %.2fs 워밍업 대기 후 캡처 예약 [AutoDetect=%s]"),
+            MinimapCaptureMaterialWarmupDelay, bAutoDetected ? TEXT("true") : TEXT("false"));
+    }
+    else
+    {
+        // World를 못 가져오는 예외적 상황 — 즉시 캡처로 폴백
+        FinalizeMinimapCapture();
+    }
+}
+
+void ADownfallCharacter::FinalizeMinimapCapture()
+{
+    if (!CachedSceneCapture.IsValid())
+    {
+        return;
+    }
+
+    USceneCaptureComponent2D* CaptureComp = CachedSceneCapture->GetCaptureComponent2D();
+    if (!CaptureComp)
+    {
+        return;
+    }
+
     // ── ShowFlags 적용 ────────────────────────────────────────
     if (bCaptureWithWireframeShowFlag)
     {
@@ -5565,16 +5677,53 @@ void ADownfallCharacter::AutoConfigureMinimapCapture() {
     CaptureComp->ShowFlags.SetLighting(bCaptureWithLighting);
     CaptureComp->ShowFlags.SetDynamicShadows(bCaptureWithShadows);
 
+    // 스테이지별 동적 라이팅 영향 제거 — SceneCaptureComponent2D 전용
+    // ShowFlags/PostProcessSettings만 건드리며, 실제 레벨의 DirectionalLight/
+    // ExponentialHeightFog 액터 값은 전혀 변경하지 않으므로 플레이어 화면에는 영향이 없다.
+    if (bCaptureWithDefaultLighting)
+    {
+        CaptureComp->ShowFlags.SetFog(false);
+        CaptureComp->ShowFlags.SetAtmosphere(false);
+        CaptureComp->ShowFlags.SetVolumetricFog(false);
+
+        CaptureComp->ShowFlags.SetEyeAdaptation(false);
+        CaptureComp->ShowFlags.SetBloom(false);
+        CaptureComp->ShowFlags.SetVignette(false);
+        CaptureComp->ShowFlags.SetColorGrading(false);
+
+        // [DEBUG-FIX] M_MinimapCliff는 Unlit 셰이딩 모델이라 ShowFlags.Lighting과는 무관하다.
+        // 대신 Exposure/Tonemap 파이프라인은 Lit/Unlit 관계없이 최종 씬 컬러 전체에 적용되는데,
+        // 앞서 강제했던 Manual Exposure(임의의 기본 조리개/셔터/ISO)가 이 컴포넌트 캡처를
+        // 과도하게 어둡게 눌러서 절벽 대부분이 검게 찍히는 원인이었다. Manual Exposure로
+        // 값을 추측해서 맞추는 대신 Tonemapper(노출+톤매핑 파이프라인) 자체를 꺼서
+        // M_MinimapCliff의 EmissiveColor 출력을 노출 보정 없이 그대로 캡처한다.
+        CaptureComp->ShowFlags.SetTonemapper(false);
+
+        CaptureComp->PostProcessBlendWeight = 1.0f;
+        CaptureComp->PostProcessSettings = FPostProcessSettings();
+
+        UE_LOG(LogDownFall, Log, TEXT("Minimap: 스테이지 동적 라이팅 무시 — 고정 베이스라인으로 캡처 (Tonemapper OFF)"));
+    }
+
     UE_LOG(LogDownFall, Log,
-        TEXT("Minimap: ShowFlags — Lighting=%s Shadows=%s Wireframe=%s"),
+        TEXT("Minimap: ShowFlags — Lighting=%s Shadows=%s Wireframe=%s DefaultLighting=%s"),
         bCaptureWithLighting ? TEXT("ON") : TEXT("OFF"),
         bCaptureWithShadows ? TEXT("ON") : TEXT("OFF"),
-        bCaptureWithWireframeShowFlag ? TEXT("ON") : TEXT("OFF"));
+        bCaptureWithWireframeShowFlag ? TEXT("ON") : TEXT("OFF"),
+        bCaptureWithDefaultLighting ? TEXT("ON") : TEXT("OFF"));
 
     CaptureComp->CaptureScene();
-    UE_LOG(LogDownFall, Log, TEXT("Minimap: CaptureScene() 완료 [AutoDetect=%s, ManualTransform=%s]"),
-        bAutoDetected ? TEXT("true") : TEXT("false"),
-        bUseManualSceneCaptureTransform ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogDownFall, Log, TEXT("Minimap: CaptureScene() 완료 (셰이더 워밍업 대기 후)"));
+
+    // 캡처 직후: 미니맵 전용 머티리얼 → 기존(게임플레이) 머티리얼로 즉시 복구
+    if (PendingMinimapProcMesh && PendingMinimapOriginalMaterial)
+    {
+        PendingMinimapProcMesh->SetMaterial(0, PendingMinimapOriginalMaterial);
+        UE_LOG(LogDownFall, Log, TEXT("Minimap: 캡처 완료 — 게임플레이 머티리얼로 복구"));
+    }
+
+    PendingMinimapProcMesh = nullptr;
+    PendingMinimapOriginalMaterial = nullptr;
 
     // 중복 호출 방지 플래그 설정
     bMinimapCaptureConfigured = true;

@@ -90,6 +90,15 @@ private:
     // Fade In + StartStage 묶음
     void StartStageAfterLoading();
 
+    // [DEBUG-FIX] 미니맵 캡처(셰이더 워밍업 대기 포함)가 끝난 뒤에 로딩 화면을 내리기 위한 타이머.
+    // ADownfallCharacter::AutoConfigureMinimapCapture()는 머티리얼 교체까지만 동기로 처리하고
+    // 실제 CaptureScene()은 MinimapCaptureMaterialWarmupDelay초 뒤 FinalizeMinimapCapture()에서
+    // 수행하므로, 로딩 화면 해제도 그 시점 이후로 맞춰야 "암벽 생성 → 미니맵 머티리얼 적용 →
+    // 캡처 → 복구 → 로딩 화면 해제" 순서가 실제로 보장된다.
+    FTimerHandle MinimapCaptureLoadingDelayHandle;
+
+    void FinishLoadingAfterMinimapCapture();
+
 protected:
     // 스테이지 활성화 상태
     UPROPERTY(BlueprintReadOnly, Category = "Stage")
