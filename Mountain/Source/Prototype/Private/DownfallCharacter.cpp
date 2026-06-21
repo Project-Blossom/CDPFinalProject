@@ -3628,6 +3628,8 @@ void ADownfallCharacter::SetStageMusicIndex(int32 NewStageIndex)
 
 void ADownfallCharacter::StopStageBGM()
 {
+    bStageBGMShouldLoop = false;
+
     if (StageBGMComponent && IsValid(StageBGMComponent))
     {
         StageBGMComponent->Stop();
@@ -3637,7 +3639,9 @@ void ADownfallCharacter::StopStageBGM()
     StageBGMComponent = nullptr;
     PlayingStageMusicIndex = INDEX_NONE;
     bStageBGMCurrentlyInsanity = false;
+    bStageBGMCurrentlyBloodMoon = false;
 }
+
 
 void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
 {
@@ -3659,7 +3663,10 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
     {
         if (bStageBGMCurrentlyInsanity)
         {
-            bWantInsanityBGM = Insanity >= FMath::Max(0.0f, Entry->InsanityBGMThreshold - StageBGMInsanityReturnMargin);
+            bWantInsanityBGM = Insanity >= FMath::Max(
+                0.0f,
+                Entry->InsanityBGMThreshold - StageBGMInsanityReturnMargin
+            );
         }
         else
         {
@@ -3667,7 +3674,15 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
         }
     }
 
-    USoundBase* TargetBGM = bWantInsanityBGM ? Entry->InsanityBGM.Get() : Entry->NormalBGM.Get();
+    const bool bWantBloodMoonBGM =
+        bBloodMoonActive &&
+        CurrentStageMusicIndex == 2 &&
+        Entry->BloodMoonBGM != nullptr;
+
+    USoundBase* TargetBGM = bWantBloodMoonBGM
+        ? Entry->BloodMoonBGM.Get()
+        : (bWantInsanityBGM ? Entry->InsanityBGM.Get() : Entry->NormalBGM.Get());
+
     const float TargetVolume = FMath::Max(0.0f, Entry->VolumeMultiplier);
 
     if (!TargetBGM)
@@ -3676,11 +3691,16 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
         return;
     }
 
-    if (!bForceRestart && StageBGMComponent && IsValid(StageBGMComponent) &&
+    // 같은 상태와 같은 곡이면 하나의 컴포넌트만 유지한다.
+    if (!bForceRestart &&
+        StageBGMComponent &&
+        IsValid(StageBGMComponent) &&
         StageBGMComponent->Sound == TargetBGM &&
         PlayingStageMusicIndex == CurrentStageMusicIndex &&
-        bStageBGMCurrentlyInsanity == bWantInsanityBGM)
+        bStageBGMCurrentlyInsanity == bWantInsanityBGM &&
+        bStageBGMCurrentlyBloodMoon == bWantBloodMoonBGM)
     {
+        StageBGMComponent->SetVolumeMultiplier(TargetVolume);
         return;
     }
 
@@ -3691,10 +3711,26 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
         StageBGMComponent = nullptr;
     }
 
-    StageBGMComponent = UGameplayStatics::SpawnSound2D(this, TargetBGM, TargetVolume, 1.0f, 0.0f, nullptr, false, false);
+    StageBGMComponent = UGameplayStatics::SpawnSound2D(
+        this,
+        TargetBGM,
+        TargetVolume,
+        1.0f,
+        0.0f,
+        nullptr,
+        false,
+        false
+    );
+
     if (StageBGMComponent && IsValid(StageBGMComponent))
     {
+        bStageBGMShouldLoop = true;
         StageBGMComponent->bAutoDestroy = false;
+        StageBGMComponent->OnAudioFinished.AddUniqueDynamic(
+            this,
+            &ADownfallCharacter::HandleStageBGMFinished
+        );
+
         if (StageBGMFadeInSeconds > 0.0f)
         {
             StageBGMComponent->FadeIn(StageBGMFadeInSeconds, TargetVolume, 0.0f);
@@ -3708,6 +3744,19 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
 
     PlayingStageMusicIndex = CurrentStageMusicIndex;
     bStageBGMCurrentlyInsanity = bWantInsanityBGM;
+    bStageBGMCurrentlyBloodMoon = bWantBloodMoonBGM;
+}
+
+
+void ADownfallCharacter::HandleStageBGMFinished()
+{
+    if (bStageBGMShouldLoop &&
+        StageBGMComponent &&
+        IsValid(StageBGMComponent) &&
+        StageBGMComponent->Sound)
+    {
+        StageBGMComponent->Play(0.0f);
+    }
 }
 
 void ADownfallCharacter::UpdateCharacterStateSounds(float DeltaTime)
@@ -5155,6 +5204,9 @@ void ADownfallCharacter::ActivateBloodMoonVFX()
 
     UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
 
+    // BloodMoon 상태가 켜지는 즉시 기존 Stage BGM을 중지하고 BloodMoonBGM으로 교체한다.
+    RefreshStageBGM(true);
+
     // Stage 3 Insanity 증폭 패널티: VFX 활성화 후 BloodMoonPenaltyDelayAfterVFX초 뒤에 발동
     if (UWorld* World = GetWorld())
     {
@@ -5219,6 +5271,9 @@ void ADownfallCharacter::DeactivateBloodMoonVFX()
     }
 
     UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX DEACTIVATED"));
+
+    // BloodMoon BGM을 일반/광기 BGM으로 복귀한다.
+    RefreshStageBGM(true);
 }
 
 void ADownfallCharacter::UpdateBloodMoonVFX(float DeltaTime)

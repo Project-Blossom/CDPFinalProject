@@ -181,6 +181,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Character Sound|BGM")
     void SetStageMusicIndex(int32 NewStageIndex);
 
+
+    UFUNCTION()
+    void HandleStageBGMFinished();
+
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
     TObjectPtr<UCameraComponent> FirstPersonCamera;
@@ -1636,6 +1640,7 @@ private:
     bool bCharacterStateWasFalling = false;
     bool bStageBGMCurrentlyInsanity = false;
     bool bStageBGMCurrentlyBloodMoon = false;
+    bool bStageBGMShouldLoop = false;
     int32 PreviousInsanitySoundTier = 0;
     int32 PlayingStageMusicIndex = INDEX_NONE;
 

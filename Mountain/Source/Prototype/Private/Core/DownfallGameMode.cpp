@@ -18,6 +18,12 @@ void ADownfallGameMode::BeginPlay()
 
     UDownfallGameInstance* GI = Cast<UDownfallGameInstance>(GetGameInstance());
 
+    // 실제 스테이지 월드가 시작되는 순간 메뉴/결과/암벽선택 BGM은 남아 있으면 안 된다.
+    if (GI)
+    {
+        GI->StopMenuBGM(0.0f);
+    }
+
     // ── Loading UI 처리 ──────────────────────────────────────
     // CliffSelection에서 넘어온 경우 Loading UI 표시 후 암벽 생성 완료 시 제거
     if (GI && GI->ShouldShowLoadingUI() && LoadingWidgetClass)
@@ -131,7 +137,7 @@ void ADownfallGameMode::CompleteStage()
     bStageCompleted = true;
     float FinalTime = GetCurrentElapsedTime();
 
-    UE_LOG(LogTemp, Warning, TEXT("=== Stage Completed: %s, Time: %.2f seconds ==="), 
+    UE_LOG(LogTemp, Warning, TEXT("=== Stage Completed: %s, Time: %.2f seconds ==="),
         *CurrentStageId.ToString(), FinalTime);
 
     // GameInstance에 기록 저장
@@ -189,10 +195,10 @@ void ADownfallGameMode::StartFadeOut()
 
     // Widget을 최상위에 추가
     FadeOutWidget->AddToViewport(200);  // High Z-Order
-    
+
     // Fade Out 시작
     FadeOutWidget->StartFadeOut(FadeOutDuration);
-    
+
     UE_LOG(LogTemp, Warning, TEXT("Fade Out Widget started!"));
 
     // FadeOutDuration 후 레벨 전환
@@ -208,7 +214,7 @@ void ADownfallGameMode::StartFadeOut()
 
 void ADownfallGameMode::OnFadeOutComplete()
 {
-    UE_LOG(LogTemp, Warning, TEXT("Fade Out Complete - Loading Result Level: %s"), 
+    UE_LOG(LogTemp, Warning, TEXT("Fade Out Complete - Loading Result Level: %s"),
         *ResultLevelName.ToString());
 
     // 결과 화면 레벨로 전환

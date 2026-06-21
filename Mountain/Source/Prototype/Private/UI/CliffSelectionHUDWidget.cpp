@@ -1,6 +1,7 @@
 // File: Source/Prototype/Private/UI/CliffSelectionHUDWidget.cpp
 #include "UI/CliffSelectionHUDWidget.h"
 #include "Core/CliffSelectionGameMode.h"
+#include "Core/DownfallGameInstance.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Kismet/GameplayStatics.h"
@@ -10,8 +11,8 @@ void UCliffSelectionHUDWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
-    // 공통 버튼 클릭음 적용
-    PrototypeUI::ApplyProjectButtonClickSound(this);
+    // 리롤 버튼은 공통 클릭음 대신 전용 Reroll Sound만 재생한다.
+    PrototypeUI::ApplyProjectButtonClickSound(this, RerollButton);
 
     if (RerollButton)
     {
@@ -60,6 +61,11 @@ void UCliffSelectionHUDWidget::HandleRerollClicked()
     if (GM->HasUsedReroll())
     {
         return;
+    }
+
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->PlayUISound(this, GI->CliffSelectionRerollSound);
     }
 
     GM->RerollCliffs();

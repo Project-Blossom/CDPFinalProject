@@ -289,6 +289,56 @@ void UDownfallGameInstance::LoadGame()
 }
 
 
+
+float UDownfallGameInstance::GetConfiguredUISoundVolume(const USoundBase* Sound) const
+{
+    if (!Sound)
+    {
+        return 0.0f;
+    }
+
+    if (Sound == UIButtonClickSound)
+    {
+        return FMath::Max(0.0f, UIButtonClickSoundVolumeMultiplier);
+    }
+
+    if (Sound == MainMenuBGM)
+    {
+        return FMath::Max(0.0f, MainMenuBGMVolumeMultiplier);
+    }
+    if (Sound == CliffSelectionBGM)
+    {
+        return FMath::Max(0.0f, CliffSelectionBGMVolumeMultiplier);
+    }
+
+    if (Sound == CliffSelectionRerollSound)
+    {
+        return FMath::Max(0.0f, CliffSelectionRerollSoundVolumeMultiplier);
+    }
+
+    if (Sound == CliffSelectionConfirmSound)
+    {
+        return FMath::Max(0.0f, CliffSelectionConfirmSoundVolumeMultiplier);
+    }
+
+    if (Sound == CliffSelectionMoveLeftSound)
+    {
+        return FMath::Max(0.0f, CliffSelectionMoveLeftSoundVolumeMultiplier);
+    }
+
+    if (Sound == CliffSelectionMoveRightSound)
+    {
+        return FMath::Max(0.0f, CliffSelectionMoveRightSoundVolumeMultiplier);
+    }
+
+    if (Sound == StageResultBGM)
+    {
+        return FMath::Max(0.0f, StageResultBGMVolumeMultiplier);
+    }
+
+    return 1.0f;
+}
+
 void UDownfallGameInstance::PlayMenuBGM(UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier)
 {
     if (!WorldContextObject || !Sound)
@@ -296,10 +346,15 @@ void UDownfallGameInstance::PlayMenuBGM(UObject* WorldContextObject, USoundBase*
         return;
     }
 
-    const float SafeVolume = FMath::Max(0.0f, VolumeMultiplier);
+    const float SafeVolume = FMath::Max(
+        0.0f,
+        VolumeMultiplier * GetConfiguredUISoundVolume(Sound)
+    );
 
+    // 같은 BGM이면 재생 위치는 유지하고 음량만 갱신한다.
     if (MenuBGMComponent && IsValid(MenuBGMComponent) && MenuBGMComponent->Sound == Sound)
     {
+        bMenuBGMShouldLoop = true;
         MenuBGMComponent->SetVolumeMultiplier(SafeVolume);
         return;
     }
@@ -313,47 +368,134 @@ void UDownfallGameInstance::PlayMenuBGM(UObject* WorldContextObject, USoundBase*
         1.0f,
         0.0f,
         nullptr,
-        false,
+        true,
         false
     );
 
     if (MenuBGMComponent && IsValid(MenuBGMComponent))
     {
+        bMenuBGMShouldLoop = true;
         MenuBGMComponent->bAutoDestroy = false;
-        MenuBGMComponent->FadeIn(0.25f, SafeVolume);
+        MenuBGMComponent->OnAudioFinished.AddUniqueDynamic(
+            this,
+            &UDownfallGameInstance::HandleMenuBGMFinished
+        );
     }
 }
 
+
 void UDownfallGameInstance::StopMenuBGM(float FadeOutSeconds)
 {
+    bMenuBGMShouldLoop = false;
+
     if (!MenuBGMComponent || !IsValid(MenuBGMComponent))
     {
         MenuBGMComponent = nullptr;
         return;
     }
 
-    if (FadeOutSeconds > 0.0f)
-    {
-        MenuBGMComponent->FadeOut(FadeOutSeconds, 0.0f);
-    }
-    else
-    {
-        MenuBGMComponent->Stop();
-    }
-
+    MenuBGMComponent->Stop();
     MenuBGMComponent->DestroyComponent();
     MenuBGMComponent = nullptr;
 }
+
 
 void UDownfallGameInstance::PlayUISound(UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier)
 {
     if (WorldContextObject && Sound)
     {
+        const float SafeVolume = FMath::Max(
+            0.0f,
+            VolumeMultiplier * GetConfiguredUISoundVolume(Sound)
+        );
+
         UGameplayStatics::PlaySound2D(
             WorldContextObject,
             Sound,
-            FMath::Max(0.0f, VolumeMultiplier),
+            SafeVolume,
             FMath::Max(0.01f, PitchMultiplier)
         );
+    }
+}
+
+
+void UDownfallGameInstance::PlayUIButtonClickSound()
+{
+    if (!UIButtonClickSound)
+    {
+        return;
+    }
+
+    if (UIButtonClickAudioComponent && IsValid(UIButtonClickAudioComponent))
+    {
+        UIButtonClickAudioComponent->Stop();
+        UIButtonClickAudioComponent->DestroyComponent();
+        UIButtonClickAudioComponent = nullptr;
+    }
+
+    UWorld* CurrentWorld = GetWorld();
+    if (!CurrentWorld)
+    {
+        return;
+    }
+
+    UIButtonClickAudioComponent = UGameplayStatics::SpawnSound2D(
+        CurrentWorld,
+        UIButtonClickSound,
+        FMath::Max(0.0f, UIButtonClickSoundVolumeMultiplier),
+        1.0f,
+        0.0f,
+        nullptr,
+        true,
+        false
+    );
+}
+
+
+void UDownfallGameInstance::PlayPersistentUISound(USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier)
+{
+    if (!Sound)
+    {
+        return;
+    }
+
+    if (PersistentUIActionAudioComponent && IsValid(PersistentUIActionAudioComponent))
+    {
+        PersistentUIActionAudioComponent->Stop();
+        PersistentUIActionAudioComponent->DestroyComponent();
+        PersistentUIActionAudioComponent = nullptr;
+    }
+
+    UWorld* CurrentWorld = GetWorld();
+    if (!CurrentWorld)
+    {
+        return;
+    }
+
+    const float SafeVolume = FMath::Max(
+        0.0f,
+        VolumeMultiplier * GetConfiguredUISoundVolume(Sound)
+    );
+
+    PersistentUIActionAudioComponent = UGameplayStatics::SpawnSound2D(
+        CurrentWorld,
+        Sound,
+        SafeVolume,
+        FMath::Max(0.01f, PitchMultiplier),
+        0.0f,
+        nullptr,
+        true,
+        false
+    );
+}
+
+void UDownfallGameInstance::HandleMenuBGMFinished()
+{
+    if (bMenuBGMShouldLoop &&
+        MenuBGMComponent &&
+        IsValid(MenuBGMComponent) &&
+        MenuBGMComponent->Sound)
+    {
+        MenuBGMComponent->Play(0.0f);
     }
 }

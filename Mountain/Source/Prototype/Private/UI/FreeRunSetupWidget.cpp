@@ -6,6 +6,7 @@
 #include "EngineUtils.h"
 #include "MountainGenWorldActor.h"
 #include "UI/UIButtonClickSoundHelper.h"
+#include "Core/DownfallGameInstance.h"
 
 void UFreeRunSetupWidget::NativeConstruct()
 {
@@ -190,12 +191,8 @@ void UFreeRunSetupWidget::HandleStartClicked()
         return;
     }
 
-    // SeedTextBox에서 Seed 가져오기
-    // 이 값은 Generate 후 SeedSearch로 보정된 최종 Seed 값임
     FString SeedString = SeedTextBox->GetText().ToString();
     int32 Seed = FCString::Atoi(*SeedString);
-
-    // Seed 보정 (MountainGen 규칙: 최소값 1)
     Seed = FMath::Max(1, Seed);
 
     UE_LOG(LogTemp, Warning, TEXT("Start Climbing clicked!"));
@@ -203,12 +200,22 @@ void UFreeRunSetupWidget::HandleStartClicked()
     UE_LOG(LogTemp, Warning, TEXT("  - Difficulty: %d"), SelectedDifficulty);
     UE_LOG(LogTemp, Warning, TEXT("Moving to FreeRun level..."));
 
-    // FreeRun 레벨로 이동 (Seed와 Difficulty를 URL 파라미터로 전달)
-    FString LevelURL = FString::Printf(TEXT("%s?Seed=%d&Difficulty=%d"),
-        *FreeRunLevel.ToString(), Seed, SelectedDifficulty);
+    FString LevelURL = FString::Printf(
+        TEXT("%s?Seed=%d&Difficulty=%d"),
+        *FreeRunLevel.ToString(),
+        Seed,
+        SelectedDifficulty
+    );
+
+    // 실제 FreeRun 플레이 맵으로 넘어가는 순간에만 메뉴 BGM을 종료한다.
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->StopMenuBGM(0.0f);
+    }
 
     UGameplayStatics::OpenLevel(this, FName(*LevelURL));
 }
+
 
 void UFreeRunSetupWidget::HandleSeedTextCommitted(const FText& Text, ETextCommit::Type CommitMethod)
 {

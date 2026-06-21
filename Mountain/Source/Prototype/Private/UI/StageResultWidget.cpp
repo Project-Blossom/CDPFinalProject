@@ -12,6 +12,12 @@ void UStageResultWidget::NativeConstruct()
     // 공통 버튼 클릭음 적용
     PrototypeUI::ApplyProjectButtonClickSound(this);
 
+    // 결과 화면에 진입하면 전용 BGM으로 교체한다.
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->PlayMenuBGM(this, GI->StageResultBGM);
+    }
+
     // 버튼 클릭 이벤트 바인딩
     if (RetryButton)
     {
@@ -90,7 +96,12 @@ void UStageResultWidget::HandleRetryClicked()
 {
     UE_LOG(LogTemp, Warning, TEXT("Retry clicked - Reloading stage: %s"), *CurrentStageId.ToString());
 
-    // 현재 레벨 재시작
+    // 현재 레벨 재시작: 실제 플레이 스테이지 진입 전 결과 BGM을 종료한다.
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->StopMenuBGM(0.0f);
+    }
+
     UGameplayStatics::OpenLevel(this, CurrentStageId);
 }
 
@@ -127,5 +138,10 @@ void UStageResultWidget::HandleNextStageClicked()
 
     // 다음은 CliffSelection 레벨 → 여기서 암벽 선택 후 다음 Stage로 진행
     UE_LOG(LogTemp, Warning, TEXT("StageResult: → CliffSelection [CurrentStageIndex=%d]"), CurrentStageIndex);
+
+    // CliffSelectionPawn BeginPlay가 CliffSelectionBGM을 새로 재생한다.
+    // 이전 Result BGM은 여기서 정리한다.
+    GI->StopMenuBGM(0.0f);
+
     UGameplayStatics::OpenLevel(this, FName("CliffSelection"));
 }

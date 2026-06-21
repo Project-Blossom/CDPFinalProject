@@ -147,6 +147,11 @@ void ACliffSelectionPawn::OnMoveSelectionLeft(const FInputActionValue& Value)
     if (!bHasGeneratedComplete) return;
     if (CurrentIndex <= 0) return;
 
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->PlayUISound(this, GI->CliffSelectionMoveLeftSound);
+    }
+
     StartCameraRotateTo(CurrentIndex - 1);
 }
 
@@ -158,6 +163,11 @@ void ACliffSelectionPawn::OnMoveSelectionRight(const FInputActionValue& Value)
     const int32 MaxIndex = GM ? (GM->GetSpawnedCliffs().Num() - 1) : 2;
 
     if (CurrentIndex >= MaxIndex) return;
+
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->PlayUISound(this, GI->CliffSelectionMoveRightSound);
+    }
 
     StartCameraRotateTo(CurrentIndex + 1);
 }
@@ -179,8 +189,9 @@ void ACliffSelectionPawn::OnConfirmSelection(const FInputActionValue& Value)
         return;
     }
 
-    GI->PlayUISound(this, GI->CliffSelectionConfirmSound);
-    GI->StopMenuBGM(0.1f);
+    // Enter 확정음은 레벨 전환 뒤에도 끝까지 들려야 하므로 persistent UI 채널로 재생한다.
+    GI->PlayPersistentUISound(GI->CliffSelectionConfirmSound);
+    GI->StopMenuBGM(0.0f);
 
     GI->SetSelectedSeed(Seeds[CurrentIndex]);
     const int32 NextStageIndex = GI->GetCurrentStageIndex() + 1;

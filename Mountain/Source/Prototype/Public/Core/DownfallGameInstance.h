@@ -117,20 +117,53 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound")
     TObjectPtr<USoundBase> UIButtonClickSound = nullptr;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float UIButtonClickSoundVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound")
     TObjectPtr<USoundBase> MainMenuBGM = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound")
-    TObjectPtr<USoundBase> SaveSlotSelectionBGM = nullptr;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float MainMenuBGMVolumeMultiplier = 1.0f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound")
     TObjectPtr<USoundBase> CliffSelectionBGM = nullptr;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float CliffSelectionBGMVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound")
     TObjectPtr<USoundBase> CliffSelectionRerollSound = nullptr;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float CliffSelectionRerollSoundVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound")
     TObjectPtr<USoundBase> CliffSelectionConfirmSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float CliffSelectionConfirmSoundVolumeMultiplier = 1.0f;
+
+    // 암벽 선택 화면에서 A키로 왼쪽 암벽을 선택할 때 재생된다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound")
+    TObjectPtr<USoundBase> CliffSelectionMoveLeftSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float CliffSelectionMoveLeftSoundVolumeMultiplier = 1.0f;
+
+    // 암벽 선택 화면에서 D키로 오른쪽 암벽을 선택할 때 재생된다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound")
+    TObjectPtr<USoundBase> CliffSelectionMoveRightSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CliffSelection|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float CliffSelectionMoveRightSoundVolumeMultiplier = 1.0f;
+
+    // 스테이지를 클리어한 뒤 ResultLevel에서 재생되는 대기 화면 BGM.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StageResult|Sound")
+    TObjectPtr<USoundBase> StageResultBGM = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StageResult|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float StageResultBGMVolumeMultiplier = 1.0f;
 
     UFUNCTION(BlueprintCallable, Category = "UI|Sound")
     void PlayMenuBGM(UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier = 1.0f);
@@ -140,6 +173,22 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "UI|Sound")
     void PlayUISound(UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier = 1.0f, float PitchMultiplier = 1.0f);
+
+
+    // 화면/레벨 전환 뒤에도 끝까지 들려야 하는 UI 전용 효과음.
+    // 다음 persistent UI 효과음이 재생되면 이전 효과음은 즉시 정지한다.
+    UFUNCTION(BlueprintCallable, Category = "UI|Sound")
+    void PlayPersistentUISound(USoundBase* Sound, float VolumeMultiplier = 1.0f, float PitchMultiplier = 1.0f);
+
+    // MenuBGMComponent가 끝나면 같은 곡을 다시 처음부터 재생해 BGM을 강제 반복한다.
+    UFUNCTION()
+    void HandleMenuBGMFinished();
+
+
+    // 모든 UI 버튼의 OnClicked에 연결된다.
+    // 기존 클릭음이 남아 있으면 끊고, 새 클릭음은 레벨 전환 뒤에도 계속 재생한다.
+    UFUNCTION()
+    void PlayUIButtonClickSound();
 
     // ========== Cliff Selection ==========
 
@@ -201,6 +250,8 @@ protected:
     // 세이브 슬롯 이름 생성
     FString GetSlotName(int32 SlotIndex) const;
 
+    float GetConfiguredUISoundVolume(const USoundBase* Sound) const;
+
     // 스테이지 기록 찾기 (내부 함수)
     FStageTimeRecord* FindStageRecord(FName StageId);
 
@@ -221,4 +272,17 @@ protected:
 
     UPROPERTY(Transient)
     TObjectPtr<UAudioComponent> MenuBGMComponent = nullptr;
+
+
+    // Menu / CliffSelection / StageResult BGM의 강제 반복 여부.
+    bool bMenuBGMShouldLoop = false;
+
+    // Confirm처럼 OpenLevel 뒤에도 유지되어야 하는 UI 효과음 전용 채널.
+    UPROPERTY(Transient)
+    TObjectPtr<UAudioComponent> PersistentUIActionAudioComponent = nullptr;
+
+
+    // UI 클릭음은 GameInstance가 보관하므로 OpenLevel 이후에도 사라지지 않는다.
+    UPROPERTY(Transient)
+    TObjectPtr<UAudioComponent> UIButtonClickAudioComponent = nullptr;
 };

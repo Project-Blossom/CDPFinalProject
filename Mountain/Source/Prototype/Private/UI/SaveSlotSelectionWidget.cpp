@@ -5,7 +5,6 @@
 #include "Core/DownfallGameInstance.h"
 #include "UI/FadeWidget.h"
 #include "UI/OverwriteWarningWidget.h"
-#include "UI/FadeWidget.h"
 #include "UI/UIButtonClickSoundHelper.h"
 
 void USaveSlotSelectionWidget::NativeConstruct()
@@ -17,7 +16,9 @@ void USaveSlotSelectionWidget::NativeConstruct()
 
     if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
     {
-        GI->PlayMenuBGM(this, GI->SaveSlotSelectionBGM);
+        // MainMenu에서 넘어온 BGM을 그대로 유지한다.
+        // 새 곡을 재생하지 않으므로 현재 재생 위치도 이어진다.
+        GI->PlayMenuBGM(this, GI->MainMenuBGM);
     }
 
     // 버튼 클릭 이벤트 바인딩
@@ -273,5 +274,12 @@ void USaveSlotSelectionWidget::StartFadeOutToLevel(FName LevelName)
 void USaveSlotSelectionWidget::OnFadeOutComplete()
 {
     UE_LOG(LogTemp, Warning, TEXT("Fade Out Complete - Loading level: %s"), *PendingLevelName.ToString());
+
+    // 이 시점부터 실제 스테이지 플레이가 시작되므로 메뉴 BGM을 종료한다.
+    if (UDownfallGameInstance* GI = GetGameInstance<UDownfallGameInstance>())
+    {
+        GI->StopMenuBGM(0.0f);
+    }
+
     UGameplayStatics::OpenLevel(this, PendingLevelName);
 }
