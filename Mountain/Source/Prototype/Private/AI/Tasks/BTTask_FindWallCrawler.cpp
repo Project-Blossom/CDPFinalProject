@@ -41,9 +41,10 @@ EBTNodeResult::Type UBTTask_FindWallCrawler::ExecuteTask(UBehaviorTreeComponent&
     }
 
     Platform->LastSearchTime = CurrentTime;
-
+    /*
 #if !UE_BUILD_SHIPPING
     // 디버그 시각화: WallCrawler 탐지 범위 (Yellow)
+    
     DrawDebugSphere(
         Platform->GetWorld(), 
         Platform->GetActorLocation(), 
@@ -55,8 +56,9 @@ EBTNodeResult::Type UBTTask_FindWallCrawler::ExecuteTask(UBehaviorTreeComponent&
         0, 
         3.0f
     );
+    
 #endif
-
+    */
     // WallCrawler 찾기
     AWallCrawler* FoundCrawler = Platform->FindNearbyWallCrawler();
     

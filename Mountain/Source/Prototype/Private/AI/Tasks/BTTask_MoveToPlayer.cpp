@@ -95,7 +95,7 @@ void UBTTask_MoveToPlayer::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
         FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
         return;
     }
-    
+    /*
     // [DEBUG] 추적 상태 시각화
 #if !UE_BUILD_SHIPPING
     // 1. FlyingPlatform -> Player 추적선 (굵은 빨간선)
@@ -141,7 +141,7 @@ void UBTTask_MoveToPlayer::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
         );
     }
 #endif
-    
+    */
     if (Distance <= AcceptanceRadius)
     {
         // 도착!
