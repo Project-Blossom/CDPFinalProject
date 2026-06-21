@@ -74,6 +74,33 @@ public:
     UFUNCTION(BlueprintPure, Category = "Save")
     void GetSlotInfo(int32 SlotIndex, float& OutTotalPlayTime, int32& OutClearedStages, FDateTime& OutLastSaveTime, bool& OutExists) const;
 
+    // [NEW] 특정 슬롯의 스테이지별 기록(StageRecords)만 조회한다.
+    // LoadFromSlot()과 달리 CurrentSaveSlotIndex/StageRecords(현재 활성 슬롯 상태)는
+    // 전혀 건드리지 않는다 — Ending 결과 화면에서 "3개 슬롯 통틀어 베스트"를 계산하려면
+    // 현재 플레이 중인 슬롯 상태를 유지한 채로 다른 슬롯들의 기록도 들여다봐야 하기 때문.
+    // 슬롯이 없거나 비어 있으면 빈 배열을 반환한다.
+    UFUNCTION(BlueprintPure, Category = "Save")
+    TArray<FStageTimeRecord> GetStageRecordsFromSlot(int32 SlotIndex) const;
+
+    // [NEW] Ending 결과 화면 전용 — 특정 StageId의 "3개 SaveSlot 통틀어 가장 짧은
+    // BestTime"을 반환한다. 기획서 v2의 "전체 베스트 기록" = 옵션 A(스테이지별 개별
+    // 비교) 기준. 세 슬롯 중 해당 스테이지를 한 번도 클리어한 적이 없으면
+    // bOutHasRecord=false, 반환값은 0.
+    UFUNCTION(BlueprintPure, Category = "Save")
+    float GetBestStageTimeAcrossAllSlots(FName StageId, bool& bOutHasRecord) const;
+
+    // [NEW] LoadGame 진행상황 동기화.
+    // 현재 활성 슬롯(LoadFromSlot으로 막 로드된 상태)의 SavedCurrentStageIndex/
+    // StageRecords[N].bCleared를 기준으로 "지금 다시 들어가야 할 레벨"을 계산한다.
+    //   - 현재 스테이지(SavedCurrentStageIndex, 없으면 1)가 아직 클리어 전이면
+    //     그 Stage_N으로 바로 재진입(Stage_1은 CliffSelection 없이, Stage_2/3는
+    //     SelectedSeed/SelectedDifficulty가 이미 LoadFromSlot에서 복원돼 있어 동일한
+    //     암벽으로 재생성된다)
+    //   - 클리어까지 끝났고 다음 스테이지가 남아있으면 CliffSelection으로
+    //   - Stage_3까지 클리어 완료면 Stage_3 재플레이
+    UFUNCTION(BlueprintPure, Category = "Save")
+    FName GetResumeLevelName() const;
+
     // NewGame 모드 설정
     UFUNCTION(BlueprintCallable, Category = "Save")
     void SetNewGameMode(bool bNewGame) { bIsNewGameMode = bNewGame; }

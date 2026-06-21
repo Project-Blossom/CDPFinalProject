@@ -128,11 +128,16 @@ void UStageResultWidget::HandleNextStageClicked()
 
     const int32 CurrentStageIndex = GI->GetCurrentStageIndex();
 
-    // Stage_3 이후는 Ending 미구현 — 현재는 메인 메뉴로
+    // Stage_3 이후는 Ending 레벨(만화 컷씬 + 클리어 기록 화면)로 진입한다.
     if (CurrentStageIndex >= 3)
     {
-        UE_LOG(LogTemp, Warning, TEXT("StageResult: All stages cleared, returning to Main Menu (Ending TBD)"));
-        UGameplayStatics::OpenLevel(this, FName("MainMenu"));
+        UE_LOG(LogTemp, Warning, TEXT("StageResult: All stages cleared, entering Ending level"));
+
+        // CliffSelectionBGM/StageResultBGM 등 이전 BGM이 남아있지 않도록 정리한다.
+        // Ending 레벨 자체의 BGM/연출은 Ending 레벨 쪽(WBP_Ending 시퀀스)에서 따로 재생한다.
+        GI->StopMenuBGM(0.0f);
+
+        UGameplayStatics::OpenLevel(this, FName("Ending"));
         return;
     }
 

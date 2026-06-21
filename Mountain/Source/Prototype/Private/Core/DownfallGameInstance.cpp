@@ -69,6 +69,11 @@ void UDownfallGameInstance::SaveToSlot(int32 SlotIndex)
     SaveGameObject->TotalPlayTime = TotalTime;
     SaveGameObject->LastSaveTime = FDateTime::Now();
 
+    // [NEW] LoadGame 진행상황 동기화용 — 저장 시점의 진행 포인터를 같이 기록한다.
+    SaveGameObject->SavedCurrentStageIndex = CurrentStageIndex;
+    SaveGameObject->SavedSelectedSeed = SelectedSeed;
+    SaveGameObject->SavedSelectedDifficulty = SelectedDifficulty;
+
     FString SlotName = GetSlotName(SlotIndex);
 
     // 저장 경로 출력
@@ -118,6 +123,14 @@ bool UDownfallGameInstance::LoadFromSlot(int32 SlotIndex)
 
     StageRecords = SaveGameObject->StageRecords;
     CurrentSaveSlotIndex = SlotIndex;
+
+    // [NEW] LoadGame 진행상황 동기화용 — 저장된 진행 포인터를 그대로 복원한다.
+    // 이러면 GetResumeLevelName()이 올바른 레벨을 계산할 수 있고, Stage_2/3로 직접
+    // 재진입하는 경우에도 SelectedSeed/SelectedDifficulty가 그 레벨의 GameMode가
+    // 읽는 값과 동일하게 맞춰진다(CliffSelection을 다시 거치지 않아도 동일한 암벽 재생성).
+    CurrentStageIndex = SaveGameObject->SavedCurrentStageIndex;
+    SelectedSeed = SaveGameObject->SavedSelectedSeed;
+    SelectedDifficulty = SaveGameObject->SavedSelectedDifficulty;
 
     UE_LOG(LogTemp, Warning, TEXT("Loaded from slot %d - %d records"), SlotIndex, StageRecords.Num());
     return true;
@@ -184,6 +197,100 @@ void UDownfallGameInstance::GetSlotInfo(int32 SlotIndex, float& OutTotalPlayTime
         OutClearedStages = SaveGameObject->ClearedStagesCount;
         OutLastSaveTime = SaveGameObject->LastSaveTime;
     }
+}
+
+TArray<FStageTimeRecord> UDownfallGameInstance::GetStageRecordsFromSlot(int32 SlotIndex) const
+{
+    if (SlotIndex < 0 || SlotIndex > 2)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetStageRecordsFromSlot: Invalid slot index: %d"), SlotIndex);
+        return TArray<FStageTimeRecord>();
+    }
+
+    // 현재 활성 슬롯과 같은 인덱스라면 디스크를 다시 읽을 필요 없이 메모리상의 최신
+    // 상태(StageRecords)를 그대로 반환한다 — RecordStageTime() 직후 SaveGame()까지는
+    // 끝났지만 아직 같은 틱 안이라 디스크 I/O를 한 번 더 할 필요가 없는 경우를 위함.
+    if (SlotIndex == CurrentSaveSlotIndex)
+    {
+        return StageRecords;
+    }
+
+    FString SlotName = GetSlotName(SlotIndex);
+    if (!UGameplayStatics::DoesSaveGameExist(SlotName, 0))
+    {
+        return TArray<FStageTimeRecord>();
+    }
+
+    UDownfallSaveGame* SaveGameObject = Cast<UDownfallSaveGame>(
+        UGameplayStatics::LoadGameFromSlot(SlotName, 0)
+    );
+
+    if (!SaveGameObject)
+    {
+        return TArray<FStageTimeRecord>();
+    }
+
+    return SaveGameObject->StageRecords;
+}
+
+float UDownfallGameInstance::GetBestStageTimeAcrossAllSlots(FName StageId, bool& bOutHasRecord) const
+{
+    bOutHasRecord = false;
+    float BestTime = 0.0f;
+
+    if (StageId.IsNone())
+    {
+        return 0.0f;
+    }
+
+    for (int32 SlotIndex = 0; SlotIndex < 3; ++SlotIndex)
+    {
+        const TArray<FStageTimeRecord> SlotRecords = GetStageRecordsFromSlot(SlotIndex);
+
+        for (const FStageTimeRecord& Record : SlotRecords)
+        {
+            if (Record.StageId != StageId || !Record.bCleared)
+            {
+                continue;
+            }
+
+            if (!bOutHasRecord || Record.BestTime < BestTime)
+            {
+                BestTime = Record.BestTime;
+                bOutHasRecord = true;
+            }
+        }
+    }
+
+    return BestTime;
+}
+
+FName UDownfallGameInstance::GetResumeLevelName() const
+{
+    static const FName StageIds[3] = { FName("Stage_1"), FName("Stage_2"), FName("Stage_3") };
+
+    // CurrentStageIndex 0(아직 어떤 CliffSelection도 거친 적 없음, 즉 처음부터 시작)도
+    // Stage_1로 취급한다 — Stage_1은 CliffSelection 없이 바로 진입하는 스테이지다.
+    const int32 Idx = FMath::Clamp(CurrentStageIndex, 1, 3);
+
+    const bool bCurrentStageCleared = GetStageRecord(StageIds[Idx - 1]).bCleared;
+
+    if (!bCurrentStageCleared)
+    {
+        // 이 스테이지를 아직 클리어 못 함 → 바로 재진입.
+        // Stage_2/3라면 SavedSelectedSeed/SavedSelectedDifficulty가 LoadFromSlot에서
+        // 이미 SelectedSeed/SelectedDifficulty로 복원돼 있어 동일한 암벽이 재생성된다.
+        return StageIds[Idx - 1];
+    }
+
+    if (Idx >= 3)
+    {
+        // Stage_3까지 전부 클리어 완료 — 더 이상 진행할 스테이지가 없으므로 재플레이.
+        return FName("Stage_3");
+    }
+
+    // 현재 스테이지는 클리어했고 다음 스테이지의 암벽은 아직 선택 전 — CliffSelection으로.
+    return FName("CliffSelection");
 }
 
 void UDownfallGameInstance::RecordStageTime(FName StageId, float Time)

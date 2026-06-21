@@ -198,6 +198,14 @@ void ACliffSelectionPawn::OnConfirmSelection(const FInputActionValue& Value)
     GI->SetCurrentStageIndex(NextStageIndex);
     GI->SetShowLoadingUI(true);  // 다음 스테이지 BeginPlay에서 Loading UI 표시
 
+    // [NEW] LoadGame 진행상황 동기화.
+    // 여기서 곧바로 SaveGame()을 호출해, "암벽 선택까지는 끝냈지만 그 스테이지를 아직
+    // 클리어하지 못한" 상태를 디스크에 즉시 기록한다. 이렇게 해두면 이 시점 이후
+    // 스테이지를 클리어하지 않고 종료하더라도, 다음에 LoadGame하면 CliffSelection을
+    // 다시 거치지 않고 방금 선택한 것과 동일한 Seed/Difficulty로 이 스테이지에 바로
+    // 재진입한다(GetResumeLevelName() 참고).
+    GI->SaveGame();
+
     // CurrentStageIndex 기준으로 다음 레벨을 동적으로 결정.
     // NextStageLevelName(BP 고정값)을 그대로 쓰면 CliffSelection 레벨을 여러 스테이지가
     // 공유하는 구조상 항상 같은 레벨로만 이동하는 문제가 생기므로 StageIndex 기반으로 계산한다.

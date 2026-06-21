@@ -151,9 +151,14 @@ void USaveSlotSelectionWidget::HandleSlotSelected(int32 SlotIndex)
         // LoadGame 모드
         if (bSlotExists)
         {
-            // 데이터 로드 후 Fade Out + 시작
+            // [DEBUG-FIX] 항상 FirstStageLevel(Stage_1)로 보내던 것을, 실제 진행 상황에
+            // 맞는 레벨로 보내도록 수정. LoadFromSlot()이 SavedCurrentStageIndex/
+            // SelectedSeed/SelectedDifficulty까지 복원해 두므로, GetResumeLevelName()이
+            // 계산한 레벨로 보내면 Stage_2/3로 직접 재진입하는 경우에도 올바른 암벽이
+            // 재생성된다(이전엔 이전 세션의 CliffSelection 잔여 Seed가 엉뚱한 레벨에
+            // 적용되는 문제가 있었음).
             GI->LoadFromSlot(SlotIndex);
-            StartFadeOutToLevel(FirstStageLevel);
+            StartFadeOutToLevel(GI->GetResumeLevelName());
         }
         else
         {
