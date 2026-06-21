@@ -6,6 +6,7 @@
 #include "Blueprint/UserWidget.h"
 #include "MountainGenWorldActor.h"
 #include "EngineUtils.h"
+#include "DownfallCharacter.h"
 
 ADownfallGameMode::ADownfallGameMode()
 {
@@ -241,6 +242,33 @@ void ADownfallGameMode::OnCliffGenerationComplete(AActor* Generator)
 
     HideLoadingWidget();
     StartStageAfterLoading();
+
+    // [DEBUG-FIX] 미니맵 캡처 타이밍 버그 수정.
+    // ADownfallCharacter::BeginPlay()는 AutoConfigureMinimapCapture()를 한 번 호출하지만,
+    // 그 시점에는 MountainActor->Regenerate()가 비동기로 진행 중이라 ProcMesh 바운드가
+    // 아직 새 Seed로 갱신되지 않은 상태(레벨 배치 시점의 프리뷰 메시 바운드)다.
+    // AutoConfigureMinimapCapture()는 그 바운드로 SceneCapture2D 위치/OrthoWidth를
+    // 계산하므로, 결과적으로 미니맵이 엉뚱한 범위를 캡처하거나(스테이지마다 다른 절벽
+    // 크기) 잘못 정렬된 채로 멈춰 있게 된다.
+    // 메시 생성이 실제로 완료된 이 콜백(OnMountainGenerated) 시점에 플레이어 캐릭터의
+    // AutoConfigureMinimapCapture()를 다시 호출해, 최종 ProcMesh 바운드 기준으로
+    // SceneCapture를 재설정하고 RT_Minimap을 다시 캡처한다.
+    if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+    {
+        if (ADownfallCharacter* PlayerCharacter = Cast<ADownfallCharacter>(PlayerPawn))
+        {
+            PlayerCharacter->AutoConfigureMinimapCapture();
+            UE_LOG(LogTemp, Warning, TEXT("StageGameMode: AutoConfigureMinimapCapture() re-triggered after mesh regen complete"));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("StageGameMode: PlayerPawn is not ADownfallCharacter, skipping minimap reconfigure"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("StageGameMode: PlayerPawn not found, skipping minimap reconfigure"));
+    }
 }
 
 void ADownfallGameMode::HideLoadingWidget()
