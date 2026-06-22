@@ -109,6 +109,9 @@ void ACliffSelectionPawn::SetupPlayerInputComponent(UInputComponent* PlayerInput
         }
     }
 
+    // 리롤은 Input Mapping Context 설정 여부와 관계없이 R 키로 항상 동작하게 한다.
+    PlayerInputComponent->BindKey(EKeys::R, IE_Pressed, this, &ACliffSelectionPawn::OnRerollKeyPressed);
+
     if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
     {
         if (MoveSelectionLeftAction)
@@ -231,6 +234,12 @@ void ACliffSelectionPawn::OnConfirmSelection(const FInputActionValue& Value)
         Seeds[CurrentIndex], CurrentIndex, *ResolvedNextLevel.ToString(), NextStageIndex);
 
     UGameplayStatics::OpenLevel(this, ResolvedNextLevel);
+}
+
+void ACliffSelectionPawn::OnRerollKeyPressed()
+{
+    // Enhanced Input Action과 같은 리롤 경로를 사용한다.
+    OnRerollPressed(FInputActionValue());
 }
 
 void ACliffSelectionPawn::OnRerollPressed(const FInputActionValue& Value)

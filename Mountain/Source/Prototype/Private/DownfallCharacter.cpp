@@ -4012,22 +4012,31 @@ float ADownfallCharacter::GetInsanityPressure() const
 
 float ADownfallCharacter::GetInsanityBGMVolumeAlpha() const
 {
-    const float ReturnThreshold = FMath::Max(
+    const float RearmThreshold = FMath::Clamp(
+        InsanityBGMRearmThreshold,
         0.0f,
-        InsanityBGMThreshold - InsanityBGMReturnMargin
+        MaxInsanity
     );
 
-    if (MaxInsanity <= ReturnThreshold + KINDA_SMALL_NUMBER)
-    {
-        return Insanity >= MaxInsanity ? 1.0f : 0.0f;
-    }
-
-    // 60에서 0, 100에서 1.0이 되도록 광기 BGM 자체의 음량을 계산한다.
-    return FMath::Clamp(
-        (Insanity - ReturnThreshold) / (MaxInsanity - ReturnThreshold),
+    const float MinVolume = FMath::Clamp(
+        InsanityBGMMinVolumeMultiplier,
         0.0f,
         1.0f
     );
+
+    if (MaxInsanity <= RearmThreshold + KINDA_SMALL_NUMBER)
+    {
+        return Insanity > RearmThreshold ? 1.0f : 0.0f;
+    }
+
+    // 70 진입 직후에도 최소 볼륨으로 들리며, 광기가 높아질수록 최대 볼륨까지 보간한다.
+    const float Alpha = FMath::Clamp(
+        (Insanity - RearmThreshold) / (MaxInsanity - RearmThreshold),
+        0.0f,
+        1.0f
+    );
+
+    return FMath::Lerp(MinVolume, 1.0f, Alpha);
 }
 
 float ADownfallCharacter::GetInsanityWarningGapSeconds() const
@@ -4058,14 +4067,15 @@ bool ADownfallCharacter::ShouldUseInsanityBGM() const
         return false;
     }
 
-    const float ReturnThreshold = FMath::Max(
+    const float RearmThreshold = FMath::Clamp(
+        InsanityBGMRearmThreshold,
         0.0f,
-        InsanityBGMThreshold - InsanityBGMReturnMargin
+        InsanityBGMThreshold
     );
 
-    return bStageBGMCurrentlyInsanity
-        ? Insanity >= ReturnThreshold
-        : Insanity >= InsanityBGMThreshold;
+    // 전환음이 끝나고 Common Insanity BGM이 시작된 뒤에는
+    // 재무장선(기본 50) 이하가 되기 전까지 계속 유지한다.
+    return Insanity > RearmThreshold;
 }
 
 void ADownfallCharacter::StopLowStaminaWarning()
@@ -4151,15 +4161,15 @@ void ADownfallCharacter::HandleInsanityBGMEnterSoundFinished()
     }
     InsanityBGMEnterAudioComponent = nullptr;
 
-    const float ReturnThreshold = FMath::Max(
+    const float RearmThreshold = FMath::Clamp(
+        InsanityBGMRearmThreshold,
         0.0f,
-        InsanityBGMThreshold - InsanityBGMReturnMargin
+        InsanityBGMThreshold
     );
 
-    if (Insanity >= ReturnThreshold)
-    {
-        bInsanityBGMEnterSequenceCompleted = true;
-    }
+    // 전환음 종료 후에도 50 이하로 이미 내려갔다면 광기 BGM으로 진입하지 않고
+    // 그 시점의 Stage Normal/Event BGM으로 복귀한다.
+    bInsanityBGMEnterSequenceCompleted = (Insanity > RearmThreshold);
 
     RefreshStageBGM(true);
 }
@@ -4345,13 +4355,15 @@ void ADownfallCharacter::UpdateInsanityWarning(float DeltaTime)
 
 void ADownfallCharacter::UpdateInsanityBGMEnterSequence()
 {
-    const float ReturnThreshold = FMath::Max(
+    const float RearmThreshold = FMath::Clamp(
+        InsanityBGMRearmThreshold,
         0.0f,
-        InsanityBGMThreshold - InsanityBGMReturnMargin
+        InsanityBGMThreshold
     );
 
-    // 60 미만: 전환 완료 상태를 해제하고 Normal/Event BGM으로 복귀.
-    if (Insanity < ReturnThreshold)
+    // 재무장선(기본 50) 이하: 광기 BGM 상태를 해제하고
+    // 현재 스테이지의 이벤트/노멀 BGM으로 복귀한다.
+    if (Insanity <= RearmThreshold)
     {
         const bool bWasInInsanityBGMState =
             bInsanityBGMEnterSequenceCompleted ||
@@ -4505,16 +4517,12 @@ void ADownfallCharacter::UpdateCharacterStateSounds(float DeltaTime)
     const bool bMovementFalling = MoveComp && MoveComp->IsFalling();
     const bool bPhysicsFalling = Capsule && Capsule->IsSimulatingPhysics() && !bIsClimbing && CurrentVelocity.Z < -50.0f;
     const bool bCurrentlyFalling = bMovementFalling || bPhysicsFalling;
-    const bool bAnchorInUse = bSafetyLineAttached || bSafetyLineTriggered || bSafetyLineConstraintEngaged || ActiveUsingAnchorSlotIndex != INDEX_NONE;
 
     if (bCurrentlyFalling)
     {
+        // 추락 중 반복 Long Fall Sound는 제거한다.
+        // 낙하 시간은 착지음 크기 계산에만 사용한다.
         CharacterStateFallElapsedSeconds += DeltaTime;
-        if (!bAnchorInUse && CharacterStateFallElapsedSeconds >= LongFallSoundStartSeconds && (Now - LastLongFallSoundTime) >= LongFallSoundInterval)
-        {
-            LastLongFallSoundTime = Now;
-            PlayCharacterStateSound(LongFallSoundVariants, LongFallSound, LongFallSoundVolumeMultiplier, LongFallSoundPitchMultiplier, GetActorLocation());
-        }
     }
     else
     {

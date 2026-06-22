@@ -592,10 +592,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
     float InsanityBGMThreshold = 70.0f;
 
-    // 광기 BGM이 종료되어 Normal/Event BGM으로 돌아가는 게이지.
-    // 기본 10이면 70 - 10 = 60.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "30.0"))
-    float InsanityBGMReturnMargin = 10.0f;
+    // 70 진입 전환음과 Common Insanity BGM을 다시 허용하는 재무장선.
+    // 광기가 이 값 이하가 되면 광기 BGM을 멈추고 현재 Stage의 Normal/Event BGM으로 복귀한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "70.0"))
+    float InsanityBGMRearmThreshold = 50.0f;
 
     // Stage 1~3 공통 광기 BGM.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM")
@@ -676,24 +676,6 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Land", meta = (ClampMin = "0.1", UIMin = "0.1", UIMax = "10.0"))
     float LandSoundFullVolumeFallSeconds = 2.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall")
-    TObjectPtr<USoundBase> LongFallSound = nullptr;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall")
-    TArray<FItemSoundVariant> LongFallSoundVariants;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "10.0"))
-    float LongFallSoundStartSeconds = 1.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
-    float LongFallSoundInterval = 0.75f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
-    float LongFallSoundVolumeMultiplier = 1.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Fall", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
-    float LongFallSoundPitchMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM", meta = (ClampMin = "0", ClampMax = "2", UIMin = "0", UIMax = "2"))
     int32 CurrentStageMusicIndex = 0;
@@ -1718,7 +1700,6 @@ private:
     bool bGhostSpawnedThisSession = false; // 세션당 1회 소환 방지
 
     float LastWalkSoundTime = -1000.0f;
-    float LastLongFallSoundTime = -1000.0f;
     float CharacterStateFallElapsedSeconds = 0.0f;
     bool bCharacterStateWasFalling = false;
     bool bStageBGMCurrentlyInsanity = false;

@@ -123,8 +123,11 @@ private:
     // Enter 확정 핸들러
     void OnConfirmSelection(const FInputActionValue& Value);
 
-    // R 키 리롤 핸들러
+    // Input Action으로 들어오는 리롤.
     void OnRerollPressed(const FInputActionValue& Value);
+
+    // Input Mapping Context에 R 키가 없어도 동작하도록 직접 바인딩하는 리롤.
+    void OnRerollKeyPressed();
 
     // CurrentIndex 변경 -> 목표 Yaw 설정 + 패닝 타겟 거리 갱신 + HUD 갱신
     void StartCameraRotateTo(int32 NewIndex);
