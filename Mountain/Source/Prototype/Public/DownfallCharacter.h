@@ -122,21 +122,21 @@ struct FStageBGMEntry
 {
     GENERATED_BODY()
 
+    // StageBGMs[0] = Stage 1, [1] = Stage 2, [2] = Stage 3.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM")
     TObjectPtr<USoundBase> NormalBGM = nullptr;
 
+    // Stage 1 = Rain, Stage 2 = Blizzard, Stage 3 = BloodMoon.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM")
-    TObjectPtr<USoundBase> InsanityBGM = nullptr;
+    TObjectPtr<USoundBase> EventBGM = nullptr;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM", meta = (ClampMin = "0.0", ClampMax = "100.0", UIMin = "0.0", UIMax = "100.0"))
-    float InsanityBGMThreshold = 80.0f;
-
+    // 이벤트가 발생하기 전 NormalBGM 전용 기본 음량.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
-    float VolumeMultiplier = 1.0f;
+    float NormalBGMVolumeMultiplier = 1.0f;
 
-    // Stage 3에서 BloodMoon VFX가 켜졌을 때 Normal/Insanity BGM 대신 우선 재생된다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM")
-    TObjectPtr<USoundBase> BloodMoonBGM = nullptr;
+    // 비 / 눈보라 / 블러드문 EventBGM 전용 기본 음량.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float EventBGMVolumeMultiplier = 1.0f;
 };
 
 UCLASS()
@@ -185,6 +185,15 @@ public:
 
     UFUNCTION()
     void HandleStageBGMFinished();
+
+    UFUNCTION()
+    void HandleLowStaminaWarningFinished();
+
+    UFUNCTION()
+    void HandleInsanityLoopFinished();
+
+    UFUNCTION()
+    void HandleInsanityBGMEnterSoundFinished();
 
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -512,70 +521,94 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Common")
     bool bEnableCharacterStateSounds = true;
 
+    // 양손 중 현재 잡고 있는 손의 더 낮은 스태미나를 기준으로 한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina")
     TObjectPtr<USoundBase> LowStaminaSound = nullptr;
 
+    // 기본 Sound와 Variants 배열 전체에서 하나를 균등 확률로 골라 경고 루프에 사용한다.
+    // 각 원소의 VolumeMultiplier / PitchMultiplier는 선택된 사운드에만 적용된다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina")
     TArray<FItemSoundVariant> LowStaminaSoundVariants;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
-    float LowStaminaThreshold1 = 40.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
-    float LowStaminaThreshold2 = 20.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
-    float LowStaminaThreshold3 = 10.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
-    float LowStaminaInterval1 = 1.2f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
-    float LowStaminaInterval2 = 0.7f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
-    float LowStaminaInterval3 = 0.4f;
+    float LowStaminaStartThreshold = 40.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
-    float LowStaminaSoundVolumeMultiplier = 1.0f;
+    float LowStaminaMaxVolumeMultiplier = 1.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
-    float LowStaminaSoundPitchMultiplier = 1.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float LowStaminaBGMMinVolumeMultiplier = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.1", UIMin = "0.1", UIMax = "20.0"))
+    float LowStaminaFadeSpeed = 4.0f;
+
+    // 부족음 한 개가 끝난 뒤 다음 부족음을 재생하기까지의 무음 시간.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
+    float LowStaminaRepeatGapSeconds = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity")
     TObjectPtr<USoundBase> InsanityLoopSound = nullptr;
 
+    // 기본 Sound와 Variants 배열 전체에서 하나를 균등 확률로 골라 광기 루프에 사용한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity")
     TArray<FItemSoundVariant> InsanityLoopSoundVariants;
 
+    // 광기 반복음 시작 게이지. 기본값 20.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
-    float InsanitySoundThreshold1 = 60.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
-    float InsanitySoundThreshold2 = 80.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
-    float InsanitySoundInterval1 = 1.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0"))
-    float InsanitySoundInterval2 = 0.5f;
+    float InsanityLoopStartThreshold = 20.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
-    float InsanityLoopSoundVolumeMultiplier = 1.0f;
+    float InsanityLoopMaxVolumeMultiplier = 1.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
-    float InsanityLoopSoundPitchMultiplier = 1.0f;
+    // 광기 반복음 파일이 끝난 뒤, 다음 파일까지 기다리는 간격.
+    // 20/30/40/50/60/70+ 게이지에서 각각 1.0/0.9/0.8/0.7/0.6/0.5초.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity|Repeat Gap", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
+    float InsanityRepeatGapAt20 = 1.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity|Repeat Gap", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
+    float InsanityRepeatGapAt30 = 0.9f;
 
-    // 광기 구간에 "진입한 순간" 1회 재생된다. 반복 루프음과 별도다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity|Repeat Gap", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
+    float InsanityRepeatGapAt40 = 0.8f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity|Repeat Gap", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
+    float InsanityRepeatGapAt50 = 0.7f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity|Repeat Gap", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
+    float InsanityRepeatGapAt60 = 0.6f;
+
+    // 70 이상에서도 반복 광기음은 유지되며, 다음 음성까지 0.5초를 기다린다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity|Repeat Gap", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
+    float InsanityRepeatGapAt70 = 0.5f;
+
+    // 70 이상에서 전환 1회음 후 광기 BGM을 추가로 시작한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
+    float InsanityBGMThreshold = 70.0f;
+
+    // 광기 BGM이 종료되어 Normal/Event BGM으로 돌아가는 게이지.
+    // 기본 10이면 70 - 10 = 60.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "30.0"))
+    float InsanityBGMReturnMargin = 10.0f;
+
+    // Stage 1~3 공통 광기 BGM.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM")
+    TObjectPtr<USoundBase> CommonInsanityBGM = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float CommonInsanityBGMVolumeMultiplier = 1.0f;
+
+    // 광기 BGM 임계값을 처음 넘을 때만 1회 재생된다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity")
-    TObjectPtr<USoundBase> InsanityThreshold1EnterSound = nullptr;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity")
-    TObjectPtr<USoundBase> InsanityThreshold2EnterSound = nullptr;
+    TObjectPtr<USoundBase> InsanityBGMEnterSound = nullptr;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
-    float InsanityEnterSoundVolumeMultiplier = 1.0f;
+    float InsanityBGMEnterSoundVolumeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float InsanityBGMMinVolumeMultiplier = 0.40f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Insanity", meta = (ClampMin = "0.1", UIMin = "0.1", UIMax = "20.0"))
+    float InsanityFadeSpeed = 3.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Movement")
     TObjectPtr<USoundBase> WalkSound = nullptr;
@@ -669,9 +702,6 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0"))
     float StageBGMFadeOutSeconds = 1.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|BGM", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0"))
-    float StageBGMInsanityReturnMargin = 5.0f;
 
     // Safety Line
     UPROPERTY(BlueprintReadOnly, Category = "SafetyLine")
@@ -1009,13 +1039,6 @@ public:
     bool bRainActive = false;
 
 
-    // Stage 1 비 이벤트 환경음. Sound Wave/Cue를 Loop로 설정해 둔다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather")
-    TObjectPtr<USoundBase> RainAmbientSound = nullptr;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
-    float RainAmbientVolumeMultiplier = 1.0f;
-
     // ── Blizzard Hallucination VFX ──────────────────────────────
     // Stage 2 이상에서 활성화. Rain과 동시 발생 없음.
     // 기획서: Downfall Mountain 폭설 환각 VFX
@@ -1101,15 +1124,12 @@ public:
     bool bBlizzardActive = false;
 
 
-    // Stage 2 폭설 이벤트 환경음 및 빙결 디버프 시작음.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather")
-    TObjectPtr<USoundBase> BlizzardAmbientSound = nullptr;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
-    float BlizzardAmbientVolumeMultiplier = 1.0f;
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather")
     TObjectPtr<USoundBase> FrostDebuffStartSound = nullptr;
+
+    // 눈보라로 빙결 디버프가 시작될 때 기본 Sound와 후보군 중 하나를 1회 재생한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather")
+    TArray<FItemSoundVariant> FrostDebuffStartSoundVariants;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
     float FrostDebuffStartSoundVolumeMultiplier = 1.0f;
@@ -1597,6 +1617,20 @@ protected:
     void PlayItemCooldownSoundAtSlot(int32 SlotIndex) const;
     void PlayItemDestroySoundAtSlot(int32 SlotIndex) const;
     void UpdateCharacterStateSounds(float DeltaTime);
+    void UpdateLowStaminaWarning(float DeltaTime);
+    void UpdateInsanityWarning(float DeltaTime);
+    void UpdateInsanityBGMEnterSequence();
+    void UpdateStageBGMVolume(float DeltaTime);
+    float GetLowestActiveGripStamina() const;
+    float GetLowStaminaPressure() const;
+    float GetInsanityPressure() const;
+    float GetInsanityBGMVolumeAlpha() const;
+    float GetInsanityWarningGapSeconds() const;
+    bool IsCurrentStageEventActive() const;
+    bool ShouldUseInsanityBGM() const;
+    void StopLowStaminaWarning();
+    void StopInsanityWarning();
+    void StopInsanityBGMEnterSound();
     void PlayCharacterStateSound(const TArray<FItemSoundVariant>& SoundVariants, USoundBase* FallbackSound, float VolumeMultiplier, float PitchMultiplier, const FVector& EventLocation);
     void RefreshStageBGM(bool bForceRestart = false);
     void StopStageBGM();
@@ -1669,26 +1703,37 @@ private:
     TWeakObjectPtr<class AMonsterSpawner>        CachedMonsterSpawner;
     bool bGhostSpawnedThisSession = false; // 세션당 1회 소환 방지
 
-    float LastLowStaminaSoundTime = -1000.0f;
-    float LastInsanityStateSoundTime = -1000.0f;
     float LastWalkSoundTime = -1000.0f;
     float LastLongFallSoundTime = -1000.0f;
     float CharacterStateFallElapsedSeconds = 0.0f;
     bool bCharacterStateWasFalling = false;
     bool bStageBGMCurrentlyInsanity = false;
-    bool bStageBGMCurrentlyBloodMoon = false;
+    bool bStageBGMCurrentlyEvent = false;
     bool bStageBGMShouldLoop = false;
-    int32 PreviousInsanitySoundTier = 0;
+    bool bLowStaminaWarningShouldLoop = false;
+    bool bInsanityLoopShouldLoop = false;
+    bool bInsanityBGMEnterSoundPlaying = false;
+    bool bInsanityBGMEnterSequenceCompleted = false;
+    float NextLowStaminaWarningPlayTime = 0.0f;
+    float NextInsanityLoopPlayTime = 0.0f;
+    float CurrentStageBGMVolume = 0.0f;
+    float CurrentLowStaminaWarningVolume = 0.0f;
+    float CurrentLowStaminaWarningBaseVolume = 1.0f;
+    float CurrentInsanityLoopVolume = 0.0f;
+    float CurrentInsanityLoopBaseVolume = 1.0f;
     int32 PlayingStageMusicIndex = INDEX_NONE;
 
     UPROPERTY(Transient)
     TObjectPtr<UAudioComponent> StageBGMComponent = nullptr;
 
     UPROPERTY(Transient)
-    TObjectPtr<UAudioComponent> RainAmbientAudioComponent = nullptr;
+    TObjectPtr<UAudioComponent> LowStaminaWarningAudioComponent = nullptr;
 
     UPROPERTY(Transient)
-    TObjectPtr<UAudioComponent> BlizzardAmbientAudioComponent = nullptr;
+    TObjectPtr<UAudioComponent> InsanityLoopAudioComponent = nullptr;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UAudioComponent> InsanityBGMEnterAudioComponent = nullptr;
 
     // Minimap SceneCapture2D 캐시
     TWeakObjectPtr<class ASceneCapture2D>  CachedSceneCapture;

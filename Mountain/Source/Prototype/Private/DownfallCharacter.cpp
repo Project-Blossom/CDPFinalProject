@@ -92,6 +92,57 @@ namespace
 
         return FDFPickedSound();
     }
+
+
+    static FDFPickedSound DF_SelectDifferentSoundVariant(
+        const TArray<FItemSoundVariant>& Variants,
+        USoundBase* FallbackSound,
+        float FallbackVolumeMultiplier,
+        float FallbackPitchMultiplier,
+        USoundBase* ExcludedSound)
+    {
+        TArray<FDFPickedSound> AllCandidates;
+        TArray<FDFPickedSound> DifferentCandidates;
+
+        auto AddCandidate = [&AllCandidates, &DifferentCandidates, ExcludedSound](
+            USoundBase* Sound,
+            float VolumeMultiplier,
+            float PitchMultiplier)
+            {
+                if (!Sound)
+                {
+                    return;
+                }
+
+                const FDFPickedSound Candidate
+                {
+                    Sound,
+                    FMath::Max(0.0f, VolumeMultiplier),
+                    FMath::Max(0.01f, PitchMultiplier)
+                };
+
+                AllCandidates.Add(Candidate);
+
+                if (Sound != ExcludedSound)
+                {
+                    DifferentCandidates.Add(Candidate);
+                }
+            };
+
+        AddCandidate(FallbackSound, FallbackVolumeMultiplier, FallbackPitchMultiplier);
+
+        for (const FItemSoundVariant& Variant : Variants)
+        {
+            AddCandidate(Variant.Sound.Get(), Variant.VolumeMultiplier, Variant.PitchMultiplier);
+        }
+
+        const TArray<FDFPickedSound>& Candidates =
+            DifferentCandidates.Num() > 0 ? DifferentCandidates : AllCandidates;
+
+        return Candidates.Num() > 0
+            ? Candidates[FMath::RandRange(0, Candidates.Num() - 1)]
+            : FDFPickedSound();
+    }
 }
 
 
@@ -2532,6 +2583,8 @@ void ADownfallCharacter::UpdateInsanity(float DeltaTime)
             bWasAboveGlitchThreshold = bIsNowAboveThreshold;
         }
     }
+
+    // 광기 전환음/광기 BGM 시작·복귀는 UpdateInsanityBGMEnterSequence()에서 처리한다.
 }
 
 void ADownfallCharacter::UpdateInsanityEffects()
@@ -3637,10 +3690,12 @@ void ADownfallCharacter::StopStageBGM()
     }
 
     StageBGMComponent = nullptr;
+    CurrentStageBGMVolume = 0.0f;
     PlayingStageMusicIndex = INDEX_NONE;
     bStageBGMCurrentlyInsanity = false;
-    bStageBGMCurrentlyBloodMoon = false;
+    bStageBGMCurrentlyEvent = false;
 }
+
 
 
 void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
@@ -3651,6 +3706,27 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
         return;
     }
 
+    // GameInstance의 실제 스테이지 번호는 1/2/3이고,
+    // StageBGMs 배열은 0/1/2를 사용한다.
+    // 이 동기화가 없으면 CurrentStageMusicIndex의 기본값 0이 계속 남아서
+    // Stage 2에서도 Index[0]의 Normal/Event BGM을 읽게 된다.
+    if (const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GetGameInstance()))
+    {
+        const int32 GameStageIndex = DGI->GetCurrentStageIndex();
+
+        // 기존 기상 로직과 같은 규칙:
+        // Stage 0 또는 1 = 배열 0, Stage 2 = 배열 1, Stage 3 이상 = 배열 2.
+        const int32 ResolvedMusicIndex = (GameStageIndex <= 1)
+            ? 0
+            : FMath::Clamp(GameStageIndex - 1, 0, 2);
+
+        if (CurrentStageMusicIndex != ResolvedMusicIndex)
+        {
+            CurrentStageMusicIndex = ResolvedMusicIndex;
+            bForceRestart = true;
+        }
+    }
+
     const FStageBGMEntry* Entry = GetCurrentStageBGMEntry();
     if (!Entry)
     {
@@ -3658,32 +3734,27 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
         return;
     }
 
-    bool bWantInsanityBGM = false;
-    if (Entry->InsanityBGM)
+    const bool bWantInsanityBGM = ShouldUseInsanityBGM();
+    const bool bWantEventBGM = !bWantInsanityBGM && IsCurrentStageEventActive();
+
+    USoundBase* TargetBGM = nullptr;
+    float BaseVolume = 1.0f;
+
+    if (bWantInsanityBGM)
     {
-        if (bStageBGMCurrentlyInsanity)
-        {
-            bWantInsanityBGM = Insanity >= FMath::Max(
-                0.0f,
-                Entry->InsanityBGMThreshold - StageBGMInsanityReturnMargin
-            );
-        }
-        else
-        {
-            bWantInsanityBGM = Insanity >= Entry->InsanityBGMThreshold;
-        }
+        TargetBGM = CommonInsanityBGM.Get();
+        BaseVolume = FMath::Max(0.0f, CommonInsanityBGMVolumeMultiplier);
     }
-
-    const bool bWantBloodMoonBGM =
-        bBloodMoonActive &&
-        CurrentStageMusicIndex == 2 &&
-        Entry->BloodMoonBGM != nullptr;
-
-    USoundBase* TargetBGM = bWantBloodMoonBGM
-        ? Entry->BloodMoonBGM.Get()
-        : (bWantInsanityBGM ? Entry->InsanityBGM.Get() : Entry->NormalBGM.Get());
-
-    const float TargetVolume = FMath::Max(0.0f, Entry->VolumeMultiplier);
+    else if (bWantEventBGM)
+    {
+        TargetBGM = Entry->EventBGM.Get();
+        BaseVolume = FMath::Max(0.0f, Entry->EventBGMVolumeMultiplier);
+    }
+    else
+    {
+        TargetBGM = Entry->NormalBGM.Get();
+        BaseVolume = FMath::Max(0.0f, Entry->NormalBGMVolumeMultiplier);
+    }
 
     if (!TargetBGM)
     {
@@ -3691,16 +3762,14 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
         return;
     }
 
-    // 같은 상태와 같은 곡이면 하나의 컴포넌트만 유지한다.
     if (!bForceRestart &&
         StageBGMComponent &&
         IsValid(StageBGMComponent) &&
         StageBGMComponent->Sound == TargetBGM &&
         PlayingStageMusicIndex == CurrentStageMusicIndex &&
         bStageBGMCurrentlyInsanity == bWantInsanityBGM &&
-        bStageBGMCurrentlyBloodMoon == bWantBloodMoonBGM)
+        bStageBGMCurrentlyEvent == bWantEventBGM)
     {
-        StageBGMComponent->SetVolumeMultiplier(TargetVolume);
         return;
     }
 
@@ -3712,40 +3781,42 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
     }
 
     StageBGMComponent = UGameplayStatics::SpawnSound2D(
-        this,
-        TargetBGM,
-        TargetVolume,
-        1.0f,
-        0.0f,
-        nullptr,
-        false,
-        false
-    );
+        this, TargetBGM, 0.0f, 1.0f, 0.0f, nullptr, false, false);
 
     if (StageBGMComponent && IsValid(StageBGMComponent))
     {
         bStageBGMShouldLoop = true;
         StageBGMComponent->bAutoDestroy = false;
-        StageBGMComponent->OnAudioFinished.AddUniqueDynamic(
-            this,
-            &ADownfallCharacter::HandleStageBGMFinished
+        StageBGMComponent->OnAudioFinished.AddUniqueDynamic(this, &ADownfallCharacter::HandleStageBGMFinished);
+
+        const float StaminaMultiplier = FMath::Lerp(
+            1.0f,
+            FMath::Clamp(LowStaminaBGMMinVolumeMultiplier, 0.0f, 1.0f),
+            GetLowStaminaPressure()
         );
+
+        const float InsanityMultiplier = bWantInsanityBGM
+            ? GetInsanityBGMVolumeAlpha()
+            : 1.0f;
+
+        CurrentStageBGMVolume = BaseVolume * StaminaMultiplier * InsanityMultiplier;
 
         if (StageBGMFadeInSeconds > 0.0f)
         {
-            StageBGMComponent->FadeIn(StageBGMFadeInSeconds, TargetVolume, 0.0f);
+            StageBGMComponent->FadeIn(StageBGMFadeInSeconds, CurrentStageBGMVolume, 0.0f);
         }
         else
         {
-            StageBGMComponent->SetVolumeMultiplier(TargetVolume);
+            StageBGMComponent->SetVolumeMultiplier(CurrentStageBGMVolume);
             StageBGMComponent->Play(0.0f);
         }
     }
 
     PlayingStageMusicIndex = CurrentStageMusicIndex;
     bStageBGMCurrentlyInsanity = bWantInsanityBGM;
-    bStageBGMCurrentlyBloodMoon = bWantBloodMoonBGM;
+    bStageBGMCurrentlyEvent = bWantEventBGM;
 }
+
 
 
 void ADownfallCharacter::HandleStageBGMFinished()
@@ -3755,95 +3826,527 @@ void ADownfallCharacter::HandleStageBGMFinished()
         IsValid(StageBGMComponent) &&
         StageBGMComponent->Sound)
     {
+        const float LoopVolume = FMath::Max(0.0f, CurrentStageBGMVolume);
+        StageBGMComponent->SetVolumeMultiplier(LoopVolume);
         StageBGMComponent->Play(0.0f);
+        StageBGMComponent->SetVolumeMultiplier(LoopVolume);
     }
+}
+
+float ADownfallCharacter::GetLowestActiveGripStamina() const
+{
+    float Lowest = MaxStamina;
+    bool bHasGrip = false;
+    if (LeftHand.State == EHandState::Gripping) { Lowest = LeftHand.Stamina; bHasGrip = true; }
+    if (RightHand.State == EHandState::Gripping) { Lowest = bHasGrip ? FMath::Min(Lowest, RightHand.Stamina) : RightHand.Stamina; bHasGrip = true; }
+    return bHasGrip ? FMath::Clamp(Lowest, 0.0f, MaxStamina) : MaxStamina;
+}
+
+float ADownfallCharacter::GetLowStaminaPressure() const
+{
+    const bool bAnyGrip = LeftHand.State == EHandState::Gripping || RightHand.State == EHandState::Gripping;
+    if (!bAnyGrip || LowStaminaStartThreshold <= KINDA_SMALL_NUMBER) return 0.0f;
+    return FMath::Clamp((LowStaminaStartThreshold - GetLowestActiveGripStamina()) / LowStaminaStartThreshold, 0.0f, 1.0f);
+}
+
+float ADownfallCharacter::GetInsanityPressure() const
+{
+    // 반복 광기음은 20부터 100까지 계속 유지한다.
+    return FMath::Clamp(
+        (Insanity - InsanityLoopStartThreshold) /
+        FMath::Max(KINDA_SMALL_NUMBER, MaxInsanity - InsanityLoopStartThreshold),
+        0.0f,
+        1.0f
+    );
+}
+
+float ADownfallCharacter::GetInsanityBGMVolumeAlpha() const
+{
+    const float ReturnThreshold = FMath::Max(
+        0.0f,
+        InsanityBGMThreshold - InsanityBGMReturnMargin
+    );
+
+    if (MaxInsanity <= ReturnThreshold + KINDA_SMALL_NUMBER)
+    {
+        return Insanity >= MaxInsanity ? 1.0f : 0.0f;
+    }
+
+    // 60에서 0, 100에서 1.0이 되도록 광기 BGM 자체의 음량을 계산한다.
+    return FMath::Clamp(
+        (Insanity - ReturnThreshold) / (MaxInsanity - ReturnThreshold),
+        0.0f,
+        1.0f
+    );
+}
+
+float ADownfallCharacter::GetInsanityWarningGapSeconds() const
+{
+    if (Insanity >= 70.0f) return FMath::Max(0.0f, InsanityRepeatGapAt70);
+    if (Insanity >= 60.0f) return FMath::Max(0.0f, InsanityRepeatGapAt60);
+    if (Insanity >= 50.0f) return FMath::Max(0.0f, InsanityRepeatGapAt50);
+    if (Insanity >= 40.0f) return FMath::Max(0.0f, InsanityRepeatGapAt40);
+    if (Insanity >= 30.0f) return FMath::Max(0.0f, InsanityRepeatGapAt30);
+    return FMath::Max(0.0f, InsanityRepeatGapAt20);
+}
+
+bool ADownfallCharacter::IsCurrentStageEventActive() const
+{
+    switch (CurrentStageMusicIndex)
+    {
+    case 0: return bRainActive;
+    case 1: return bBlizzardActive;
+    case 2: return bBloodMoonActive;
+    default: return false;
+    }
+}
+
+bool ADownfallCharacter::ShouldUseInsanityBGM() const
+{
+    if (!CommonInsanityBGM || !bInsanityBGMEnterSequenceCompleted)
+    {
+        return false;
+    }
+
+    const float ReturnThreshold = FMath::Max(
+        0.0f,
+        InsanityBGMThreshold - InsanityBGMReturnMargin
+    );
+
+    return bStageBGMCurrentlyInsanity
+        ? Insanity >= ReturnThreshold
+        : Insanity >= InsanityBGMThreshold;
+}
+
+void ADownfallCharacter::StopLowStaminaWarning()
+{
+    bLowStaminaWarningShouldLoop = false;
+    NextLowStaminaWarningPlayTime = 0.0f;
+
+    if (LowStaminaWarningAudioComponent && IsValid(LowStaminaWarningAudioComponent))
+    {
+        LowStaminaWarningAudioComponent->Stop();
+        LowStaminaWarningAudioComponent->DestroyComponent();
+    }
+
+    LowStaminaWarningAudioComponent = nullptr;
+    CurrentLowStaminaWarningVolume = 0.0f;
+    CurrentLowStaminaWarningBaseVolume = 1.0f;
+}
+
+void ADownfallCharacter::StopInsanityWarning()
+{
+    bInsanityLoopShouldLoop = false;
+    NextInsanityLoopPlayTime = 0.0f;
+
+    if (InsanityLoopAudioComponent && IsValid(InsanityLoopAudioComponent))
+    {
+        InsanityLoopAudioComponent->Stop();
+        InsanityLoopAudioComponent->DestroyComponent();
+    }
+
+    InsanityLoopAudioComponent = nullptr;
+    CurrentInsanityLoopVolume = 0.0f;
+    CurrentInsanityLoopBaseVolume = 1.0f;
+}
+
+void ADownfallCharacter::StopInsanityBGMEnterSound()
+{
+    bInsanityBGMEnterSoundPlaying = false;
+
+    if (InsanityBGMEnterAudioComponent && IsValid(InsanityBGMEnterAudioComponent))
+    {
+        InsanityBGMEnterAudioComponent->Stop();
+        InsanityBGMEnterAudioComponent->DestroyComponent();
+    }
+
+    InsanityBGMEnterAudioComponent = nullptr;
+}
+
+void ADownfallCharacter::HandleLowStaminaWarningFinished()
+{
+    if (!bLowStaminaWarningShouldLoop)
+    {
+        return;
+    }
+
+    if (const UWorld* World = GetWorld())
+    {
+        NextLowStaminaWarningPlayTime =
+            World->GetTimeSeconds() + FMath::Max(0.0f, LowStaminaRepeatGapSeconds);
+    }
+}
+
+void ADownfallCharacter::HandleInsanityLoopFinished()
+{
+    if (!bInsanityLoopShouldLoop)
+    {
+        return;
+    }
+
+    if (const UWorld* World = GetWorld())
+    {
+        NextInsanityLoopPlayTime =
+            World->GetTimeSeconds() + GetInsanityWarningGapSeconds();
+    }
+}
+
+void ADownfallCharacter::HandleInsanityBGMEnterSoundFinished()
+{
+    bInsanityBGMEnterSoundPlaying = false;
+
+    if (InsanityBGMEnterAudioComponent && IsValid(InsanityBGMEnterAudioComponent))
+    {
+        InsanityBGMEnterAudioComponent->DestroyComponent();
+    }
+    InsanityBGMEnterAudioComponent = nullptr;
+
+    const float ReturnThreshold = FMath::Max(
+        0.0f,
+        InsanityBGMThreshold - InsanityBGMReturnMargin
+    );
+
+    if (Insanity >= ReturnThreshold)
+    {
+        bInsanityBGMEnterSequenceCompleted = true;
+    }
+
+    RefreshStageBGM(true);
+}
+
+void ADownfallCharacter::UpdateLowStaminaWarning(float DeltaTime)
+{
+    const float Pressure = GetLowStaminaPressure();
+    if (Pressure <= 0.001f)
+    {
+        StopLowStaminaWarning();
+        return;
+    }
+
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+
+    if (!LowStaminaWarningAudioComponent || !IsValid(LowStaminaWarningAudioComponent))
+    {
+        const FDFPickedSound Picked = DF_SelectSoundVariant(
+            LowStaminaSoundVariants,
+            LowStaminaSound,
+            LowStaminaMaxVolumeMultiplier,
+            1.0f
+        );
+
+        if (!Picked.Sound)
+        {
+            StopLowStaminaWarning();
+            return;
+        }
+
+        LowStaminaWarningAudioComponent = UGameplayStatics::SpawnSound2D(
+            this, Picked.Sound, 0.0f, Picked.PitchMultiplier, 0.0f, nullptr, false, false
+        );
+
+        if (LowStaminaWarningAudioComponent && IsValid(LowStaminaWarningAudioComponent))
+        {
+            bLowStaminaWarningShouldLoop = true;
+            NextLowStaminaWarningPlayTime = 0.0f;
+            CurrentLowStaminaWarningBaseVolume = Picked.VolumeMultiplier;
+            LowStaminaWarningAudioComponent->bAutoDestroy = false;
+            LowStaminaWarningAudioComponent->OnAudioFinished.AddUniqueDynamic(
+                this, &ADownfallCharacter::HandleLowStaminaWarningFinished
+            );
+        }
+    }
+    else if (
+        bLowStaminaWarningShouldLoop &&
+        !LowStaminaWarningAudioComponent->IsPlaying() &&
+        Now >= NextLowStaminaWarningPlayTime
+        )
+    {
+        // 한 파일이 끝난 뒤 1초를 기다리고, 직전 파일을 제외한 후보를 다시 뽑는다.
+        const FDFPickedSound Picked = DF_SelectDifferentSoundVariant(
+            LowStaminaSoundVariants,
+            LowStaminaSound,
+            LowStaminaMaxVolumeMultiplier,
+            1.0f,
+            LowStaminaWarningAudioComponent->Sound
+        );
+
+        if (!Picked.Sound)
+        {
+            StopLowStaminaWarning();
+            return;
+        }
+
+        CurrentLowStaminaWarningBaseVolume = Picked.VolumeMultiplier;
+        CurrentLowStaminaWarningVolume = FMath::Max(
+            0.0f,
+            Pressure * CurrentLowStaminaWarningBaseVolume
+        );
+
+        LowStaminaWarningAudioComponent->SetSound(Picked.Sound);
+        LowStaminaWarningAudioComponent->SetPitchMultiplier(Picked.PitchMultiplier);
+        LowStaminaWarningAudioComponent->SetVolumeMultiplier(CurrentLowStaminaWarningVolume);
+        LowStaminaWarningAudioComponent->Play(0.0f);
+    }
+
+    if (LowStaminaWarningAudioComponent && IsValid(LowStaminaWarningAudioComponent))
+    {
+        const float TargetVolume = Pressure * CurrentLowStaminaWarningBaseVolume;
+
+        CurrentLowStaminaWarningVolume = FMath::FInterpTo(
+            CurrentLowStaminaWarningVolume,
+            TargetVolume,
+            DeltaTime,
+            FMath::Max(0.1f, LowStaminaFadeSpeed)
+        );
+
+        LowStaminaWarningAudioComponent->SetVolumeMultiplier(CurrentLowStaminaWarningVolume);
+    }
+}
+
+void ADownfallCharacter::UpdateInsanityWarning(float DeltaTime)
+{
+    // 70 이상에서도 반복 광기음은 계속 재생한다.
+    // 전환 1회음과 광기 BGM은 이 반복음에 추가로 겹쳐지는 별도 단계다.
+    const float Pressure = GetInsanityPressure();
+    if (Pressure <= 0.001f)
+    {
+        StopInsanityWarning();
+        return;
+    }
+
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+
+    if (!InsanityLoopAudioComponent || !IsValid(InsanityLoopAudioComponent))
+    {
+        const FDFPickedSound Picked = DF_SelectSoundVariant(
+            InsanityLoopSoundVariants,
+            InsanityLoopSound,
+            InsanityLoopMaxVolumeMultiplier,
+            1.0f
+        );
+
+        if (!Picked.Sound)
+        {
+            StopInsanityWarning();
+            return;
+        }
+
+        InsanityLoopAudioComponent = UGameplayStatics::SpawnSound2D(
+            this, Picked.Sound, 0.0f, Picked.PitchMultiplier, 0.0f, nullptr, false, false
+        );
+
+        if (InsanityLoopAudioComponent && IsValid(InsanityLoopAudioComponent))
+        {
+            bInsanityLoopShouldLoop = true;
+            NextInsanityLoopPlayTime = 0.0f;
+            CurrentInsanityLoopBaseVolume = Picked.VolumeMultiplier;
+            InsanityLoopAudioComponent->bAutoDestroy = false;
+            InsanityLoopAudioComponent->OnAudioFinished.AddUniqueDynamic(
+                this, &ADownfallCharacter::HandleInsanityLoopFinished
+            );
+        }
+    }
+    else if (
+        bInsanityLoopShouldLoop &&
+        !InsanityLoopAudioComponent->IsPlaying() &&
+        Now >= NextInsanityLoopPlayTime
+        )
+    {
+        const FDFPickedSound Picked = DF_SelectDifferentSoundVariant(
+            InsanityLoopSoundVariants,
+            InsanityLoopSound,
+            InsanityLoopMaxVolumeMultiplier,
+            1.0f,
+            InsanityLoopAudioComponent->Sound
+        );
+
+        if (!Picked.Sound)
+        {
+            StopInsanityWarning();
+            return;
+        }
+
+        CurrentInsanityLoopBaseVolume = Picked.VolumeMultiplier;
+        CurrentInsanityLoopVolume = FMath::Max(
+            0.0f,
+            Pressure * CurrentInsanityLoopBaseVolume
+        );
+
+        InsanityLoopAudioComponent->SetSound(Picked.Sound);
+        InsanityLoopAudioComponent->SetPitchMultiplier(Picked.PitchMultiplier);
+        InsanityLoopAudioComponent->SetVolumeMultiplier(CurrentInsanityLoopVolume);
+        InsanityLoopAudioComponent->Play(0.0f);
+    }
+
+    if (InsanityLoopAudioComponent && IsValid(InsanityLoopAudioComponent))
+    {
+        const float TargetVolume = Pressure * CurrentInsanityLoopBaseVolume;
+
+        CurrentInsanityLoopVolume = FMath::FInterpTo(
+            CurrentInsanityLoopVolume,
+            TargetVolume,
+            DeltaTime,
+            FMath::Max(0.1f, InsanityFadeSpeed)
+        );
+
+        InsanityLoopAudioComponent->SetVolumeMultiplier(CurrentInsanityLoopVolume);
+    }
+}
+
+void ADownfallCharacter::UpdateInsanityBGMEnterSequence()
+{
+    const float ReturnThreshold = FMath::Max(
+        0.0f,
+        InsanityBGMThreshold - InsanityBGMReturnMargin
+    );
+
+    // 60 미만: 전환 완료 상태를 해제하고 Normal/Event BGM으로 복귀.
+    if (Insanity < ReturnThreshold)
+    {
+        const bool bWasInInsanityBGMState =
+            bInsanityBGMEnterSequenceCompleted ||
+            bInsanityBGMEnterSoundPlaying ||
+            bStageBGMCurrentlyInsanity;
+
+        StopInsanityBGMEnterSound();
+        bInsanityBGMEnterSequenceCompleted = false;
+
+        if (bWasInInsanityBGMState)
+        {
+            RefreshStageBGM(true);
+        }
+        return;
+    }
+
+    // 이미 BGM을 시작했거나, 전환음이 재생 중이거나, 아직 70에 못 미쳤으면 대기.
+    if (bInsanityBGMEnterSequenceCompleted ||
+        bInsanityBGMEnterSoundPlaying ||
+        Insanity < InsanityBGMThreshold)
+    {
+        return;
+    }
+
+    // 70 도달: 반복 광기음은 유지하고, 현재 Normal/Event BGM만 멈춘 뒤 전환 1회음을 재생한다.
+    StopStageBGM();
+
+    if (!InsanityBGMEnterSound)
+    {
+        // 전환음이 비어 있으면 멈춘 채로 남지 않도록 바로 광기 BGM으로 간다.
+        bInsanityBGMEnterSequenceCompleted = true;
+        RefreshStageBGM(true);
+        return;
+    }
+
+    InsanityBGMEnterAudioComponent = UGameplayStatics::SpawnSound2D(
+        this,
+        InsanityBGMEnterSound,
+        FMath::Max(0.0f, InsanityBGMEnterSoundVolumeMultiplier),
+        1.0f,
+        0.0f,
+        nullptr,
+        false,
+        false
+    );
+
+    if (InsanityBGMEnterAudioComponent && IsValid(InsanityBGMEnterAudioComponent))
+    {
+        bInsanityBGMEnterSoundPlaying = true;
+        InsanityBGMEnterAudioComponent->bAutoDestroy = false;
+        InsanityBGMEnterAudioComponent->OnAudioFinished.AddUniqueDynamic(
+            this,
+            &ADownfallCharacter::HandleInsanityBGMEnterSoundFinished
+        );
+    }
+    else
+    {
+        bInsanityBGMEnterSequenceCompleted = true;
+        RefreshStageBGM(true);
+    }
+}
+
+
+void ADownfallCharacter::UpdateStageBGMVolume(float DeltaTime)
+{
+    if (!StageBGMComponent || !IsValid(StageBGMComponent))
+    {
+        return;
+    }
+
+    const FStageBGMEntry* Entry = GetCurrentStageBGMEntry();
+    if (!Entry)
+    {
+        return;
+    }
+
+    float BaseVolume = 1.0f;
+    if (bStageBGMCurrentlyInsanity)
+    {
+        BaseVolume = FMath::Max(0.0f, CommonInsanityBGMVolumeMultiplier);
+    }
+    else if (bStageBGMCurrentlyEvent)
+    {
+        BaseVolume = FMath::Max(0.0f, Entry->EventBGMVolumeMultiplier);
+    }
+    else
+    {
+        BaseVolume = FMath::Max(0.0f, Entry->NormalBGMVolumeMultiplier);
+    }
+
+    const float StaminaMultiplier = FMath::Lerp(
+        1.0f,
+        FMath::Clamp(LowStaminaBGMMinVolumeMultiplier, 0.0f, 1.0f),
+        GetLowStaminaPressure()
+    );
+
+    // 광기 BGM만 60=0, 100=최대 음량으로 변한다.
+    // Normal/Event BGM에는 광기 게이지 감쇠를 적용하지 않는다.
+    const float InsanityMultiplier = bStageBGMCurrentlyInsanity
+        ? GetInsanityBGMVolumeAlpha()
+        : 1.0f;
+
+    const float TargetVolume = BaseVolume * StaminaMultiplier * InsanityMultiplier;
+
+    CurrentStageBGMVolume = FMath::FInterpTo(
+        CurrentStageBGMVolume,
+        TargetVolume,
+        DeltaTime,
+        FMath::Max(0.1f, FMath::Max(LowStaminaFadeSpeed, InsanityFadeSpeed))
+    );
+
+    StageBGMComponent->SetVolumeMultiplier(CurrentStageBGMVolume);
 }
 
 void ADownfallCharacter::UpdateCharacterStateSounds(float DeltaTime)
 {
-    if (!bEnableCharacterStateSounds)
+    UpdateInsanityBGMEnterSequence();
+
+    if (bEnableCharacterStateSounds)
     {
-        RefreshStageBGM(false);
-        return;
+        UpdateLowStaminaWarning(DeltaTime);
+        UpdateInsanityWarning(DeltaTime);
+    }
+    else
+    {
+        StopLowStaminaWarning();
+        StopInsanityWarning();
     }
 
+    RefreshStageBGM(false);
+    UpdateStageBGMVolume(DeltaTime);
+
+    if (!bEnableCharacterStateSounds) return;
+
     UWorld* World = GetWorld();
-    if (!World)
-    {
-        return;
-    }
+    if (!World) return;
 
     const float Now = World->GetTimeSeconds();
     UCharacterMovementComponent* MoveComp = GetCharacterMovement();
     UCapsuleComponent* Capsule = GetCapsuleComponent();
-
-    const bool bLeftGripping = LeftHand.State == EHandState::Gripping;
-    const bool bRightGripping = RightHand.State == EHandState::Gripping;
-    const bool bAnyHandGripping = bLeftGripping || bRightGripping;
-
-    if (bAnyHandGripping)
-    {
-        float ActiveStamina = MaxStamina;
-        bool bHasStaminaSource = false;
-
-        if (bLeftGripping)
-        {
-            ActiveStamina = LeftHand.Stamina;
-            bHasStaminaSource = true;
-        }
-
-        if (bRightGripping)
-        {
-            ActiveStamina = bHasStaminaSource ? FMath::Min(ActiveStamina, RightHand.Stamina) : RightHand.Stamina;
-            bHasStaminaSource = true;
-        }
-
-        float TargetInterval = 0.0f;
-        if (ActiveStamina <= LowStaminaThreshold3)
-        {
-            TargetInterval = LowStaminaInterval3;
-        }
-        else if (ActiveStamina <= LowStaminaThreshold2)
-        {
-            TargetInterval = LowStaminaInterval2;
-        }
-        else if (ActiveStamina <= LowStaminaThreshold1)
-        {
-            TargetInterval = LowStaminaInterval1;
-        }
-
-        if (TargetInterval > 0.0f && (Now - LastLowStaminaSoundTime) >= TargetInterval)
-        {
-            LastLowStaminaSoundTime = Now;
-            PlayCharacterStateSound(LowStaminaSoundVariants, LowStaminaSound, LowStaminaSoundVolumeMultiplier, LowStaminaSoundPitchMultiplier, GetActorLocation());
-        }
-    }
-
-    float InsanityInterval = 0.0f;
-    if (Insanity >= InsanitySoundThreshold2)
-    {
-        InsanityInterval = InsanitySoundInterval2;
-    }
-    else if (Insanity >= InsanitySoundThreshold1)
-    {
-        InsanityInterval = InsanitySoundInterval1;
-    }
-
-    if (InsanityInterval > 0.0f && (Now - LastInsanityStateSoundTime) >= InsanityInterval)
-    {
-        LastInsanityStateSoundTime = Now;
-        PlayCharacterStateSound(InsanityLoopSoundVariants, InsanityLoopSound, InsanityLoopSoundVolumeMultiplier, InsanityLoopSoundPitchMultiplier, GetActorLocation());
-    }
-
-    const FVector CurrentVelocity = Capsule && Capsule->IsSimulatingPhysics()
-        ? Capsule->GetPhysicsLinearVelocity()
-        : GetVelocity();
-
+    const FVector CurrentVelocity = Capsule && Capsule->IsSimulatingPhysics() ? Capsule->GetPhysicsLinearVelocity() : GetVelocity();
     const float GroundSpeed = FVector(CurrentVelocity.X, CurrentVelocity.Y, 0.0f).Size();
     const bool bOnGround = MoveComp && MoveComp->IsMovingOnGround();
-    const bool bCanPlayWalkSound = bOnGround && !bIsClimbing && GroundSpeed >= WalkSoundMinSpeed;
 
-    if (bCanPlayWalkSound && (Now - LastWalkSoundTime) >= WalkSoundInterval)
+    if (bOnGround && !bIsClimbing && GroundSpeed >= WalkSoundMinSpeed && (Now - LastWalkSoundTime) >= WalkSoundInterval)
     {
         LastWalkSoundTime = Now;
         PlayCharacterStateSound(WalkSoundVariants, WalkSound, WalkSoundVolumeMultiplier, WalkSoundPitchMultiplier, GetActorLocation());
@@ -3857,9 +4360,7 @@ void ADownfallCharacter::UpdateCharacterStateSounds(float DeltaTime)
     if (bCurrentlyFalling)
     {
         CharacterStateFallElapsedSeconds += DeltaTime;
-
-        if (!bAnchorInUse && CharacterStateFallElapsedSeconds >= LongFallSoundStartSeconds &&
-            (Now - LastLongFallSoundTime) >= LongFallSoundInterval)
+        if (!bAnchorInUse && CharacterStateFallElapsedSeconds >= LongFallSoundStartSeconds && (Now - LastLongFallSoundTime) >= LongFallSoundInterval)
         {
             LastLongFallSoundTime = Now;
             PlayCharacterStateSound(LongFallSoundVariants, LongFallSound, LongFallSoundVolumeMultiplier, LongFallSoundPitchMultiplier, GetActorLocation());
@@ -3873,13 +4374,9 @@ void ADownfallCharacter::UpdateCharacterStateSounds(float DeltaTime)
             const float LandVolume = FMath::Lerp(LandSoundMinVolumeMultiplier, LandSoundMaxVolumeMultiplier, Alpha);
             PlayCharacterStateSound(LandSoundVariants, LandSound, LandVolume, LandSoundPitchMultiplier, GetActorLocation());
         }
-
         CharacterStateFallElapsedSeconds = 0.0f;
     }
-
     bCharacterStateWasFalling = bCurrentlyFalling;
-
-    RefreshStageBGM(false);
 }
 
 void ADownfallCharacter::RefreshInventoryUIState()
@@ -4840,6 +5337,8 @@ void ADownfallCharacter::ActivateRainVFX()
     RainElapsedSinceActivation = 0.0f;
     UE_LOG(LogDownFall, Warning, TEXT("RainVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
 
+    RefreshStageBGM(true);
+
     // Stage 1 슬라이드 패널티: Rain VFX 활성화 후 SlidePenaltyDelayAfterVFX초 뒤에 활성화
     if (UWorld* World = GetWorld())
     {
@@ -4892,6 +5391,7 @@ void ADownfallCharacter::DeactivateRainVFX()
     }
 
     UE_LOG(LogDownFall, Warning, TEXT("RainVFX DEACTIVATED"));
+    RefreshStageBGM(true);
 }
 
 void ADownfallCharacter::UpdateRainVFX(float DeltaTime)
@@ -4984,6 +5484,15 @@ void ADownfallCharacter::ActivateBlizzardVFX()
 
     bBlizzardActive = true;
 
+    // 빙결 디버프 시작음: 기본 Sound + Variants 후보군에서 하나를 1회 선택한다.
+    PlayCharacterStateSound(
+        FrostDebuffStartSoundVariants,
+        FrostDebuffStartSound,
+        FrostDebuffStartSoundVolumeMultiplier,
+        1.0f,
+        GetActorLocation()
+    );
+
     // PP 서리 Weight Lerp 시작
     if (FrostMaterialInstance && PostProcessComp)
     {
@@ -5045,6 +5554,8 @@ void ADownfallCharacter::ActivateBlizzardVFX()
     BlizzardElapsedSinceActivation = 0.0f;
     UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
 
+    RefreshStageBGM(true);
+
     // Stage 2 그립 제한 패널티: VFX 활성화 후 GripPenaltyDelayAfterVFX초 뒤에 발동
     if (UWorld* World = GetWorld())
     {
@@ -5100,6 +5611,7 @@ void ADownfallCharacter::DeactivateBlizzardVFX()
     }
 
     UE_LOG(LogDownFall, Warning, TEXT("BlizzardVFX DEACTIVATED"));
+    RefreshStageBGM(true);
 }
 
 void ADownfallCharacter::UpdateBlizzardVFX(float DeltaTime)
@@ -5204,7 +5716,7 @@ void ADownfallCharacter::ActivateBloodMoonVFX()
 
     UE_LOG(LogDownFall, Warning, TEXT("BloodMoonVFX ACTIVATED (ClimbingElapsedTime: %.1fs)"), ClimbingElapsedTime);
 
-    // BloodMoon 상태가 켜지는 즉시 기존 Stage BGM을 중지하고 BloodMoonBGM으로 교체한다.
+    // Stage 3의 EventBGM(블러드문)으로 전환한다.
     RefreshStageBGM(true);
 
     // Stage 3 Insanity 증폭 패널티: VFX 활성화 후 BloodMoonPenaltyDelayAfterVFX초 뒤에 발동
@@ -5233,6 +5745,8 @@ void ADownfallCharacter::DeactivateBloodMoonVFX()
 
     bBloodMoonActive = false;
     BloodMoonElapsed = 0.0f;
+
+    RefreshStageBGM(true);
 
     if (CachedMoonLight.IsValid())
     {
@@ -5584,7 +6098,7 @@ void ADownfallCharacter::AutoConfigureMinimapCapture() {
             const float ReliefHalfRangeCm =
                 FMath::Clamp(CachedMountainActor->Settings.BaseField3DStrengthCm, 0.f, 50000.f)
                 + FMath::Max(0.f, CachedMountainActor->Settings.VolumeStrength)
-                    * FMath::Max(0.f, CachedMountainActor->Settings.OverhangDepthCm);
+                * FMath::Max(0.f, CachedMountainActor->Settings.OverhangDepthCm);
 
             const float NominalFrontX = CachedMountainActor->GetFrontSurfaceWorldX(); // = ActorLocation().X
             const float AutoFrontX = NominalFrontX + ReliefHalfRangeCm;
