@@ -147,6 +147,13 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
     float UIButtonClickSoundVolumeMultiplier = 1.0f;
 
+    // 모든 일반 UI 버튼에 마우스를 올렸을 때 재생되는 공통 Hover Sound.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound")
+    TObjectPtr<USoundBase> UIButtonHoverSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float UIButtonHoverSoundVolumeMultiplier = 1.0f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Sound")
     TObjectPtr<USoundBase> MainMenuBGM = nullptr;
 
@@ -216,6 +223,10 @@ public:
     // 기존 클릭음이 남아 있으면 끊고, 새 클릭음은 레벨 전환 뒤에도 계속 재생한다.
     UFUNCTION()
     void PlayUIButtonClickSound();
+
+    // 모든 일반 UI 버튼의 OnHovered에 연결된다.
+    UFUNCTION()
+    void PlayUIButtonHoverSound();
 
     // ========== Cliff Selection ==========
 
@@ -312,4 +323,8 @@ protected:
     // UI 클릭음은 GameInstance가 보관하므로 OpenLevel 이후에도 사라지지 않는다.
     UPROPERTY(Transient)
     TObjectPtr<UAudioComponent> UIButtonClickAudioComponent = nullptr;
+
+    // Hover음은 빠르게 여러 버튼을 지나갈 때 여러 개가 겹치지 않게 별도 채널 하나만 사용한다.
+    UPROPERTY(Transient)
+    TObjectPtr<UAudioComponent> UIButtonHoverAudioComponent = nullptr;
 };

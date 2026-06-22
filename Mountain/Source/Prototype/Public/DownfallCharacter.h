@@ -319,6 +319,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina")
     float StaminaRecoverPerSecond = 15.0f;
 
+    // Debug 7번: ON이면 실제 스태미나 소모량에 이 배율을 곱한다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug|Stamina", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float DebugReducedStaminaDrainMultiplier = 0.5f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Debug|Stamina")
+    bool bDebugReducedStaminaDrainEnabled = false;
+
     // 경사각 구간 경계값
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Stamina|Angle Thresholds", meta = (ClampMin = "0.0", ClampMax = "180.0", UIMin = "0.0", UIMax = "180.0"))
     float CeilingAngleThreshold = 30.0f;
@@ -1134,6 +1141,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
     float FrostDebuffStartSoundVolumeMultiplier = 1.0f;
 
+    // 빙결 디버프가 실제로 걸리는 순간의 재생 배속/피치.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Sound|Weather", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+    float FrostDebuffStartSoundPitchMultiplier = 1.0f;
+
     UPROPERTY(BlueprintReadOnly, Category = "VFX|BlizzardVFX")
     float BlizzardCurrentWeight = 0.0f;
 
@@ -1553,6 +1564,9 @@ protected:
 
     // Debug
     void OnDebugInsanity(const FInputActionValue& Value);
+    void OnDebugReduceInsanity();
+    void OnDebugToggleCurrentStageEvent();
+    void OnDebugToggleReducedStaminaDrain();
 
     // Grip Logic
     void TryGrip(bool bIsLeftHand);

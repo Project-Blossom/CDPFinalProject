@@ -21,7 +21,7 @@ namespace PrototypeUI
         UDownfallGameInstance* GameInstance =
             Cast<UDownfallGameInstance>(RootWidget->GetGameInstance());
 
-        if (!GameInstance || !GameInstance->UIButtonClickSound)
+        if (!GameInstance)
         {
             return;
         }
@@ -37,10 +37,21 @@ namespace PrototypeUI
                 continue;
             }
 
-            Button->OnClicked.AddUniqueDynamic(
-                GameInstance,
-                &UDownfallGameInstance::PlayUIButtonClickSound
-            );
+            if (GameInstance->UIButtonClickSound)
+            {
+                Button->OnClicked.AddUniqueDynamic(
+                    GameInstance,
+                    &UDownfallGameInstance::PlayUIButtonClickSound
+                );
+            }
+
+            if (GameInstance->UIButtonHoverSound)
+            {
+                Button->OnHovered.AddUniqueDynamic(
+                    GameInstance,
+                    &UDownfallGameInstance::PlayUIButtonHoverSound
+                );
+            }
         }
     }
 }

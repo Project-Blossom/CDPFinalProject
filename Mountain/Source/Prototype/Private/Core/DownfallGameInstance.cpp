@@ -559,6 +559,40 @@ void UDownfallGameInstance::PlayUIButtonClickSound()
 }
 
 
+void UDownfallGameInstance::PlayUIButtonHoverSound()
+{
+    if (!UIButtonHoverSound)
+    {
+        return;
+    }
+
+    // 빠르게 다른 버튼으로 이동해도 Hover음이 누적되어 커지지 않게 한다.
+    if (UIButtonHoverAudioComponent && IsValid(UIButtonHoverAudioComponent))
+    {
+        UIButtonHoverAudioComponent->Stop();
+        UIButtonHoverAudioComponent->DestroyComponent();
+        UIButtonHoverAudioComponent = nullptr;
+    }
+
+    UWorld* CurrentWorld = GetWorld();
+    if (!CurrentWorld)
+    {
+        return;
+    }
+
+    UIButtonHoverAudioComponent = UGameplayStatics::SpawnSound2D(
+        CurrentWorld,
+        UIButtonHoverSound,
+        FMath::Max(0.0f, UIButtonHoverSoundVolumeMultiplier),
+        1.0f,
+        0.0f,
+        nullptr,
+        true,
+        false
+    );
+}
+
+
 void UDownfallGameInstance::PlayPersistentUISound(USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier)
 {
     if (!Sound)

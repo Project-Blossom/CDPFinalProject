@@ -573,7 +573,7 @@ void ADownfallCharacter::BeginPlay()
         AltitudeWidget = CreateWidget<UAltitudeWidget>(GetWorld(), AltitudeWidgetClass);
         if (AltitudeWidget)
         {
-            AltitudeWidget->AddToViewport();
+            AltitudeWidget->AddToViewport(10);
             UE_LOG(LogDownFall, Log, TEXT("Altitude Widget created and added to viewport"));
             // ── WBP_Minimap 생성 및 뷰포트 추가 ──────────────────────────
             if (MinimapWidgetClass)
@@ -581,7 +581,7 @@ void ADownfallCharacter::BeginPlay()
                 MinimapWidget = CreateWidget<UMinimapWidget>(GetWorld(), MinimapWidgetClass);
                 if (MinimapWidget)
                 {
-                    MinimapWidget->AddToViewport();
+                    MinimapWidget->AddToViewport(0);
                     MinimapCurrentTint = MinimapNormalTint;
                     MinimapWidget->SetMinimapTint(MinimapNormalTint);
                     UE_LOG(LogDownFall, Log, TEXT("Minimap Widget created and added to viewport"));
@@ -945,6 +945,14 @@ void ADownfallCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
     PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode);
     PlayerInputComponent->BindKey(EKeys::NumPadThree, IE_Pressed, this, &ADownfallCharacter::ToggleFlyMode);
     PlayerInputComponent->BindKey(EKeys::R, IE_Pressed, this, &ADownfallCharacter::OnDestroyInventoryItemPressed);
+
+    // Debug: 4는 기존 DebugInsanityAction을 유지한다.
+    PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &ADownfallCharacter::OnDebugReduceInsanity);
+    PlayerInputComponent->BindKey(EKeys::NumPadFive, IE_Pressed, this, &ADownfallCharacter::OnDebugReduceInsanity);
+    PlayerInputComponent->BindKey(EKeys::Six, IE_Pressed, this, &ADownfallCharacter::OnDebugToggleCurrentStageEvent);
+    PlayerInputComponent->BindKey(EKeys::NumPadSix, IE_Pressed, this, &ADownfallCharacter::OnDebugToggleCurrentStageEvent);
+    PlayerInputComponent->BindKey(EKeys::Seven, IE_Pressed, this, &ADownfallCharacter::OnDebugToggleReducedStaminaDrain);
+    PlayerInputComponent->BindKey(EKeys::NumPadSeven, IE_Pressed, this, &ADownfallCharacter::OnDebugToggleReducedStaminaDrain);
 }
 
 void ADownfallCharacter::OnUseItemTriggered(const FInputActionValue& Value)
@@ -1825,7 +1833,104 @@ void ADownfallCharacter::OnJumpCompleted(const FInputActionValue& Value)
 void ADownfallCharacter::OnDebugInsanity(const FInputActionValue& Value)
 {
     AddInsanity(10.0f);
-    UE_LOG(LogDownFall, Warning, TEXT("Debug: Added 10 Insanity (Test key pressed)"));
+    UE_LOG(LogDownFall, Warning, TEXT("Debug 4: Added 10 Insanity (Current: %.1f)"), Insanity);
+}
+
+void ADownfallCharacter::OnDebugReduceInsanity()
+{
+    AddInsanity(-10.0f);
+    UE_LOG(LogDownFall, Warning, TEXT("Debug 5: Reduced 10 Insanity (Current: %.1f)"), Insanity);
+}
+
+void ADownfallCharacter::OnDebugToggleCurrentStageEvent()
+{
+    const UDownfallGameInstance* DGI = Cast<UDownfallGameInstance>(GetGameInstance());
+    const int32 StageIndex = DGI ? DGI->GetCurrentStageIndex() : 0;
+
+    if (StageIndex <= 1)
+    {
+        if (!bRainActive)
+        {
+            ActivateRainVFX();
+            UE_LOG(LogDownFall, Warning, TEXT("Debug 6: Stage 1 Rain Event ON"));
+            return;
+        }
+
+        DeactivateRainVFX();
+        ClimbingElapsedTime = 0.0f;
+
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(SlidePenaltyDelayHandle);
+        }
+        bRainSlidePenaltyEnabled = false;
+        CurrentSlide.bActive = false;
+
+        UE_LOG(LogDownFall, Warning,
+            TEXT("Debug 6: Stage 1 Rain Event OFF. Trigger timer reset to 0.0s."));
+        return;
+    }
+
+    if (StageIndex == 2)
+    {
+        if (!bBlizzardActive)
+        {
+            ActivateBlizzardVFX();
+            UE_LOG(LogDownFall, Warning, TEXT("Debug 6: Stage 2 Blizzard Event ON"));
+            return;
+        }
+
+        DeactivateBlizzardVFX();
+        ClimbingElapsedTime = 0.0f;
+
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(GripPenaltyDelayHandle);
+            World->GetTimerManager().ClearTimer(GripCooldownHandle);
+        }
+        bGripPenaltyEnabled = false;
+        bGripLimitActive = false;
+        GripCountInWindow = 0;
+        bGripWindowStarted = false;
+
+        UE_LOG(LogDownFall, Warning,
+            TEXT("Debug 6: Stage 2 Blizzard Event OFF. Trigger timer reset to 0.0s."));
+        return;
+    }
+
+    if (!bBloodMoonActive)
+    {
+        ActivateBloodMoonVFX();
+        UE_LOG(LogDownFall, Warning, TEXT("Debug 6: Stage 3 BloodMoon Event ON"));
+        return;
+    }
+
+    DeactivateBloodMoonVFX();
+    ClimbingElapsedTime = 0.0f;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(BloodMoonPenaltyDelayHandle);
+    }
+    bBloodMoonPenaltyActive = false;
+
+    UE_LOG(LogDownFall, Warning,
+        TEXT("Debug 6: Stage 3 BloodMoon Event OFF. Trigger timer reset to 0.0s."));
+}
+
+void ADownfallCharacter::OnDebugToggleReducedStaminaDrain()
+{
+    bDebugReducedStaminaDrainEnabled = !bDebugReducedStaminaDrainEnabled;
+
+    UE_LOG(
+        LogDownFall,
+        Warning,
+        TEXT("Debug 7: Reduced Stamina Drain %s (Multiplier: %.2f)"),
+        bDebugReducedStaminaDrainEnabled ? TEXT("ON") : TEXT("OFF"),
+        bDebugReducedStaminaDrainEnabled
+        ? FMath::Clamp(DebugReducedStaminaDrainMultiplier, 0.0f, 1.0f)
+        : 1.0f
+    );
 }
 
 // Anchor Grip Logic
@@ -2145,6 +2250,17 @@ void ADownfallCharacter::TryGrip(bool bIsLeftHand)
             GripCountInWindow = 0;
             bGripWindowStarted = false;
 
+            // 실제 빙결 디버프 시작 순간:
+            // 기본 Sound + Variants 중 하나를 한 번 재생하고,
+            // BP에서 조절하는 Volume / Pitch를 적용한다.
+            PlayCharacterStateSound(
+                FrostDebuffStartSoundVariants,
+                FrostDebuffStartSound,
+                FrostDebuffStartSoundVolumeMultiplier,
+                FrostDebuffStartSoundPitchMultiplier,
+                GetActorLocation()
+            );
+
             if (UWorld* World = GetWorld())
             {
                 World->GetTimerManager().ClearTimer(GripWindowResetHandle);
@@ -2405,6 +2521,11 @@ float ADownfallCharacter::GetStaminaDrainRate(const FHandData& Hand) const
 
     BaseDrain *= QualityMultiplier;
 
+    if (bDebugReducedStaminaDrainEnabled)
+    {
+        BaseDrain *= FMath::Clamp(DebugReducedStaminaDrainMultiplier, 0.0f, 1.0f);
+    }
+
     return BaseDrain;
 }
 
@@ -2529,22 +2650,45 @@ void ADownfallCharacter::AddInsanity(float Amount)
 
 void ADownfallCharacter::UpdateInsanity(float DeltaTime)
 {
-    if (Insanity > 0.0f)
+    // 블러드문 패널티가 활성화되면 광기 게이지가 0이어도 증가를 시작한다.
+    // 따라서 블러드문 동안에는 기본 자연 감소가 적용되지 않는다.
+    if (bBloodMoonPenaltyActive)
     {
-        // 혼란 상태일 때 (70 이상)
+        // 블러드문 자체의 추가 증가량: 70 미만/이상 모두 항상 적용.
+        float TotalGrowthRate = FMath::Max(0.0f, BloodMoonInsanityGrowthRate);
+
+        // 이미 광기 임계값(기본 70) 이상이면 기존 혼란 상태의 증가량까지 더한다.
+        // 즉 BloodMoonInsanityGrowthRate로 "교체"하는 것이 아니라
+        // InsanityGrowthRate + BloodMoonInsanityGrowthRate로 가속된다.
         if (Insanity >= InsanityThreshold)
         {
-            // BloodMoon 패널티 활성 시 증폭 속도 교체, 아니면 기본값
-            const float GrowthRate = bBloodMoonPenaltyActive
-                ? BloodMoonInsanityGrowthRate
-                : InsanityGrowthRate;
-            Insanity = FMath::Min(MaxInsanity, Insanity + GrowthRate * DeltaTime);
+            TotalGrowthRate += FMath::Max(0.0f, InsanityGrowthRate);
+        }
+
+        Insanity = FMath::Min(
+            MaxInsanity,
+            Insanity + TotalGrowthRate * DeltaTime
+        );
+
+        UpdateInsanityEffects();
+    }
+    else if (Insanity > 0.0f)
+    {
+        // 블러드문이 아닐 때의 기존 규칙:
+        // 70 이상이면 기본 증가, 70 미만이면 자연 감소.
+        if (Insanity >= InsanityThreshold)
+        {
+            Insanity = FMath::Min(
+                MaxInsanity,
+                Insanity + FMath::Max(0.0f, InsanityGrowthRate) * DeltaTime
+            );
         }
         else
         {
-            // 정상 상태: 초당 0.1씩 감소
-            // BloodMoon 패널티 중이라도 70 미만이면 정상 감소
-            Insanity = FMath::Max(0.0f, Insanity - InsanityDecayRate * DeltaTime);
+            Insanity = FMath::Max(
+                0.0f,
+                Insanity - FMath::Max(0.0f, InsanityDecayRate) * DeltaTime
+            );
         }
 
         UpdateInsanityEffects();
@@ -3780,8 +3924,32 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
         StageBGMComponent = nullptr;
     }
 
+    const float StaminaMultiplier = FMath::Lerp(
+        1.0f,
+        FMath::Clamp(LowStaminaBGMMinVolumeMultiplier, 0.0f, 1.0f),
+        GetLowStaminaPressure()
+    );
+
+    const float InsanityMultiplier = bWantInsanityBGM
+        ? GetInsanityBGMVolumeAlpha()
+        : 1.0f;
+
+    // 입장 시 Normal BGM과 이벤트를 껐다가 돌아오는 Normal BGM이
+    // 반드시 같은 계산값에서 시작하도록, FadeIn 경로를 사용하지 않는다.
+    // 기존에는 SpawnSound2D(0.0) → FadeIn과 Tick의 SetVolumeMultiplier가 겹쳐
+    // 재시작 시점마다 체감 볼륨이 달라질 여지가 있었다.
+    CurrentStageBGMVolume = BaseVolume * StaminaMultiplier * InsanityMultiplier;
+
     StageBGMComponent = UGameplayStatics::SpawnSound2D(
-        this, TargetBGM, 0.0f, 1.0f, 0.0f, nullptr, false, false);
+        this,
+        TargetBGM,
+        CurrentStageBGMVolume,
+        1.0f,
+        0.0f,
+        nullptr,
+        false,
+        false
+    );
 
     if (StageBGMComponent && IsValid(StageBGMComponent))
     {
@@ -3789,27 +3957,9 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
         StageBGMComponent->bAutoDestroy = false;
         StageBGMComponent->OnAudioFinished.AddUniqueDynamic(this, &ADownfallCharacter::HandleStageBGMFinished);
 
-        const float StaminaMultiplier = FMath::Lerp(
-            1.0f,
-            FMath::Clamp(LowStaminaBGMMinVolumeMultiplier, 0.0f, 1.0f),
-            GetLowStaminaPressure()
-        );
-
-        const float InsanityMultiplier = bWantInsanityBGM
-            ? GetInsanityBGMVolumeAlpha()
-            : 1.0f;
-
-        CurrentStageBGMVolume = BaseVolume * StaminaMultiplier * InsanityMultiplier;
-
-        if (StageBGMFadeInSeconds > 0.0f)
-        {
-            StageBGMComponent->FadeIn(StageBGMFadeInSeconds, CurrentStageBGMVolume, 0.0f);
-        }
-        else
-        {
-            StageBGMComponent->SetVolumeMultiplier(CurrentStageBGMVolume);
-            StageBGMComponent->Play(0.0f);
-        }
+        // SpawnSound2D 초기 음량과 Tick 갱신값을 동일한 CurrentStageBGMVolume으로 고정한다.
+        StageBGMComponent->SetVolumeMultiplier(CurrentStageBGMVolume);
+        StageBGMComponent->Play(0.0f);
     }
 
     PlayingStageMusicIndex = CurrentStageMusicIndex;
@@ -5484,14 +5634,9 @@ void ADownfallCharacter::ActivateBlizzardVFX()
 
     bBlizzardActive = true;
 
-    // 빙결 디버프 시작음: 기본 Sound + Variants 후보군에서 하나를 1회 선택한다.
-    PlayCharacterStateSound(
-        FrostDebuffStartSoundVariants,
-        FrostDebuffStartSound,
-        FrostDebuffStartSoundVolumeMultiplier,
-        1.0f,
-        GetActorLocation()
-    );
+    // 눈보라 시작 자체는 빙결 디버프가 아니다.
+    // FrostDebuffStartSound는 10초 안에 그립 제한을 초과해
+    // 실제 3초 그립 불가 상태가 시작되는 순간에만 재생한다.
 
     // PP 서리 Weight Lerp 시작
     if (FrostMaterialInstance && PostProcessComp)
@@ -5750,7 +5895,8 @@ void ADownfallCharacter::DeactivateBloodMoonVFX()
 
     if (CachedMoonLight.IsValid())
     {
-        if (UDirectionalLightComponent* LC = CachedMoonLight->GetComponent())
+        if (UDirectionalLightComponent* LC =
+            Cast<UDirectionalLightComponent>(CachedMoonLight->GetLightComponent()))
         {
             LC->SetLightColor(BloodMoonNormalLightColor);
         }
@@ -5819,7 +5965,8 @@ void ADownfallCharacter::UpdateBloodMoonVFX(float DeltaTime)
     // DirectionalLight 색상 Lerp
     if (CachedMoonLight.IsValid())
     {
-        if (UDirectionalLightComponent* LC = CachedMoonLight->GetComponent())
+        if (UDirectionalLightComponent* LC =
+            Cast<UDirectionalLightComponent>(CachedMoonLight->GetLightComponent()))
         {
             LC->SetLightColor(FLinearColor::LerpUsingHSV(
                 BloodMoonStartLightColor, BloodMoonLightColor, Alpha));
@@ -6412,8 +6559,9 @@ bool ADownfallCharacter::CheckGripLimitExceeded()
     GripCountInWindow++;
     UE_LOG(LogDownFall, Log, TEXT("GripWindow count: %d/%d"), GripCountInWindow, GripCountLimit);
 
-    // 제한 횟수 초과 시 쿨다운 발동
-    if (GripCountInWindow > GripCountLimit)
+    // 제한 횟수 이상이면 쿨다운 발동.
+    // Limit=30이면 10초 안의 30번째 그립 성공에서 발동한다.
+    if (GripCountInWindow >= GripCountLimit)
     {
         return true;
     }
