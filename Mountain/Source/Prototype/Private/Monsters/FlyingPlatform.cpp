@@ -238,8 +238,10 @@ AWallCrawler* AFlyingPlatform::FindNearbyWallCrawler()
 
 #if !UE_BUILD_SHIPPING
         // Crawler 탐색 성공 시 1회 구체 표시 + 다음 Drop 디버그를 위해 플래그 초기화
+        /*
         DrawDebugSphere(GetWorld(), NearestCrawler->GetActorLocation(), 50.0f, 12, FColor::Green, false, 2.0f, 0, 5.0f);
         bHasDrawnDropDebug = false;
+*/
 #endif
     }
 
@@ -300,6 +302,7 @@ bool AFlyingPlatform::CanDropCrawler() const
 
 #if !UE_BUILD_SHIPPING
     // 최초 1회만 디버그 시각화 (persistent=true, Duration=-1 → 사라지지 않음)
+    /*
     if (!bHasDrawnDropDebug)
     {
         bHasDrawnDropDebug = true;
@@ -340,6 +343,7 @@ bool AFlyingPlatform::CanDropCrawler() const
             DrawDebugSphere(World, PlatformLocation, 300.0f, 12, FColor::Red, false, 1.0f, 0, 5.0f);
         }
     }
+    */
 #endif
 
     return bInRange;
