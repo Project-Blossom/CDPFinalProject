@@ -1709,6 +1709,10 @@ private:
     bool bInsanityLoopShouldLoop = false;
     bool bInsanityBGMEnterSoundPlaying = false;
     bool bInsanityBGMEnterSequenceCompleted = false;
+
+    // 입장 사운드가 끝난 뒤 Common Insanity BGM을 유지하는 실제 상태.
+    // Stage Normal/Event 선택 계산과 분리한다.
+    bool bInsanityBGMActive = false;
     float NextLowStaminaWarningPlayTime = 0.0f;
     float NextInsanityLoopPlayTime = 0.0f;
     float CurrentStageBGMVolume = 0.0f;
@@ -1729,6 +1733,10 @@ private:
 
     UPROPERTY(Transient)
     TObjectPtr<UAudioComponent> InsanityBGMEnterAudioComponent = nullptr;
+
+    // SpawnSound2D는 생성 직후 재생을 시작하므로, 전환음 종료 콜백이 누락되거나
+    // Cue의 Loop 설정 때문에 끝나지 않는 경우에도 광기 BGM으로 넘어가기 위한 안전장치.
+    FTimerHandle InsanityBGMEnterFallbackHandle;
 
     // Minimap SceneCapture2D 캐시
     TWeakObjectPtr<class ASceneCapture2D>  CachedSceneCapture;

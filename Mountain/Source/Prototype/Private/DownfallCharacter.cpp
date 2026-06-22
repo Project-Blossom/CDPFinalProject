@@ -3906,6 +3906,18 @@ void ADownfallCharacter::RefreshStageBGM(bool bForceRestart)
         return;
     }
 
+    UE_LOG(
+        LogDownFall,
+        Verbose,
+        TEXT("RefreshStageBGM: Insanity=%.2f Completed=%d Active=%d EnterPlaying=%d WantInsanity=%d Target=%s"),
+        Insanity,
+        bInsanityBGMEnterSequenceCompleted ? 1 : 0,
+        bInsanityBGMActive ? 1 : 0,
+        bInsanityBGMEnterSoundPlaying ? 1 : 0,
+        bWantInsanityBGM ? 1 : 0,
+        *GetNameSafe(TargetBGM)
+    );
+
     if (!bForceRestart &&
         StageBGMComponent &&
         IsValid(StageBGMComponent) &&
@@ -4062,20 +4074,11 @@ bool ADownfallCharacter::IsCurrentStageEventActive() const
 
 bool ADownfallCharacter::ShouldUseInsanityBGM() const
 {
-    if (!CommonInsanityBGM || !bInsanityBGMEnterSequenceCompleted)
-    {
-        return false;
-    }
-
-    const float RearmThreshold = FMath::Clamp(
-        InsanityBGMRearmThreshold,
-        0.0f,
-        InsanityBGMThreshold
-    );
-
-    // 전환음이 끝나고 Common Insanity BGM이 시작된 뒤에는
-    // 재무장선(기본 50) 이하가 되기 전까지 계속 유지한다.
-    return Insanity > RearmThreshold;
+    // 70 진입 사운드가 끝난 순간에만 true가 되고,
+    // 50 이하 재무장선에서만 false가 된다.
+    return CommonInsanityBGM &&
+        bInsanityBGMActive &&
+        !bInsanityBGMEnterSoundPlaying;
 }
 
 void ADownfallCharacter::StopLowStaminaWarning()
@@ -4113,6 +4116,11 @@ void ADownfallCharacter::StopInsanityWarning()
 void ADownfallCharacter::StopInsanityBGMEnterSound()
 {
     bInsanityBGMEnterSoundPlaying = false;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(InsanityBGMEnterFallbackHandle);
+    }
 
     if (InsanityBGMEnterAudioComponent && IsValid(InsanityBGMEnterAudioComponent))
     {
@@ -4155,6 +4163,11 @@ void ADownfallCharacter::HandleInsanityBGMEnterSoundFinished()
 {
     bInsanityBGMEnterSoundPlaying = false;
 
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(InsanityBGMEnterFallbackHandle);
+    }
+
     if (InsanityBGMEnterAudioComponent && IsValid(InsanityBGMEnterAudioComponent))
     {
         InsanityBGMEnterAudioComponent->DestroyComponent();
@@ -4167,9 +4180,20 @@ void ADownfallCharacter::HandleInsanityBGMEnterSoundFinished()
         InsanityBGMThreshold
     );
 
-    // 전환음 종료 후에도 50 이하로 이미 내려갔다면 광기 BGM으로 진입하지 않고
-    // 그 시점의 Stage Normal/Event BGM으로 복귀한다.
-    bInsanityBGMEnterSequenceCompleted = (Insanity > RearmThreshold);
+    // 전환음이 끝난 뒤 50 초과면 광기 BGM 상태를 확정한다.
+    // 이 상태는 50 이하로 내려갈 때까지 유지된다.
+    bInsanityBGMEnterSequenceCompleted = true;
+    bInsanityBGMActive = (Insanity > RearmThreshold);
+
+    UE_LOG(
+        LogDownFall,
+        Log,
+        TEXT("Insanity BGM entry finished. Insanity=%.2f, Rearm=%.2f, Active=%d, Common=%s"),
+        Insanity,
+        RearmThreshold,
+        bInsanityBGMActive ? 1 : 0,
+        *GetNameSafe(CommonInsanityBGM.Get())
+    );
 
     RefreshStageBGM(true);
 }
@@ -4368,10 +4392,12 @@ void ADownfallCharacter::UpdateInsanityBGMEnterSequence()
         const bool bWasInInsanityBGMState =
             bInsanityBGMEnterSequenceCompleted ||
             bInsanityBGMEnterSoundPlaying ||
+            bInsanityBGMActive ||
             bStageBGMCurrentlyInsanity;
 
         StopInsanityBGMEnterSound();
         bInsanityBGMEnterSequenceCompleted = false;
+        bInsanityBGMActive = false;
 
         if (bWasInInsanityBGMState)
         {
@@ -4389,12 +4415,14 @@ void ADownfallCharacter::UpdateInsanityBGMEnterSequence()
     }
 
     // 70 도달: 반복 광기음은 유지하고, 현재 Normal/Event BGM만 멈춘 뒤 전환 1회음을 재생한다.
+    bInsanityBGMActive = false;
     StopStageBGM();
 
     if (!InsanityBGMEnterSound)
     {
         // 전환음이 비어 있으면 멈춘 채로 남지 않도록 바로 광기 BGM으로 간다.
         bInsanityBGMEnterSequenceCompleted = true;
+        bInsanityBGMActive = true;
         RefreshStageBGM(true);
         return;
     }
@@ -4412,16 +4440,38 @@ void ADownfallCharacter::UpdateInsanityBGMEnterSequence()
 
     if (InsanityBGMEnterAudioComponent && IsValid(InsanityBGMEnterAudioComponent))
     {
+        // 완료 상태를 미리 기록하되, bInsanityBGMEnterSoundPlaying 동안에는
+        // ShouldUseInsanityBGM이 false라서 전환음과 BGM이 겹치지 않는다.
+        bInsanityBGMEnterSequenceCompleted = true;
         bInsanityBGMEnterSoundPlaying = true;
         InsanityBGMEnterAudioComponent->bAutoDestroy = false;
         InsanityBGMEnterAudioComponent->OnAudioFinished.AddUniqueDynamic(
             this,
             &ADownfallCharacter::HandleInsanityBGMEnterSoundFinished
         );
+
+        // SpawnSound2D는 이미 재생을 시작한 뒤 컴포넌트를 돌려준다.
+        // 아주 짧은 파일의 콜백 누락이나 Cue Loop 오설정으로 영원히 Stage BGM에 남는 것을 막는다.
+        const float EntryDuration = InsanityBGMEnterSound->GetDuration();
+        if (UWorld* World = GetWorld();
+            World &&
+            EntryDuration > KINDA_SMALL_NUMBER &&
+            EntryDuration < 3600.0f)
+        {
+            World->GetTimerManager().SetTimer(
+                InsanityBGMEnterFallbackHandle,
+                this,
+                &ADownfallCharacter::HandleInsanityBGMEnterSoundFinished,
+                EntryDuration + 0.05f,
+                false
+            );
+        }
     }
     else
     {
+        // 전환음을 생성하지 못해도 70 이상이면 Common Insanity BGM으로 바로 전환한다.
         bInsanityBGMEnterSequenceCompleted = true;
+        bInsanityBGMActive = true;
         RefreshStageBGM(true);
     }
 }
